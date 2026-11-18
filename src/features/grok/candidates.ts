@@ -7,6 +7,7 @@ export const MAX_CONTRACTS_PER_EVENT = 8;
 const EVENTS_PER_PAGE = 100;
 const MAX_PAGES_PER_CATEGORY = 3;
 const SPORTS_CATEGORY = "Sports";
+export const CARD_CATEGORIES: readonly string[] = ["Economics", "Politics", "Tech", "Culture", "Crypto", "Commodities", SPORTS_CATEGORY];
 const UNIVERSE_TTL_MS = 60_000;
 const EVEN_ODDS_CENTS = 50;
 

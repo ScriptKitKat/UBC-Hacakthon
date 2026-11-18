@@ -24,6 +24,24 @@ describe("desk api validation", () => {
     expect(await response.json()).toMatchObject({ error: "invalid-request" });
   });
 
+  it.each([
+    ["propose", propose, { instrumentSymbol: "A", outcome: "yes", notionalCents: 100, senderId: "priscilla" }],
+    ["confirm", confirm, { intentId: "i", approverId: "priscilla" }],
+    ["kill switch", killSwitch, { on: false }],
+  ])("refuses cross-origin browser posts to %s", async (_name, handler, body) => {
+    const response = await handler(new Request("http://localhost:3000/api/desk", {
+      method: "POST", headers: { origin: "https://evil.example", "content-type": "text/plain" }, body: JSON.stringify(body),
+    }));
+    expect(response.status).toBe(403);
+  });
+
+  it("accepts same-origin dashboard posts past the origin check", async () => {
+    const response = await killSwitch(new Request("http://localhost:3000/api/desk/kill-switch", {
+      method: "POST", headers: { origin: "http://localhost:3000", "content-type": "application/json" }, body: JSON.stringify({ on: "bad" }),
+    }));
+    expect(response.status).toBe(400);
+  });
+
   it("returns 503 with the config issues when the desk is not configured", async () => {
     const response = await snapshot();
     expect(response.status).toBe(503);

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { withBody } from "../route-helpers";
+import { withDashboardBody } from "../route-helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ const body = z.object({
 });
 
 export function POST(request: Request): Promise<Response> {
-  return withBody(request, body, async ({ text, url, author }, desk) => {
+  return withDashboardBody(request, body, async ({ text, url, author }, desk) => {
     const match = await desk.submitNews({
       id: randomUUID(),
       text,

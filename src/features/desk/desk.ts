@@ -1,6 +1,6 @@
 import { executeApproved } from "@/features/execution";
 import type { ExecutionError, TradeRecord } from "@/features/execution";
-import { createPostMatcher } from "@/features/grok";
+import { CARD_CATEGORIES, createPostMatcher } from "@/features/grok";
 import type { PostCandidate, PostInput } from "@/features/grok";
 import { confirm, evaluate, marketPolicyRefusal, rollDay } from "@/features/guardrails";
 import type { ApprovedTrade, Decision, Policy, PolicyState } from "@/features/guardrails";
@@ -198,7 +198,7 @@ export function createDesk(deps: DeskDeps): Desk {
   const postMatcher = createPostMatcher({
     markets,
     settings: deps.feed.grok,
-    categories: [...deps.policy.marketCategories],
+    categories: CARD_CATEGORIES,
     fetch: deps.fetch ?? fetch,
     now,
   });

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { withBody } from "../route-helpers";
+import { withDashboardBody } from "../route-helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,5 +13,5 @@ const body = z.object({
 });
 
 export function POST(request: Request): Promise<Response> {
-  return withBody(request, body, async (proposal, desk) => Response.json({ entry: await desk.proposeTrade(proposal) }));
+  return withDashboardBody(request, body, async (proposal, desk) => Response.json({ entry: await desk.proposeTrade(proposal) }));
 }

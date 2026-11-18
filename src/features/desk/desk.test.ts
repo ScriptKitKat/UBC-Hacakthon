@@ -325,6 +325,15 @@ describe("desk feed", () => {
     expect(await desk.matchPost({ id: "p2", text: "Just had the best sandwich of my life today" })).toMatchObject({ kind: "no-match", postId: "p2" });
   });
 
+  it("searches sports games for cards even when the trading policy excludes Sports", async () => {
+    const markets = fakeMarkets(() => sportsEvent);
+    markets.searchEvents.mockImplementation((query) =>
+      Promise.resolve(ok(query?.category === "Sports" && query.search ? { events: [sportsEvent], total: 1 } : { events: [], total: 0 })));
+    const { desk } = setup({ markets });
+    const match = await desk.matchPost({ id: "p4", text: "Chiefs vs Bills tonight: Chiefs favored by three points" });
+    expect(match).toMatchObject({ kind: "matched", market: { eventTicker: "NFL-2611221800-KC-BUF-M", tradeable: false } });
+  });
+
   it("shows sports cards as not tradeable and refuses the buy with the policy reason", async () => {
     const markets = fakeMarkets(() => sportsEvent);
     const { desk, debit } = setup({ markets });

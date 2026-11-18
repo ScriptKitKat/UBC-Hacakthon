@@ -8,6 +8,16 @@ export async function withDesk(handler: (desk: Desk) => Promise<Response>): Prom
   return handler(access.desk);
 }
 
+function isCrossOrigin(request: Request): boolean {
+  const origin = request.headers.get("origin");
+  if (origin === null) return false;
+  try {
+    return new URL(origin).host !== new URL(request.url).host;
+  } catch {
+    return true;
+  }
+}
+
 export async function withBody<S extends z.ZodType>(
   request: Request,
   schema: S,
@@ -25,4 +35,13 @@ export async function withBody<S extends z.ZodType>(
     return Response.json({ error: "invalid-request", issues }, { status: 400 });
   }
   return withDesk((desk) => handler(parsed.data, desk));
+}
+
+export function withDashboardBody<S extends z.ZodType>(
+  request: Request,
+  schema: S,
+  handler: (body: z.output<S>, desk: Desk) => Promise<Response>,
+): Promise<Response> {
+  if (isCrossOrigin(request)) return Promise.resolve(Response.json({ error: "cross-origin-forbidden" }, { status: 403 }));
+  return withBody(request, schema, handler);
 }
