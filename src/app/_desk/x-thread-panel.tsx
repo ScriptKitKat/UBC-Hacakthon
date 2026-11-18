@@ -4,33 +4,41 @@ import { useState } from "react";
 import type { XBotStatusView, XMessageView, XThreadView } from "@/shared";
 import { loadXThreads, postX } from "./api";
 import type { XThreadsResult } from "./api";
-import { formatCents, formatClock } from "./format";
+import { formatCents, formatClock, shortenMiddle } from "./format";
 import { usePolling } from "./use-polling";
 import styles from "./desk.module.css";
 
 const POLL_INTERVAL_MS = 4000;
 const DEMO_NEWS_HANDLE = "@reuters";
 
+function avatarInitial(author: string): string {
+  const letter = author.replace(/^@/u, "").charAt(0);
+  return letter === "" ? "?" : letter.toUpperCase();
+}
+
 function Message({ message }: { readonly message: XMessageView }) {
   return (
     <li className={styles.xMessage} data-role={message.role} data-kind={message.decisionKind}>
-      <p className={styles.xMessageHead}>
-        <span className={styles.xAuthor}>{message.author}</span>
-        <span>{formatClock(message.at)}</span>
-        {message.postedToX ? <span>on X</span> : null}
-        {message.postError ? <span className={styles.xError}>not posted: {message.postError}</span> : null}
-      </p>
-      <p className={styles.xText}>{message.text}</p>
-      {message.ticketId || message.signature ? (
-        <p className={styles.xProof}>
-          {message.ticketId ? <span className={styles.ticket}>paper ticket {message.ticketId.slice(0, 8)}</span> : null}
-          {message.signature && message.explorerUrl ? (
-            <a href={message.explorerUrl} target="_blank" rel="noreferrer" title={message.signature}>
-              {message.signature.slice(0, 8)}…{message.signature.slice(-6)}
-            </a>
-          ) : null}
+      <span className={styles.xAvatar} aria-hidden="true">{avatarInitial(message.author)}</span>
+      <div className={styles.xContent}>
+        <p className={styles.xMessageHead}>
+          <span className={styles.xAuthor}>{message.author}</span>
+          <span>{formatClock(message.at)}</span>
+          {message.postedToX ? <span>on X</span> : null}
+          {message.postError ? <span className={styles.xError}>not posted: {message.postError}</span> : null}
         </p>
-      ) : null}
+        <p className={styles.xText}>{message.text}</p>
+        {message.ticketId || message.signature ? (
+          <p className={styles.xProof}>
+            {message.ticketId ? <span className={styles.ticket}>paper ticket {message.ticketId.slice(0, 8)}</span> : null}
+            {message.signature && message.explorerUrl ? (
+              <a className={styles.explorerLink} href={message.explorerUrl} target="_blank" rel="noreferrer" title={message.signature}>
+                {shortenMiddle(message.signature, 8, 6)} ↗
+              </a>
+            ) : null}
+          </p>
+        ) : null}
+      </div>
     </li>
   );
 }

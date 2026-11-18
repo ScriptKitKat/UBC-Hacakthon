@@ -23,9 +23,9 @@ export function NewsPanel({ news, busy, onSubmit }: NewsPanelProps) {
         <article className={styles.newsCard}>
           <p className={styles.headline}>{news.text}</p>
           <p className={styles.meta}>
-            <span>{news.sourceDomain ?? "no source link"}</span>
+            <span className={styles.sourceChip}>{news.sourceDomain ?? "no source link"}</span>
             {news.author ? <span>{news.author}</span> : null}
-            <span>{formatClock(news.postedAt)}</span>
+            <span className={styles.metaTime}>{formatClock(news.postedAt)}</span>
           </p>
         </article>
       ) : (

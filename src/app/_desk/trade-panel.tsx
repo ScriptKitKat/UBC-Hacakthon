@@ -95,9 +95,15 @@ export function TradePanel({ match, senders, pending, busy, onBet, onApprove }: 
         <ul className={styles.pendingList}>
           {pending.map((item) => (
             <li key={item.intentId} className={styles.pendingItem}>
-              <span className={styles.pendingText}>
-                {formatDollars(item.notionalCents)} {item.outcome.toUpperCase()} · {item.symbol} · {item.senderId} · {formatClock(item.createdAt)}
-              </span>
+              <div className={styles.pendingText}>
+                <div className={styles.pendingTop}>
+                  <span className={item.outcome === "yes" ? styles.pillYes : styles.pillNo}>{item.outcome.toUpperCase()}</span>
+                  <span className={styles.pendingAmount}>{formatDollars(item.notionalCents)}</span>
+                  <span className={styles.pendingTime}>{formatClock(item.createdAt)}</span>
+                </div>
+                <span className={styles.pendingSymbol}>{item.symbol}</span>
+                <span className={styles.pendingSender}>from {item.senderId}</span>
+              </div>
               <button
                 type="button"
                 className={styles.approveButton}

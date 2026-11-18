@@ -8,6 +8,7 @@ import { callVoiceTool, loadVoiceSession } from "./voice-api";
 import type { VoiceSessionResult } from "./voice-api";
 import { describeParameters } from "./voice-transcript";
 import type { NewTranscriptEntry, TranscriptEntry } from "./voice-transcript";
+import { MicIcon, StopIcon } from "./icons";
 import { usePolling } from "./use-polling";
 import styles from "./voice.module.css";
 
@@ -33,6 +34,14 @@ function statusLabel(status: string, isSpeaking: boolean): string {
   if (status === "connected") return isSpeaking ? "Agent is speaking" : "Listening";
   if (status === "error") return "Connection problem";
   return "Not connected";
+}
+
+type OrbState = "idle" | "connecting" | "listening" | "speaking";
+
+function orbState(status: string, isSpeaking: boolean): OrbState {
+  if (status === "connecting") return "connecting";
+  if (status === "connected") return isSpeaking ? "speaking" : "listening";
+  return "idle";
 }
 
 function VoiceDesk({ onTrade }: VoicePanelProps) {
@@ -104,13 +113,16 @@ function VoiceDesk({ onTrade }: VoicePanelProps) {
         <div className={styles.micColumn}>
           <button
             type="button"
-            className={live ? styles.micLive : styles.micIdle}
+            className={styles.orb}
+            data-state={orbState(conversation.status, conversation.isSpeaking)}
             aria-pressed={live}
             aria-label={live ? "Stop talking to the desk" : "Start talking to the desk"}
             disabled={!usable && !live}
             onClick={live ? () => { conversation.endSession(); } : start}
           >
-            {live ? "Stop" : "Mic"}
+            <span className={styles.orbRing} aria-hidden="true" />
+            {live ? <StopIcon /> : <MicIcon />}
+            <span className={styles.orbLabel}>{live ? "Stop" : "Mic"}</span>
           </button>
           <p className={styles.voiceStatus} data-speaking={conversation.isSpeaking}>
             {statusLabel(conversation.status, conversation.isSpeaking)}
@@ -133,7 +145,7 @@ function VoiceDesk({ onTrade }: VoicePanelProps) {
               ) : (
                 <>
                   <span className={styles.speaker}>{entry.kind === "user" ? "You" : entry.kind === "agent" ? "Desk" : "Note"}</span>
-                  <span>{entry.text}</span>
+                  <span className={styles.bubble}>{entry.text}</span>
                 </>
               )}
             </li>

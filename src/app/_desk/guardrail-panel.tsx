@@ -1,5 +1,5 @@
 import type { LedgerView, PolicyView } from "@/shared";
-import { formatDollars } from "./format";
+import { budgetTone, formatDollars, percentOf, shortenMiddle } from "./format";
 import styles from "./desk.module.css";
 
 interface GuardrailPanelProps {
@@ -10,11 +10,13 @@ interface GuardrailPanelProps {
 }
 
 function shorten(key: string): string {
-  return key.length > 12 ? `${key.slice(0, 5)}…${key.slice(-5)}` : key;
+  return shortenMiddle(key, 5, 5);
 }
 
 export function GuardrailPanel({ policy, ledger, busy, onKillSwitch }: GuardrailPanelProps) {
-  const spentShare = policy.dailyCapCents === 0 ? 0 : Math.min(100, (policy.spentCents / policy.dailyCapCents) * 100);
+  const spentShare = percentOf(policy.spentCents, policy.dailyCapCents);
+  const autoApproveShare = percentOf(policy.autoApproveMaxCents, policy.dailyCapCents);
+  const tone = budgetTone(policy.remainingCents, policy.dailyCapCents);
   return (
     <section className={styles.panel} aria-labelledby="guardrail-heading">
       <h2 id="guardrail-heading" className={styles.panelTitle}>Guardrails</h2>
@@ -28,10 +30,16 @@ export function GuardrailPanel({ policy, ledger, busy, onKillSwitch }: Guardrail
         aria-valuemax={policy.dailyCapCents}
         aria-valuenow={policy.spentCents}
         aria-label="Daily budget"
+        data-tone={tone}
       >
         <div className={styles.meterFill} style={{ width: `${String(spentShare)}%` }} />
+        <div
+          className={styles.meterTick}
+          style={{ left: `${String(autoApproveShare)}%` }}
+          title={`Auto-approve up to ${formatDollars(policy.autoApproveMaxCents)}`}
+        />
       </div>
-      <p className={styles.remaining}>{formatDollars(policy.remainingCents)} remaining</p>
+      <p className={styles.remaining} data-tone={tone}>{formatDollars(policy.remainingCents)} remaining</p>
       <dl className={styles.facts}>
         <dt>Auto-approve up to</dt>
         <dd>{formatDollars(policy.autoApproveMaxCents)}</dd>
@@ -56,6 +64,9 @@ export function GuardrailPanel({ policy, ledger, busy, onKillSwitch }: Guardrail
           onKillSwitch(!policy.killSwitch);
         }}
       >
+        <span className={styles.killTrack} aria-hidden="true">
+          <span className={styles.killKnob} />
+        </span>
         {policy.killSwitch ? "Kill switch ON — trading paused" : "Kill switch off — trading live"}
       </button>
       {ledger.configured ? (

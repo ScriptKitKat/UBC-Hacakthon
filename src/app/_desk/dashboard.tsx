@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { loadSnapshot, postAction } from "./api";
 import type { ActionResult, SnapshotResult } from "./api";
+import { AppBar } from "./app-bar";
 import { GuardrailPanel } from "./guardrail-panel";
 import { LatestDecision, LogPanel } from "./log-panel";
 import { MarketPanel } from "./market-panel";
@@ -40,37 +41,50 @@ export function Dashboard() {
       });
   };
 
-  if (result === null) return <p className={styles.status}>Connecting to the desk…</p>;
+  if (result === null) {
+    return (
+      <div className={styles.grid}>
+        <AppBar state={null} />
+        <p className={styles.status}>Connecting to the desk…</p>
+      </div>
+    );
+  }
 
   if (result.kind === "not-configured") {
     return (
-      <section className={styles.panelWide} role="alert">
-        <h2 className={styles.panelTitle}>Desk is not configured</h2>
-        <ul className={styles.issues}>
-          {result.issues.map((issue) => (
-            <li key={issue}>{issue}</li>
-          ))}
-        </ul>
-        <p className={styles.empty}>Set these variables in .env.local and restart the server.</p>
-      </section>
+      <div className={styles.grid}>
+        <AppBar state={null} />
+        <section className={styles.panelWide} role="alert">
+          <h2 className={styles.panelTitle}>Desk is not configured</h2>
+          <ul className={styles.issues}>
+            {result.issues.map((issue) => (
+              <li key={issue}>{issue}</li>
+            ))}
+          </ul>
+          <p className={styles.empty}>Set these variables in .env.local and restart the server.</p>
+        </section>
+      </div>
     );
   }
 
   if (result.kind === "error") {
     return (
-      <section className={styles.panelWide} role="alert">
-        <h2 className={styles.panelTitle}>Desk unavailable</h2>
-        <p className={styles.warning}>{result.message}</p>
-        <button type="button" className={styles.secondaryButton} onClick={refresh}>Retry</button>
-      </section>
+      <div className={styles.grid}>
+        <AppBar state={null} />
+        <section className={styles.panelWide} role="alert">
+          <h2 className={styles.panelTitle}>Desk unavailable</h2>
+          <p className={styles.warning}>{result.message}</p>
+          <button type="button" className={styles.secondaryButton} onClick={refresh}>Retry</button>
+        </section>
+      </div>
     );
   }
 
   const { snapshot } = result;
   return (
     <div className={styles.grid}>
+      <AppBar state={{ ledger: snapshot.ledger, killSwitch: snapshot.policy.killSwitch }} />
       {actionError ? <p className={styles.banner} role="alert">{actionError}</p> : null}
-      <VoicePanel onTrade={refresh} />
       <div className={styles.topRow}>
         <NewsPanel
           news={snapshot.news}
@@ -103,9 +117,10 @@ export function Dashboard() {
             run(() => postAction("kill-switch", { on }));
           }}
         />
+        <VoicePanel onTrade={refresh} />
       </div>
-      <XThreadPanel senders={snapshot.policy.senderAllowlist} />
       <LogPanel log={snapshot.log} />
+      <XThreadPanel senders={snapshot.policy.senderAllowlist} />
     </div>
   );
 }
