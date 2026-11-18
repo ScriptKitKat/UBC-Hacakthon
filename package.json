@@ -11,7 +11,9 @@
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
     "check": "npm run typecheck && npm run lint && npm run test",
-    "smoke:gemini": "node scripts/gemini-smoke.mjs"
+    "smoke:gemini": "node scripts/gemini-smoke.mjs",
+    "test:integration": "vitest run --config src/features/ledger/vitest.integration.config.ts",
+    "ledger:devnet-setup": "node scripts/ledger-devnet-setup"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.15",
