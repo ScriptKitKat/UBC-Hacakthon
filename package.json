@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run lint && npm run test"
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "test:integration": "vitest run --config src/features/ledger/vitest.integration.config.ts",
+    "ledger:devnet-setup": "node scripts/ledger-devnet-setup"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.15",

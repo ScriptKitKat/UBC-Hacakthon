@@ -1,0 +1,30 @@
+import { createMint, getMint, getOrCreateAssociatedTokenAccount } from "@solana/spl-token";
+import { Connection, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+import { loadKeypair } from "../src/features/ledger/keypair.ts";
+
+async function setup() {
+  const [authority, recipient] = await Promise.all([
+    loadKeypair("~/.config/news-to-trade-desk/devnet-authority.json"),
+    loadKeypair("~/.config/news-to-trade-desk/devnet-vault-recipient.json"),
+  ]);
+  const connection = new Connection(process.env.SOLANA_DEVNET_RPC_URL ?? "https://api.devnet.solana.com", "confirmed");
+  process.stdout.write(`Authority: ${authority.publicKey.toBase58()}\nRecipient: ${recipient.publicKey.toBase58()}\n`);
+  const lamports = await connection.getBalance(authority.publicKey);
+  process.stdout.write(`Devnet SOL balance: ${lamports / LAMPORTS_PER_SOL} SOL\n`);
+  if (lamports === 0) return;
+
+  const mint = process.env.USDC_MINT
+    ? new PublicKey(process.env.USDC_MINT)
+    : await createMint(connection, authority, authority.publicKey, null, 6);
+  if ((await getMint(connection, mint, "confirmed")).decimals !== 6) throw new Error("Invalid mint decimals");
+  const source = await getOrCreateAssociatedTokenAccount(connection, authority, mint, authority.publicKey);
+  const destination = await getOrCreateAssociatedTokenAccount(connection, authority, mint, recipient.publicKey);
+  process.stdout.write(`Mint: ${mint.toBase58()}\nAuthority ATA: ${source.address.toBase58()}\nRecipient ATA: ${destination.address.toBase58()}\n`);
+}
+
+try {
+  await setup();
+} catch {
+  process.stderr.write("Devnet ledger setup failed.\n");
+  process.exitCode = 1;
+}
