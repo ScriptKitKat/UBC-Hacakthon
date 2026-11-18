@@ -1,4 +1,5 @@
-import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import { decodeTransferCheckedInstruction } from "@solana/spl-token";
+import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { usdCents } from "@/shared";
 import { createSolanaLedger, explorerUrl } from "./index";
@@ -101,5 +102,29 @@ it("maps RPC exceptions to fixed ledger errors", async () => {
     ok: false, error: { code: "debit-preparation-failed" },
   });
   expect(await ledger.balance()).toEqual({ ok: false, error: { code: "balance-failed" } });
+  expect(rpc.send).not.toHaveBeenCalled();
+});
+
+const maxCents = ((1n << 64n) - 1n) / 10_000n;
+
+it.each([1n, maxCents])("encodes %s cents exactly as token base units", async (cents) => {
+  const rpc = fakeRpc(devnetGenesis);
+  const ledger = await createSolanaLedger(config);
+  expect(await ledger.debit("trade", usdCents(Number(cents)), `trade|SYMBOL|yes|${String(cents)}`)).toMatchObject({ ok: true });
+  const bytes = rpc.send.mock.calls[0]?.[0];
+  if (!bytes) throw new Error("Expected signed transaction");
+  const [transfer] = Transaction.from(bytes).instructions;
+  if (!transfer) throw new Error("Expected transfer instruction");
+  expect(decodeTransferCheckedInstruction(transfer).data.amount).toBe(cents * 10_000n);
+});
+
+it("rejects the first cent amount beyond the token u64 limit", async () => {
+  const rpc = fakeRpc(devnetGenesis);
+  const ledger = await createSolanaLedger(config);
+  const cents = maxCents + 1n;
+  expect(await ledger.debit("trade", usdCents(Number(cents)), `trade|SYMBOL|yes|${String(cents)}`)).toEqual({
+    ok: false, error: { code: "notional-overflow" },
+  });
+  expect(rpc.genesis).not.toHaveBeenCalled();
   expect(rpc.send).not.toHaveBeenCalled();
 });

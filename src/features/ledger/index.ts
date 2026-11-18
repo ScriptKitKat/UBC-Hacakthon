@@ -10,6 +10,7 @@ import { loadKeypair } from "./keypair";
 const memoProgram = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 const usdcDecimals = 6;
 const baseUnitsPerCent = 10_000n;
+const maxTokenAmount = (1n << 64n) - 1n;
 const devnetGenesis = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 const mainnetGenesis = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 const testnetGenesis = "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY";
@@ -25,7 +26,7 @@ export interface DebitReceipt {
 
 export type LedgerError =
   | {
-      readonly code: "unsafe-ledger-network" | "invalid-notional" | "debit-preparation-failed" | "debit-rejected" | "balance-failed" | "ledger-not-configured";
+      readonly code: "notional-overflow" | "unsafe-ledger-network" | "invalid-notional" | "debit-preparation-failed" | "debit-rejected" | "balance-failed" | "ledger-not-configured";
     }
   | { readonly code: "debit-unconfirmed"; readonly signature: string };
 
@@ -119,6 +120,8 @@ export async function createSolanaLedger(config: LedgerConfig): Promise<Configur
       if (!Number.isSafeInteger(notional) || notional <= 0) {
         return { ok: false, error: { code: "invalid-notional" } };
       }
+      const amount = BigInt(notional) * baseUnitsPerCent;
+      if (amount > maxTokenAmount) return { ok: false, error: { code: "notional-overflow" } };
       if (!memo.startsWith(`${intentId}|`) || !memo.endsWith(`|${String(notional)}`)) {
         return { ok: false, error: { code: "debit-preparation-failed" } };
       }
@@ -134,7 +137,7 @@ export async function createSolanaLedger(config: LedgerConfig): Promise<Configur
           blockhash: block.blockhash,
           lastValidBlockHeight: block.lastValidBlockHeight,
         }).add(
-          createTransferCheckedInstruction(source, mint, destination, authority.publicKey, BigInt(notional) * baseUnitsPerCent, usdcDecimals),
+          createTransferCheckedInstruction(source, mint, destination, authority.publicKey, amount, usdcDecimals),
           new TransactionInstruction({ programId: memoProgram, keys: [], data: Buffer.from(memo, "utf8") }),
         );
         transaction.sign(authority);
