@@ -1,4 +1,4 @@
-const SERVER_ONLY_FEATURES = /^@\/features\/(ledger|execution|markets)(\/|$)/u;
+const SERVER_ONLY_FEATURES = /^@\/features\/(ledger|execution|markets|desk)(\/|$)/u;
 
 export const noServerImportsInClient = {
   meta: {

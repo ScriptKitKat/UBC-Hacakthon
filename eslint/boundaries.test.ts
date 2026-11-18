@@ -42,6 +42,11 @@ describe("project lint rules", () => {
     expect(ids).toContain("local/no-server-imports-in-client");
   });
 
+  it("rejects the desk feature in client components", async () => {
+    const ids = await ruleIds('"use client";\nimport { x } from "@/features/desk";\n', "src/app/c.tsx");
+    expect(ids).toContain("local/no-server-imports-in-client");
+  });
+
   it("allows server features in server components", async () => {
     const ids = await ruleIds('import { x } from "@/features/ledger";\n', "src/app/s.tsx");
     expect(ids).toEqual([]);

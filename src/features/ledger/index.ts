@@ -20,12 +20,26 @@ export interface DebitReceipt {
 }
 
 export type LedgerError =
-  | { readonly code: "invalid-notional" | "debit-preparation-failed" | "debit-rejected" | "balance-failed" }
+  | {
+      readonly code: "invalid-notional" | "debit-preparation-failed" | "debit-rejected" | "balance-failed" | "ledger-not-configured";
+    }
   | { readonly code: "debit-unconfirmed"; readonly signature: string };
 
 export interface UsdcLedger {
   debit(intentId: string, notional: UsdCents, memo: string): Promise<Result<DebitReceipt, LedgerError>>;
   balance(): Promise<Result<{ baseUnits: bigint }, LedgerError>>;
+}
+
+export interface ConfiguredLedger extends UsdcLedger {
+  readonly authority: string;
+}
+
+export function createUnconfiguredLedger(): UsdcLedger {
+  const notConfigured = { ok: false, error: { code: "ledger-not-configured" } } as const;
+  return {
+    debit: () => Promise.resolve(notConfigured),
+    balance: () => Promise.resolve(notConfigured),
+  };
 }
 
 export type LedgerNetwork =
@@ -46,7 +60,7 @@ export function explorerUrl(signature: string, network: LedgerNetwork): string {
   return url.href;
 }
 
-export async function createSolanaLedger(config: LedgerConfig): Promise<UsdcLedger> {
+export async function createSolanaLedger(config: LedgerConfig): Promise<ConfiguredLedger> {
   const keypairPath = config.keypairPath ?? process.env.SOLANA_KEYPAIR_PATH;
   if (!keypairPath) throw new Error("SOLANA_KEYPAIR_PATH is required");
   const authority = await loadKeypair(keypairPath);
@@ -57,6 +71,7 @@ export async function createSolanaLedger(config: LedgerConfig): Promise<UsdcLedg
   if (source.equals(destination)) throw new Error("Ledger recipient must differ from the authority");
 
   return {
+    authority: authority.publicKey.toBase58(),
     async balance() {
       try {
         const { value } = await connection.getTokenAccountBalance(source, commitment);
