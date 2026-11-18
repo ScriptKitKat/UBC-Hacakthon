@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { SYSTEM_PROMPT, buildAgentConfig, clientToolConfigs } from "./agent-config";
+import type { AgentConfig, EnglishTtsModel } from "./elevenlabs-types";
 import { createClientTools } from "./client-tools";
 import { VOICE_TOOL_NAMES } from "./tools";
 import type { VoiceToolName } from "./tools";
@@ -53,5 +54,11 @@ describe("agent config", () => {
     expect(SYSTEM_PROMPT).toContain("verbatim");
     expect(SYSTEM_PROMPT).toContain("Never invent prices");
     for (const name of VOICE_TOOL_NAMES) expect(SYSTEM_PROMPT + JSON.stringify(clientToolConfigs)).toContain(name);
+  });
+
+  it("only allows tts models that English agents accept", () => {
+    expectTypeOf<AgentConfig["conversation_config"]["tts"]["model_id"]>().toEqualTypeOf<EnglishTtsModel>();
+    expectTypeOf<AgentConfig["conversation_config"]["agent"]["language"]>().toEqualTypeOf<"en">();
+    expect(buildAgentConfig([]).conversation_config.tts.model_id).toBe("eleven_flash_v2");
   });
 });

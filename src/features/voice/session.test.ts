@@ -30,7 +30,7 @@ describe("openVoiceSession", () => {
     const admin = createFakeElevenLabsAdmin();
     const created = await admin.createAgent({
       name: "n",
-      conversation_config: { agent: { first_message: "", language: "en", prompt: { prompt: "", llm: "gpt-4.1", temperature: 0, tool_ids: [] } }, tts: { model_id: "eleven_flash_v2_5", voice_id: "v" } },
+      conversation_config: { agent: { first_message: "", language: "en", prompt: { prompt: "", llm: "gpt-4.1", temperature: 0, tool_ids: [] } }, tts: { model_id: "eleven_flash_v2", voice_id: "v" } },
     });
     if (!created.ok) throw new Error("create failed");
     const env = loadVoiceEnv({ ELEVENLABS_API_KEY: "secret-key", ELEVENLABS_AGENT_ID: created.value.agentId });

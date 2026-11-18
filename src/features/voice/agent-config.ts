@@ -76,7 +76,7 @@ export function buildAgentConfig(toolIds: readonly string[], voiceId: string = D
         language: "en",
         prompt: { prompt: SYSTEM_PROMPT, llm: "gpt-4.1", temperature: 0.2, tool_ids: toolIds },
       },
-      tts: { model_id: "eleven_flash_v2_5", voice_id: voiceId },
+      tts: { model_id: "eleven_flash_v2", voice_id: voiceId },
     },
   };
 }

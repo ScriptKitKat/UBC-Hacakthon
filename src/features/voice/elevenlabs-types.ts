@@ -19,6 +19,8 @@ export interface ClientToolConfig {
   readonly parameters?: ToolParameters;
 }
 
+export type EnglishTtsModel = "eleven_flash_v2" | "eleven_turbo_v2";
+
 export interface AgentConfig {
   readonly name: string;
   readonly conversation_config: {
@@ -33,7 +35,7 @@ export interface AgentConfig {
       };
     };
     readonly tts: {
-      readonly model_id: "eleven_flash_v2_5";
+      readonly model_id: EnglishTtsModel;
       readonly voice_id: string;
     };
   };
@@ -46,5 +48,5 @@ export interface ToolSummary {
 
 export type AdminError =
   | { readonly kind: "network" }
-  | { readonly kind: "http"; readonly status: number }
+  | { readonly kind: "http"; readonly status: number; readonly message?: string }
   | { readonly kind: "parse" };
