@@ -1,0 +1,472 @@
+{
+ "data": [
+  {
+   "id": "474644",
+   "title": "BTC price on November 18",
+   "slug": "btc-price-on-november-18",
+   "type": "categorical",
+   "category": "Crypto",
+   "ticker": "BTC2611182200",
+   "status": "active",
+   "createdAt": "2026-11-17T20:56:58.080Z",
+   "contracts": [
+    {
+     "id": "474644-1192810",
+     "label": "$63,000 or above",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.85",
+       "no": "0.2"
+      },
+      "sell": {
+       "yes": "0.8",
+       "no": "0.15"
+      },
+      "bestBid": "0.8",
+      "bestAsk": "0.85",
+      "lastTradePrice": "0.83"
+     },
+     "status": "active",
+     "createdAt": "2026-11-17T20:56:58.080Z",
+     "termsAndConditionsUrl": "https://assets.gemini.com/predictions/terms_and_conditions/btc_398860b3-ea2f-47a7-b167-a8c6ad03d6d7.pdf",
+     "ticker": "HI63000",
+     "instrumentSymbol": "GEMI-BTC2611182200-HI63000",
+     "marketState": "open",
+     "abbreviatedName": ">$63,000",
+     "color": "#4CAF50",
+     "expiryDate": "2026-11-18T22:00:00.000Z",
+     "effectiveDate": "2026-11-17T21:00:00.000Z",
+     "sortOrder": 0,
+     "strike": {
+      "type": "above",
+      "value": "63000"
+     },
+     "source": "LS-LRRR-XBTUSD",
+     "isCombo": false,
+     "quantityIncrement": "0.01",
+     "quantityMinimum": "0.01",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    },
+    {
+     "id": "474644-1192813",
+     "label": "$63,250 or above",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.81",
+       "no": "0.24"
+      },
+      "sell": {
+       "yes": "0.76",
+       "no": "0.19"
+      },
+      "bestBid": "0.76",
+      "bestAsk": "0.81",
+      "lastTradePrice": "0.81"
+     },
+     "status": "active",
+     "createdAt": "2026-11-17T20:56:58.080Z",
+     "termsAndConditionsUrl": "https://assets.gemini.com/predictions/terms_and_conditions/btc_398860b3-ea2f-47a7-b167-a8c6ad03d6d7.pdf",
+     "ticker": "HI63250",
+     "instrumentSymbol": "GEMI-BTC2611182200-HI63250",
+     "marketState": "open",
+     "abbreviatedName": ">$63,250",
+     "color": "#4CAF50",
+     "expiryDate": "2026-11-18T22:00:00.000Z",
+     "effectiveDate": "2026-11-17T21:00:00.000Z",
+     "sortOrder": 1,
+     "strike": {
+      "type": "above",
+      "value": "63250"
+     },
+     "source": "LS-LRRR-XBTUSD",
+     "isCombo": false,
+     "quantityIncrement": "0.01",
+     "quantityMinimum": "0.01",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    },
+    {
+     "id": "474644-1192816",
+     "label": "$63,500 or above",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.74",
+       "no": "0.3"
+      },
+      "sell": {
+       "yes": "0.7",
+       "no": "0.26"
+      },
+      "bestBid": "0.7",
+      "bestAsk": "0.74",
+      "lastTradePrice": "0.79"
+     },
+     "status": "active",
+     "createdAt": "2026-11-17T20:56:58.080Z",
+     "termsAndConditionsUrl": "https://assets.gemini.com/predictions/terms_and_conditions/btc_398860b3-ea2f-47a7-b167-a8c6ad03d6d7.pdf",
+     "ticker": "HI63500",
+     "instrumentSymbol": "GEMI-BTC2611182200-HI63500",
+     "marketState": "open",
+     "abbreviatedName": ">$63,500",
+     "color": "#4CAF50",
+     "expiryDate": "2026-11-18T22:00:00.000Z",
+     "effectiveDate": "2026-11-17T21:00:00.000Z",
+     "sortOrder": 2,
+     "strike": {
+      "type": "above",
+      "value": "63500"
+     },
+     "source": "LS-LRRR-XBTUSD",
+     "isCombo": false,
+     "quantityIncrement": "0.01",
+     "quantityMinimum": "0.01",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    },
+    {
+     "id": "474644-1192818",
+     "label": "$63,750 or above",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.71",
+       "no": "0.34"
+      },
+      "sell": {
+       "yes": "0.66",
+       "no": "0.29"
+      },
+      "bestBid": "0.66",
+      "bestAsk": "0.71",
+      "lastTradePrice": "0.79"
+     },
+     "status": "active",
+     "createdAt": "2026-11-17T20:56:58.080Z",
+     "termsAndConditionsUrl": "https://assets.gemini.com/predictions/terms_and_conditions/btc_398860b3-ea2f-47a7-b167-a8c6ad03d6d7.pdf",
+     "ticker": "HI63750",
+     "instrumentSymbol": "GEMI-BTC2611182200-HI63750",
+     "marketState": "open",
+     "abbreviatedName": ">$63,750",
+     "color": "#4CAF50",
+     "expiryDate": "2026-11-18T22:00:00.000Z",
+     "effectiveDate": "2026-11-17T21:00:00.000Z",
+     "sortOrder": 3,
+     "strike": {
+      "type": "above",
+      "value": "63750"
+     },
+     "source": "LS-LRRR-XBTUSD",
+     "isCombo": false,
+     "quantityIncrement": "0.01",
+     "quantityMinimum": "0.01",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    }
+   ],
+   "effectiveDate": "2026-11-17T20:56:58.080Z",
+   "isLive": true,
+   "participants": [],
+   "description": "Interval BTC price prediction event expiring on November 18, 2026 at 5pm ET",
+   "imageUrl": "https://assets.gemini.com/predictions/images/btc_ace6c0f4-f500-4b7d-a66c-a3ea5ea1d9e9.avif",
+   "series": "BTC1H",
+   "volume": "16694.04",
+   "volume24h": "16694.04",
+   "tags": [
+    "Bitcoin"
+   ],
+   "expiryDate": "2026-11-18T22:00:00.000Z",
+   "startTime": "2026-11-17T21:00:00.000Z",
+   "termsLink": "https://assets.gemini.com/predictions/terms_and_conditions/btc_398860b3-ea2f-47a7-b167-a8c6ad03d6d7.pdf",
+   "subcategory": {
+    "id": 32,
+    "slug": "crypto_bitcoin",
+    "name": "Bitcoin",
+    "path": [
+     "Crypto",
+     "Bitcoin"
+    ]
+   },
+   "socialImageUrl": "https://assets.gemini.com/predictions/images/btc_29510bf2-83f3-4d5e-beec-2d09f473347c.png",
+   "template": "prices-ladder",
+   "eventTags": [
+    {
+     "id": 14,
+     "name": "Daily",
+     "slug": "daily"
+    },
+    {
+     "id": 18,
+     "name": "Reference",
+     "slug": "reference"
+    }
+   ],
+   "source": "LS-LRRR-XBTUSD",
+   "sourceDetails": {
+    "agency": "lukka",
+    "index": "LS-LRRR-XBTUSD"
+   },
+   "volumeDelta24hPct": "0"
+  },
+  {
+   "id": "472099",
+   "title": "Mississippi State vs UCF: Point Spread",
+   "slug": "mississippi-state-vs-ucf-point-spread",
+   "type": "categorical",
+   "category": "Sports",
+   "ticker": "NCAAM-2611180000-MSST-UCF-S",
+   "status": "active",
+   "createdAt": "2026-11-17T01:08:38.119Z",
+   "contracts": [
+    {
+     "id": "472099-1182610",
+     "label": "Mississippi State wins by more than 1.5 points",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.68",
+       "no": "0.35"
+      },
+      "sell": {
+       "yes": "0.65",
+       "no": "0.32"
+      },
+      "bestBid": "0.65",
+      "bestAsk": "0.68",
+      "lastTradePrice": "0.51"
+     },
+     "status": "active",
+     "createdAt": "2026-11-17T01:08:38.119Z",
+     "termsAndConditionsUrl": "https://assets.gemini.com/predictions/terms_and_conditions/Terms_and_Conditions_NCAA_MB_Margin_Classdocx_0e17934c-24ae-4b91-99e3-4c46d7d5d741.pdf",
+     "ticker": "MSST1",
+     "instrumentSymbol": "GEMI-NCAAM-2611180000-MSST-UCF-S-MSST1",
+     "marketState": "open",
+     "abbreviatedName": "Mississippi State",
+     "color": "#0f9ee7",
+     "imageUrl": "https://assets.gemini.com/predictions/images/MississippiState_fd484570-e9e7-42c1-a90c-70d4d0fcbd47.png",
+     "expiryDate": "2026-11-20T00:00:00.000Z",
+     "effectiveDate": "2026-11-15T00:00:07.000Z",
+     "sortOrder": 12,
+     "strike": {
+      "type": "spread",
+      "value": "1.5"
+     },
+     "isCombo": false,
+     "quantityIncrement": "0.01",
+     "quantityMinimum": "0.01",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    },
+    {
+     "id": "472099-1182605",
+     "label": "UCF wins by more than 5.5 points",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.53"
+      },
+      "sell": {
+       "no": "0.47"
+      },
+      "bestAsk": "0.53"
+     },
+     "status": "active",
+     "createdAt": "2026-11-17T01:08:38.119Z",
+     "termsAndConditionsUrl": "https://assets.gemini.com/predictions/terms_and_conditions/Terms_and_Conditions_NCAA_MB_Margin_Classdocx_0e17934c-24ae-4b91-99e3-4c46d7d5d741.pdf",
+     "ticker": "UCF5",
+     "instrumentSymbol": "GEMI-NCAAM-2611180000-MSST-UCF-S-UCF5",
+     "marketState": "open",
+     "abbreviatedName": "UCF",
+     "color": "#0f9ee7",
+     "imageUrl": "https://assets.gemini.com/predictions/images/UCF_a6d155e8-cbe7-4779-9cc7-f79b444b1cda.png",
+     "expiryDate": "2026-11-20T00:00:00.000Z",
+     "effectiveDate": "2026-11-15T00:00:07.000Z",
+     "sortOrder": 7,
+     "strike": {
+      "type": "spread",
+      "value": "5.5"
+     },
+     "isCombo": false,
+     "quantityIncrement": "0.01",
+     "quantityMinimum": "0.01",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    },
+    {
+     "id": "472099-1182606",
+     "label": "UCF wins by more than 4.5 points",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.51"
+      },
+      "sell": {
+       "no": "0.49"
+      },
+      "bestAsk": "0.51"
+     },
+     "status": "active",
+     "createdAt": "2026-11-17T01:08:38.119Z",
+     "termsAndConditionsUrl": "https://assets.gemini.com/predictions/terms_and_conditions/Terms_and_Conditions_NCAA_MB_Margin_Classdocx_0e17934c-24ae-4b91-99e3-4c46d7d5d741.pdf",
+     "ticker": "UCF4",
+     "instrumentSymbol": "GEMI-NCAAM-2611180000-MSST-UCF-S-UCF4",
+     "marketState": "open",
+     "abbreviatedName": "UCF",
+     "color": "#0f9ee7",
+     "imageUrl": "https://assets.gemini.com/predictions/images/UCF_a6d155e8-cbe7-4779-9cc7-f79b444b1cda.png",
+     "expiryDate": "2026-11-20T00:00:00.000Z",
+     "effectiveDate": "2026-11-15T00:00:07.000Z",
+     "sortOrder": 8,
+     "strike": {
+      "type": "spread",
+      "value": "4.5"
+     },
+     "isCombo": false,
+     "quantityIncrement": "0.01",
+     "quantityMinimum": "0.01",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    },
+    {
+     "id": "472099-1182611",
+     "label": "Mississippi State wins by more than 4.5 points",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.51",
+       "no": "0.52"
+      },
+      "sell": {
+       "yes": "0.48",
+       "no": "0.49"
+      },
+      "bestBid": "0.48",
+      "bestAsk": "0.51"
+     },
+     "status": "active",
+     "createdAt": "2026-11-17T01:08:38.119Z",
+     "termsAndConditionsUrl": "https://assets.gemini.com/predictions/terms_and_conditions/Terms_and_Conditions_NCAA_MB_Margin_Classdocx_0e17934c-24ae-4b91-99e3-4c46d7d5d741.pdf",
+     "ticker": "MSST4",
+     "instrumentSymbol": "GEMI-NCAAM-2611180000-MSST-UCF-S-MSST4",
+     "marketState": "open",
+     "abbreviatedName": "Mississippi State",
+     "color": "#0f9ee7",
+     "imageUrl": "https://assets.gemini.com/predictions/images/MississippiState_fd484570-e9e7-42c1-a90c-70d4d0fcbd47.png",
+     "expiryDate": "2026-11-20T00:00:00.000Z",
+     "effectiveDate": "2026-11-15T00:00:07.000Z",
+     "sortOrder": 13,
+     "strike": {
+      "type": "spread",
+      "value": "4.5"
+     },
+     "isCombo": false,
+     "quantityIncrement": "0.01",
+     "quantityMinimum": "0.01",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    }
+   ],
+   "effectiveDate": "2026-11-17T01:08:38.119Z",
+   "isLive": true,
+   "participants": [
+    {
+     "id": "812",
+     "name": "UCF Knights",
+     "abbreviation": "UCF",
+     "side": "home"
+    },
+    {
+     "id": "697",
+     "name": "Mississippi State Bulldogs",
+     "abbreviation": "MSST",
+     "side": "away"
+    }
+   ],
+   "description": "What will the point difference be?",
+   "imageUrl": "https://assets.gemini.com/predictions/images/bb_f53a7e9b-c0fc-4a5c-a011-d0bf655f8263.avif",
+   "volume": "6405",
+   "volume24h": "6405",
+   "tags": [
+    "College Basketball"
+   ],
+   "expiryDate": "2026-11-20T00:00:00.000Z",
+   "startTime": "2026-11-18T00:00:00.000Z",
+   "termsLink": "https://assets.gemini.com/predictions/terms_and_conditions/Terms_and_Conditions_NCAA_MB_Margin_Classdocx_0e17934c-24ae-4b91-99e3-4c46d7d5d741.pdf",
+   "subcategory": {
+    "id": 15,
+    "slug": "sports_basketball_college-basketball",
+    "name": "College Basketball",
+    "path": [
+     "Sports",
+     "Basketball",
+     "College Basketball"
+    ]
+   },
+   "socialImageUrl": "https://assets.gemini.com/predictions/images/Card_Carousel__40__b3388226-c9ca-43be-9611-88185341baf0.png",
+   "template": "sports-spread",
+   "gameId": "247208c8-a2bb-4597-822a-9dbd52393e6c",
+   "sourceDetails": {
+    "agency": "statscore-rest-api",
+    "index": "Basketball"
+   },
+   "volumeDelta24hPct": "0",
+   "sportsMarket": {
+    "sport": "basketball",
+    "type": "spread",
+    "subject": "team",
+    "scope": {
+     "type": "full_contest"
+    },
+    "metric": "points"
+   }
+  }
+ ],
+ "pagination": {
+  "limit": 50,
+  "offset": 0,
+  "total": 1003
+ }
+}

@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run lint && npm run test"
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "smoke:gemini": "node scripts/gemini-smoke.mjs"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.15",
