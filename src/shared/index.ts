@@ -12,3 +12,4 @@ export type {
   PolicyView,
   TicketView,
 } from "./desk";
+export type { XBotStatusView, XMessageRole, XMessageView, XOutcomeView, XThreadView } from "./xbot";
