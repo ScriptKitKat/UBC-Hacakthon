@@ -1,30 +1,60 @@
-import { createMint, getMint, getOrCreateAssociatedTokenAccount } from "@solana/spl-token";
-import { Connection, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import { createAssociatedTokenAccountInstruction, getAssociatedTokenAddressSync, getMint } from "@solana/spl-token";
+import { Connection, LAMPORTS_PER_SOL, PublicKey, sendAndConfirmTransaction, Transaction } from "@solana/web3.js";
 import { loadKeypair } from "../src/features/ledger/keypair.ts";
 
-async function setup() {
-  const [authority, recipient] = await Promise.all([
-    loadKeypair("~/.config/news-to-trade-desk/devnet-authority.json"),
-    loadKeypair("~/.config/news-to-trade-desk/devnet-vault-recipient.json"),
-  ]);
-  const connection = new Connection(process.env.SOLANA_DEVNET_RPC_URL ?? "https://api.devnet.solana.com", "confirmed");
-  process.stdout.write(`Authority: ${authority.publicKey.toBase58()}\nRecipient: ${recipient.publicKey.toBase58()}\n`);
-  const lamports = await connection.getBalance(authority.publicKey);
-  process.stdout.write(`Devnet SOL balance: ${lamports / LAMPORTS_PER_SOL} SOL\n`);
-  if (lamports === 0) return;
+const configDirectory = join(homedir(), ".config", "news-to-trade-desk");
+const rpcUrl = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
+const devnetGenesis = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
+const circleDevnetMint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+const decimals = 6;
 
-  const mint = process.env.USDC_MINT
-    ? new PublicKey(process.env.USDC_MINT)
-    : await createMint(connection, authority, authority.publicKey, null, 6);
-  if ((await getMint(connection, mint, "confirmed")).decimals !== 6) throw new Error("Invalid mint decimals");
-  const source = await getOrCreateAssociatedTokenAccount(connection, authority, mint, authority.publicKey);
-  const destination = await getOrCreateAssociatedTokenAccount(connection, authority, mint, recipient.publicKey);
-  process.stdout.write(`Mint: ${mint.toBase58()}\nAuthority ATA: ${source.address.toBase58()}\nRecipient ATA: ${destination.address.toBase58()}\n`);
+async function tokenBalance(connection, account) {
+  try {
+    return (await connection.getTokenAccountBalance(account, "confirmed")).value.uiAmountString;
+  } catch {
+    return "no token account";
+  }
+}
+
+async function setup() {
+  const connection = new Connection(rpcUrl, "confirmed");
+  if ((await connection.getGenesisHash()) !== devnetGenesis) throw new Error("RPC endpoint is not Solana devnet");
+  const [authority, recipient] = await Promise.all([
+    loadKeypair(join(configDirectory, "devnet-authority.json")),
+    loadKeypair(join(configDirectory, "devnet-vault-recipient.json")),
+  ]);
+  const mint = new PublicKey(process.env.USDC_MINT ?? circleDevnetMint);
+  if ((await getMint(connection, mint, "confirmed")).decimals !== decimals) throw new Error("Invalid mint decimals");
+  const source = getAssociatedTokenAddressSync(mint, authority.publicKey);
+  const destination = getAssociatedTokenAddressSync(mint, recipient.publicKey);
+  const lamports = await connection.getBalance(authority.publicKey, "confirmed");
+  if (lamports === 0) throw new Error("Authority has no devnet SOL");
+
+  const lines = [
+    `Authority: ${authority.publicKey.toBase58()}`,
+    `Recipient: ${recipient.publicKey.toBase58()}`,
+    `Mint: ${mint.toBase58()}`,
+    `Authority ATA: ${source.toBase58()}`,
+    `Recipient ATA: ${destination.toBase58()}`,
+    `Authority SOL: ${lamports / LAMPORTS_PER_SOL}`,
+    `Authority USDC: ${await tokenBalance(connection, source)}`,
+  ];
+  if (await connection.getAccountInfo(destination, "confirmed")) {
+    lines.push("Recipient ATA: already exists");
+  } else {
+    const instruction = createAssociatedTokenAccountInstruction(authority.publicKey, destination, recipient.publicKey, mint);
+    const signature = await sendAndConfirmTransaction(connection, new Transaction().add(instruction), [authority], { commitment: "confirmed" });
+    lines.push(`Recipient ATA: created by authority, signature ${signature}`);
+  }
+  lines.push(`Recipient USDC: ${await tokenBalance(connection, destination)}`);
+  process.stdout.write(`${lines.join("\n")}\n`);
 }
 
 try {
   await setup();
-} catch {
-  process.stderr.write("Devnet ledger setup failed.\n");
+} catch (error) {
+  process.stderr.write(`Devnet ledger setup failed: ${error instanceof Error ? error.message : "unknown error"}\n`);
   process.exitCode = 1;
 }

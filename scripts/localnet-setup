@@ -66,7 +66,9 @@ async function setup() {
     `Authority test USDC: ${balance.value.uiAmountString}`,
     "",
     "Add to .env.local:",
+    "SOLANA_CLUSTER=localnet",
     `SOLANA_RPC_URL=${rpcUrl}`,
+    `SOLANA_KEYPAIR_PATH=${join(configDirectory, "devnet-authority.json")}`,
     `USDC_MINT=${mint.toBase58()}`,
     `VAULT_RECIPIENT=${recipient.publicKey.toBase58()}`,
   ];
