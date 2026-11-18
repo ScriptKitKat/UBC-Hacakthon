@@ -94,3 +94,29 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   .controls { grid-template-columns: 1fr 1fr; }
   .logRow { grid-template-columns: 1fr; gap: 6px; }
 }
+
+.xHeader { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.xHeader .panelTitle { margin: 0; }
+.xBadgeFake, .xBadgeLive { font-size: 15px; font-weight: 700; padding: 6px 14px; border-radius: 999px; }
+.xBadgeFake { background: #3a2c0b; color: var(--amber); border: 1px solid var(--amber); }
+.xBadgeLive { background: #12351f; color: var(--green); border: 1px solid var(--green); }
+.xThreads { display: flex; flex-direction: column; gap: 24px; margin-top: 24px; }
+.xThread { border: 1px solid var(--border); border-radius: 12px; padding: 18px 22px; display: flex; flex-direction: column; gap: 12px; }
+.xMessages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.xMessage { border-left: 4px solid var(--border); padding: 6px 0 6px 16px; }
+.xMessage[data-role="news"] { border-left-color: var(--accent); }
+.xMessage[data-role="bot"] { border-left-color: var(--green); margin-left: 24px; }
+.xMessage[data-role="user"] { border-left-color: var(--amber); margin-left: 48px; }
+.xMessage[data-kind="refuse"], .xMessage[data-kind="execution-failed"] { border-left-color: var(--red); }
+.xMessageHead { display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--muted); font-size: 16px; margin: 0 0 4px; }
+.xAuthor { font-weight: 700; color: var(--text); }
+.xText { margin: 0; font-size: 19px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+.xProof { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; }
+.xProof a { color: var(--accent); }
+.xError { color: var(--amber); }
+.xReplyForm { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+.xNewsForm { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+
+@media (max-width: 1000px) {
+  .xReplyForm, .xNewsForm { grid-template-columns: 1fr; }
+}

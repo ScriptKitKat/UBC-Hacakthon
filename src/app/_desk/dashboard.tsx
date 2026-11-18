@@ -11,6 +11,7 @@ import { TradePanel } from "./trade-panel";
 import type { BetRequest } from "./trade-panel";
 import { usePolling } from "./use-polling";
 import { VoicePanel } from "./voice-panel";
+import { XThreadPanel } from "./x-thread-panel";
 import styles from "./desk.module.css";
 
 const POLL_INTERVAL_MS = 4000;
@@ -103,6 +104,7 @@ export function Dashboard() {
           }}
         />
       </div>
+      <XThreadPanel senders={snapshot.policy.senderAllowlist} />
       <LogPanel log={snapshot.log} />
     </div>
   );
