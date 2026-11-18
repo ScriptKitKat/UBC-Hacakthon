@@ -1,0 +1,81 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { createMint, getAssociatedTokenAddressSync, getMint, getOrCreateAssociatedTokenAccount, mintTo } from "@solana/spl-token";
+import { Connection, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+import { loadKeypair } from "../src/features/ledger/keypair.ts";
+
+const configDirectory = join(homedir(), ".config", "news-to-trade-desk");
+const stateFile = join(configDirectory, "localnet.json");
+const rpcUrl = process.env.SOLANA_RPC_URL ?? "http://127.0.0.1:8899";
+const decimals = 6;
+const targetBaseUnits = 20n * 10n ** BigInt(decimals);
+const minimumLamports = 2 * LAMPORTS_PER_SOL;
+const airdropLamports = 5 * LAMPORTS_PER_SOL;
+
+async function recordedMint() {
+  try {
+    const state = JSON.parse(await readFile(stateFile, "utf8"));
+    return state.rpcUrl === rpcUrl ? new PublicKey(state.mint) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function usableMint(connection, candidate) {
+  if (!candidate) return undefined;
+  try {
+    return (await getMint(connection, candidate, "confirmed")).decimals === decimals ? candidate : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function fundAuthority(connection, authority) {
+  if ((await connection.getBalance(authority.publicKey)) >= minimumLamports) return;
+  const signature = await connection.requestAirdrop(authority.publicKey, airdropLamports);
+  const latest = await connection.getLatestBlockhash("confirmed");
+  await connection.confirmTransaction({ signature, ...latest }, "confirmed");
+}
+
+async function setup() {
+  const [authority, recipient] = await Promise.all([
+    loadKeypair(join(configDirectory, "devnet-authority.json")),
+    loadKeypair(join(configDirectory, "devnet-vault-recipient.json")),
+  ]);
+  const connection = new Connection(rpcUrl, "confirmed");
+  await fundAuthority(connection, authority);
+
+  const existing = await usableMint(connection, await recordedMint());
+  const mint = existing ?? (await createMint(connection, authority, authority.publicKey, null, decimals));
+  await mkdir(configDirectory, { recursive: true });
+  await writeFile(stateFile, `${JSON.stringify({ rpcUrl, mint: mint.toBase58() }, null, 2)}\n`);
+
+  const source = await getOrCreateAssociatedTokenAccount(connection, authority, mint, authority.publicKey);
+  const destination = await getOrCreateAssociatedTokenAccount(connection, authority, mint, recipient.publicKey);
+  const shortfall = targetBaseUnits - source.amount;
+  if (shortfall > 0n) await mintTo(connection, authority, mint, source.address, authority, shortfall);
+  const balance = await connection.getTokenAccountBalance(getAssociatedTokenAddressSync(mint, authority.publicKey), "confirmed");
+
+  const lines = [
+    `Authority: ${authority.publicKey.toBase58()}`,
+    `Recipient: ${recipient.publicKey.toBase58()}`,
+    `Mint: ${mint.toBase58()} (${existing ? "reused" : "created"})`,
+    `Authority ATA: ${source.address.toBase58()}`,
+    `Recipient ATA: ${destination.address.toBase58()}`,
+    `Authority test USDC: ${balance.value.uiAmountString}`,
+    "",
+    "Add to .env.local:",
+    `SOLANA_RPC_URL=${rpcUrl}`,
+    `USDC_MINT=${mint.toBase58()}`,
+    `VAULT_RECIPIENT=${recipient.publicKey.toBase58()}`,
+  ];
+  process.stdout.write(`${lines.join("\n")}\n`);
+}
+
+try {
+  await setup();
+} catch (error) {
+  process.stderr.write(`Localnet setup failed: ${error instanceof Error ? error.message : "unknown error"}\n`);
+  process.exitCode = 1;
+}

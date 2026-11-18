@@ -13,7 +13,8 @@
     "check": "npm run typecheck && npm run lint && npm run test",
     "smoke:gemini": "node scripts/gemini-smoke.mjs",
     "test:integration": "vitest run --config src/features/ledger/vitest.integration.config.ts",
-    "ledger:devnet-setup": "node scripts/ledger-devnet-setup"
+    "ledger:devnet-setup": "node scripts/ledger-devnet-setup",
+    "setup:localnet": "node scripts/localnet-setup"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.15",
