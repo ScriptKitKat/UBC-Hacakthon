@@ -110,7 +110,7 @@ function fakeDesk(script: DeskScript = {}) {
   );
   const desk: Desk = {
     submitNews, proposeTrade, confirmPending, getSnapshot, setKillSwitch: vi.fn(),
-    matchPost: vi.fn(), quote: vi.fn(), buyFromFeed: vi.fn(), confirmFromFeed: vi.fn(),
+    matchPost: vi.fn(), isCardFor: vi.fn(), quote: vi.fn(), buyFromFeed: vi.fn(), confirmFromFeed: vi.fn(),
   };
   return { desk, proposeTrade, confirmPending, submitNews };
 }

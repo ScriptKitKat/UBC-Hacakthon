@@ -11,6 +11,8 @@ export interface PolicyConfig {
   readonly killSwitch: boolean;
 }
 
+export const MAX_PRICE_SLIPPAGE_CENTS = 2;
+
 export const DEFAULT_MARKET_CATEGORIES: readonly string[] = ["Economics", "Politics", "Tech", "Culture", "Crypto", "Commodities"];
 
 function categoryKey(category: string): string {
@@ -80,7 +82,7 @@ interface PolicyMarket {
 }
 
 export type RefusalCode = "kill-switch" | "unauthorized-sender" | "market-category-not-allowed"
-  | "market-closed" | "zero-notional" | "over-per-trade-cap" | "over-daily-cap" | "duplicate-intent";
+  | "market-closed" | "price-moved" | "zero-notional" | "over-per-trade-cap" | "over-daily-cap" | "duplicate-intent";
 
 type Refusal = {
   readonly kind: "refuse";
@@ -140,13 +142,23 @@ function dollars(cents: UsdCents): string {
     : `$${String(amount / 100n)}.${String(amount % 100n).padStart(2, "0")}`;
 }
 
-function refusalReason(code: RefusalCode, notional: UsdCents, policy: Policy, remaining: UsdCents, category: string | undefined): string {
+interface RefusalFacts {
+  readonly notional: UsdCents;
+  readonly remaining: UsdCents;
+  readonly category: string | undefined;
+  readonly seenPriceCents: number | undefined;
+  readonly livePriceCents: number | undefined;
+}
+
+function refusalReason(code: RefusalCode, policy: Policy, facts: RefusalFacts): string {
+  const { notional, remaining, category, seenPriceCents, livePriceCents } = facts;
   switch (code) {
     case "kill-switch": return "Trading is paused.";
     case "unauthorized-sender": return "This account isn't authorized to approve or request trades.";
     case "duplicate-intent": return "I've already approved this trade.";
     case "market-category-not-allowed": return `${category?.trim() || "These"} markets are outside the desk's news-trading policy.`;
     case "market-closed": return "This market isn't open for trading.";
+    case "price-moved": return `The price moved from ${String(seenPriceCents)}¢ to ${String(livePriceCents)}¢ since you saw it, so I did not place the trade.`;
     case "zero-notional": return "The trade amount must be greater than $0.";
     case "over-per-trade-cap": return `A ${dollars(notional)} trade exceeds the ${dollars(policy.perTradeMax)} limit per trade.`;
     case "over-daily-cap": return `A ${dollars(notional)} trade would exceed today's ${dollars(policy.dailyCap)} cap, with ${dollars(remaining)} left.`;
@@ -158,7 +170,7 @@ function refusalReason(code: RefusalCode, notional: UsdCents, policy: Policy, re
 }
 
 function findRefusal(
-  trade: Pick<TradeIntent, "intentId" | "instrumentSymbol" | "notional">,
+  trade: Pick<TradeIntent, "intentId" | "instrumentSymbol" | "notional" | "seenPriceCents">,
   actorId: string,
   policy: Policy,
   state: PolicyState,
@@ -172,6 +184,7 @@ function findRefusal(
     || market.status !== "active" || market.marketState !== "open"
     || !Number.isInteger(market.limitPrice) || market.limitPrice <= 0 || market.limitPrice > 100) return "market-closed";
   if (!policy.allowsMarket(trade.instrumentSymbol, market.category)) return "market-category-not-allowed";
+  if (trade.seenPriceCents !== undefined && market.limitPrice - trade.seenPriceCents > MAX_PRICE_SLIPPAGE_CENTS) return "price-moved";
   if (trade.notional === 0) return "zero-notional";
   if (trade.notional > policy.perTradeMax) return "over-per-trade-cap";
   if (trade.notional > remaining) return "over-daily-cap";
@@ -183,17 +196,30 @@ function remainingToday(policy: Policy, state: PolicyState): UsdCents {
 }
 
 function refusal(
-  trade: Pick<TradeIntent, "intentId" | "notional">,
+  trade: Pick<TradeIntent, "intentId" | "notional" | "seenPriceCents">,
   code: RefusalCode,
   policy: Policy,
   remaining: UsdCents,
   market: PolicyMarket | undefined,
 ): Refusal {
-  return { kind: "refuse", intentId: trade.intentId, code, spokenReason: refusalReason(code, trade.notional, policy, remaining, market?.category) };
+  return { kind: "refuse", intentId: trade.intentId, code, spokenReason: refusalReason(code, policy, {
+      notional: trade.notional,
+      remaining,
+      category: market?.category,
+      seenPriceCents: trade.seenPriceCents,
+      livePriceCents: market?.limitPrice,
+    }),
+  };
 }
 
 export function marketPolicyRefusal(policy: Policy, symbol: InstrumentSymbol, category: string): string | undefined {
-  return policy.allowsMarket(symbol, category) ? undefined : refusalReason("market-category-not-allowed", usdCents(0), policy, usdCents(0), category);
+  return policy.allowsMarket(symbol, category) ? undefined : refusalReason("market-category-not-allowed", policy, {
+    notional: usdCents(0),
+    remaining: usdCents(0),
+    category,
+    seenPriceCents: undefined,
+    livePriceCents: undefined,
+  });
 }
 
 export function evaluate(intent: TradeIntent, market: PolicyMarket | undefined, policy: Policy, state: PolicyState, now: Date): Decision {

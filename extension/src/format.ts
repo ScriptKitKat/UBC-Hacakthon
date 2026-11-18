@@ -6,6 +6,13 @@ export function formatPercent(percent: number | null): string {
   return percent === null ? "—" : `${String(Math.round(percent))}%`;
 }
 
+export function formatChangePercent(from: number, to: number): string | null {
+  if (from <= 0) return null;
+  const change = Math.round(((to - from) / from) * 1000) / 10;
+  if (change === 0) return "0%";
+  return `${change > 0 ? "+" : "−"}${String(Math.abs(change))}%`;
+}
+
 export function formatDollars(cents: number): string {
   const whole = Math.floor(cents / 100);
   const rest = cents % 100;

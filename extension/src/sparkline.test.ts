@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { buildSparkline } from "./sparkline";
 
 describe("buildSparkline", () => {
-  it("needs at least three points", () => {
+  it("needs at least three distinct points", () => {
     expect(buildSparkline([50, 52], 100, 40)).toBeUndefined();
     expect(buildSparkline([], 100, 40)).toBeUndefined();
+    expect(buildSparkline([50, 50, 50], 100, 40)).toBeUndefined();
+    expect(buildSparkline([50, 52, 50, 52], 100, 40)).toBeUndefined();
   });
 
   it("draws a rising line from bottom-left to top-right", () => {
@@ -15,15 +17,13 @@ describe("buildSparkline", () => {
     expect(sparkline?.area.endsWith("Z")).toBe(true);
   });
 
-  it("reports falling and flat trends and keeps flat series centred", () => {
+  it("reports falling and flat-ended trends", () => {
     expect(buildSparkline([60, 55, 50], 100, 40)?.trend).toBe("down");
-    const flat = buildSparkline([50, 50, 50], 100, 40);
-    expect(flat?.trend).toBe("flat");
-    expect(flat?.line).toBe("M2 20 L50 20 L98 20");
+    expect(buildSparkline([50, 60, 55, 50], 100, 40)?.trend).toBe("flat");
   });
 
   it("does not exaggerate tiny moves", () => {
-    const sparkline = buildSparkline([50, 50, 51], 100, 40);
+    const sparkline = buildSparkline([50, 49, 51], 100, 40);
     expect(sparkline?.end.y).toBeGreaterThan(8);
   });
 });

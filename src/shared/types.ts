@@ -30,4 +30,5 @@ export interface TradeIntent {
   readonly source: TradeSource;
   readonly senderId: string;
   readonly createdAt: Date;
+  readonly seenPriceCents?: number;
 }

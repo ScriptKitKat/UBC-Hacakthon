@@ -18,7 +18,7 @@ function round(value: number): string {
 export function buildSparkline(values: readonly number[], width: number, height: number): Sparkline | undefined {
   const first = values[0];
   const last = values.at(-1);
-  if (values.length < MIN_SPARKLINE_POINTS || first === undefined || last === undefined) return undefined;
+  if (new Set(values).size < MIN_SPARKLINE_POINTS || first === undefined || last === undefined) return undefined;
   const low = Math.min(...values);
   const high = Math.max(...values);
   const range = Math.max(high - low, MIN_RANGE_CENTS);

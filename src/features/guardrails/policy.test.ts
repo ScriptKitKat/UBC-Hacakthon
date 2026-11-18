@@ -27,6 +27,23 @@ function validated(input: PolicyConfig = config) {
 
 const policy = validated();
 
+describe("price moved guardrail", () => {
+  it("refuses only when the live price is more than 2 cents above the price seen", () => {
+    const live = { ...market, limitPrice: usdCents(60) };
+    expect(evaluate({ ...intent, seenPriceCents: 58 }, live, policy, state, now).kind).toBe("approve");
+    expect(evaluate({ ...intent, seenPriceCents: 70 }, live, policy, state, now).kind).toBe("approve");
+    expect(evaluate({ ...intent, seenPriceCents: 57 }, live, policy, state, now)).toMatchObject({
+      kind: "refuse",
+      code: "price-moved",
+      spokenReason: "The price moved from 57¢ to 60¢ since you saw it, so I did not place the trade.",
+    });
+  });
+
+  it("does not apply when the caller saw no price", () => {
+    expect(evaluate(intent, { ...market, limitPrice: usdCents(99) }, policy, state, now).kind).toBe("approve");
+  });
+});
+
 describe("trade policy", () => {
   it("validates ordered, safe cent caps", () => {
     expect(createPolicy(config).ok).toBe(true);

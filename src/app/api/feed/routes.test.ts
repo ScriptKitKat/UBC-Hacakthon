@@ -23,20 +23,26 @@ const matchPost = vi.fn<Desk["matchPost"]>();
 const deskQuote = vi.fn<Desk["quote"]>();
 const buyFromFeed = vi.fn<Desk["buyFromFeed"]>();
 const confirmFromFeed = vi.fn<Desk["confirmFromFeed"]>();
-const stubDesk = { matchPost, quote: deskQuote, buyFromFeed, confirmFromFeed } as unknown as Desk;
+const isCardFor = vi.fn<Desk["isCardFor"]>();
+const stubDesk = { matchPost, isCardFor, quote: deskQuote, buyFromFeed, confirmFromFeed } as unknown as Desk;
+
+const API_TOKEN = "api-token";
+const CLIENT_ORDER_ID = "8f14e45f-ceea-467f-a0e6-1d0b6f1c6a2e";
 
 const post = (url: string, body: unknown, headers: Record<string, string> = {}) =>
   new Request(url, {
     method: "POST",
-    headers: { "content-type": "application/json", ...headers },
+    headers: { "content-type": "application/json", authorization: `Bearer ${API_TOKEN}`, ...headers },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 
-const validBuy = { postId: "p1", instrumentSymbol: "GEMI-FED-HOLD", outcome: "yes", amountCents: 100 };
+const validBuy = { postId: "p1", instrumentSymbol: "GEMI-FED-HOLD", outcome: "yes", amountCents: 100, clientOrderId: CLIENT_ORDER_ID };
 
 beforeEach(() => {
   vi.unstubAllEnvs();
   vi.stubEnv("FEED_EXTENSION_ORIGINS", "");
+  vi.stubEnv("FEED_API_TOKEN", API_TOKEN);
+  isCardFor.mockReset().mockResolvedValue(true);
   matchPost.mockReset().mockResolvedValue(matched);
   deskQuote.mockReset();
   buyFromFeed.mockReset().mockResolvedValue(entry);
@@ -50,7 +56,7 @@ describe("feed cors", () => {
     expect(response.status).toBe(204);
     expect(response.headers.get("access-control-allow-origin")).toBe(EXTENSION);
     expect(response.headers.get("access-control-allow-methods")).toContain("POST");
-    expect(response.headers.get("access-control-allow-headers")).toBe("content-type");
+    expect(response.headers.get("access-control-allow-headers")).toBe("content-type, authorization");
     expect(response.headers.get("vary")).toBe("Origin");
   });
 
@@ -101,6 +107,54 @@ describe("feed cors", () => {
   });
 });
 
+describe("feed trading auth", () => {
+  const unauthenticated = (url: string, body: unknown, authorization?: string) =>
+    new Request(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(authorization === undefined ? {} : { authorization }) },
+      body: JSON.stringify(body),
+    });
+
+  it.each([
+    ["buy", buy, validBuy],
+    ["confirm", confirm, { intentId: "i1" }],
+  ])("requires the bearer token on %s", async (_name, handler, body) => {
+    expect((await handler(unauthenticated("http://desk.test", body))).status).toBe(401);
+    expect((await handler(unauthenticated("http://desk.test", body, "Bearer wrong"))).status).toBe(401);
+    expect((await handler(unauthenticated("http://desk.test", body, API_TOKEN))).status).toBe(401);
+    expect(buyFromFeed).not.toHaveBeenCalled();
+    expect(confirmFromFeed).not.toHaveBeenCalled();
+    expect((await handler(unauthenticated("http://desk.test", body, `Bearer ${API_TOKEN}`))).status).toBe(200);
+  });
+
+  it.each([
+    ["buy", buy, validBuy],
+    ["confirm", confirm, { intentId: "i1" }],
+  ])("disables %s with 503 when FEED_API_TOKEN is unset", async (_name, handler, body) => {
+    vi.stubEnv("FEED_API_TOKEN", "");
+    const response = await handler(post("http://desk.test", body));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "feed-trading-disabled" });
+    expect(buyFromFeed).not.toHaveBeenCalled();
+    expect(confirmFromFeed).not.toHaveBeenCalled();
+  });
+
+  it("leaves match, quote and prewarm open without the api token", async () => {
+    vi.stubEnv("FEED_API_TOKEN", "");
+    expect((await match(unauthenticated("http://desk.test", { postId: "p1", text: "Fed holds rates" }))).status).toBe(200);
+    deskQuote.mockResolvedValueOnce(undefined);
+    expect((await quote(new Request("http://desk.test/api/feed/quote?symbol=NOPE"))).status).toBe(404);
+    expect((await prewarm(unauthenticated("http://desk.test", { posts: [{ postId: "p1", text: "hello" }] }))).status).toBe(200);
+  });
+
+  it("keeps the prewarm token separate from the api token", async () => {
+    vi.stubEnv("FEED_PREWARM_TOKEN", "warm");
+    const body = { posts: [{ postId: "p1", text: "hello" }] };
+    expect((await prewarm(unauthenticated("http://desk.test", body, `Bearer ${API_TOKEN}`))).status).toBe(401);
+    expect((await prewarm(unauthenticated("http://desk.test", body, "Bearer warm"))).status).toBe(200);
+  });
+});
+
 describe("feed validation", () => {
   it.each([
     ["match without text", match, { postId: "p1", text: " " }],
@@ -109,6 +163,9 @@ describe("feed validation", () => {
     ["buy outcome", buy, { ...validBuy, outcome: "maybe" }],
     ["buy fractional cents", buy, { ...validBuy, amountCents: 1.5 }],
     ["buy zero", buy, { ...validBuy, amountCents: 0 }],
+    ["buy without clientOrderId", buy, { postId: "p1", instrumentSymbol: "GEMI-FED-HOLD", outcome: "yes", amountCents: 100 }],
+    ["buy with bad clientOrderId", buy, { ...validBuy, clientOrderId: "not-a-uuid" }],
+    ["buy with silly seen price", buy, { ...validBuy, seenPriceCents: 400 }],
     ["buy huge", buy, { ...validBuy, amountCents: 10_000_000 }],
     ["confirm", confirm, { intentId: "" }],
     ["malformed json", match, "{"],
@@ -150,7 +207,21 @@ describe("feed behaviour", () => {
   it("buys through the feed operator and never forwards client sender data", async () => {
     const response = await buy(post("http://desk.test", { ...validBuy, senderId: "attacker", source: "desk", notionalCents: 99999 }));
     expect(await response.json()).toEqual({ entry });
-    expect(buyFromFeed).toHaveBeenCalledWith({ instrumentSymbol: "GEMI-FED-HOLD", outcome: "yes", notionalCents: 100 });
+    expect(buyFromFeed).toHaveBeenCalledWith({ clientOrderId: CLIENT_ORDER_ID, instrumentSymbol: "GEMI-FED-HOLD", outcome: "yes", notionalCents: 100 });
+  });
+
+  it("forwards the price the card showed", async () => {
+    await buy(post("http://desk.test", { ...validBuy, seenPriceCents: 5 }));
+    expect(buyFromFeed).toHaveBeenCalledWith(expect.objectContaining({ seenPriceCents: 5 }));
+  });
+
+  it("binds buys to the cached match for the post", async () => {
+    isCardFor.mockResolvedValueOnce(false);
+    const response = await buy(post("http://desk.test", validBuy));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "no-matching-card" });
+    expect(isCardFor).toHaveBeenCalledWith("p1", "GEMI-FED-HOLD");
+    expect(buyFromFeed).not.toHaveBeenCalled();
   });
 
   it("confirms pending feed intents and reports unknown ones", async () => {

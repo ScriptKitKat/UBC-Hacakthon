@@ -25,10 +25,14 @@ export const CARD_CSS = `
 .title { font-weight: 700; color: rgb(231, 233, 234); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sub { color: rgb(113, 118, 123); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sub strong { color: rgb(231, 233, 234); font-weight: 700; }
-.pct { margin-left: 6px; font-weight: 700; }
-.pct[data-trend="up"] { color: rgb(0, 186, 124); }
-.pct[data-trend="down"] { color: rgb(249, 24, 128); }
-.pct[data-trend="flat"] { color: rgb(113, 118, 123); }
+.price-row { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; overflow: hidden; }
+.price-label { color: rgb(113, 118, 123); font-size: 13px; font-weight: 700; }
+.price { color: rgb(231, 233, 234); font-size: 28px; line-height: 32px; font-weight: 800; letter-spacing: -0.5px; }
+.change { font-size: 14px; font-weight: 700; }
+.change[data-trend="up"] { color: rgb(0, 186, 124); }
+.change[data-trend="down"] { color: rgb(249, 24, 128); }
+.change[data-trend="flat"] { color: rgb(113, 118, 123); }
+.no-price { margin-left: auto; color: rgb(113, 118, 123); font-size: 13px; }
 .chart { width: 112px; height: 40px; }
 .chart svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -48,7 +52,10 @@ export const CARD_CSS = `
   flex: none; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 700; line-height: 20px;
   background: rgb(239, 243, 244); color: rgb(15, 20, 25);
 }
-.badge[data-source="keywords"] { background: rgb(47, 51, 54); color: rgb(231, 233, 234); }
+.badge[data-source="keywords"] {
+  padding: 0 6px; font-size: 10px; font-weight: 500; line-height: 16px; margin-top: 2px;
+  background: transparent; border: 1px solid rgb(47, 51, 54); color: rgb(113, 118, 123);
+}
 .why-text { min-width: 0; }
 .trade { display: grid; gap: 8px; }
 .chips { display: flex; gap: 8px; }

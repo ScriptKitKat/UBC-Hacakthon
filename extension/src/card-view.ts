@@ -3,7 +3,7 @@ import type { CardAction, CardState } from "./card-state";
 import { CARD_CSS } from "./card-styles";
 import { h, svg } from "./dom";
 import type { Child } from "./dom";
-import { clampPercent, formatCents, formatDollars, formatPercent } from "./format";
+import { clampPercent, formatCents, formatChangePercent, formatDollars, formatPercent } from "./format";
 import { AMOUNT_CHOICES_CENTS } from "./protocol";
 import type { Sender } from "./protocol";
 import { buildSparkline } from "./sparkline";
@@ -29,6 +29,12 @@ function gemIcon(): SVGElement {
     svg("path", { attributes: { d: "M3 9h18M12 2.5 8.5 9 12 21.5 15.5 9z", fill: "none", stroke: "#1a6bff", "stroke-width": "1.2", "stroke-linejoin": "round" } }),
   );
   return gem;
+}
+
+function userOnly(handler: () => void): (event: Event) => void {
+  return (event) => {
+    if (event.isTrusted) handler();
+  };
 }
 
 function trendOf(state: CardState): Trend {
@@ -88,8 +94,17 @@ export function createCard(initial: WireMatched, send: Sender): CardHandle {
   async function buy(outcome: "yes" | "no"): Promise<void> {
     if (!canBuy(state)) return;
     const { amountCents, market } = state;
+    const seenPriceCents = outcome === "yes" ? market.yesCents : market.noCents;
     dispatch({ type: "buy-started" });
-    const reply = await send({ type: "buy", postId: state.match.postId, instrumentSymbol: market.instrumentSymbol, outcome, amountCents });
+    const reply = await send({
+      type: "buy",
+      postId: state.match.postId,
+      instrumentSymbol: market.instrumentSymbol,
+      outcome,
+      amountCents,
+      clientOrderId: crypto.randomUUID(),
+      ...(seenPriceCents === null ? {} : { seenPriceCents: Math.round(seenPriceCents) }),
+    });
     dispatch(reply.ok ? { type: "buy-settled", entry: reply.value } : { type: "buy-failed", message: reply.error });
   }
 
@@ -133,7 +148,7 @@ export function createCard(initial: WireMatched, send: Sender): CardHandle {
             className: "approve",
             text: approving ? "Approving…" : "Approve",
             attributes: { type: "button", "data-key": "approve", ...(approving ? { disabled: "" } : {}) },
-            on: { click: () => void approve() },
+            on: { click: userOnly(() => void approve()) },
           }),
         );
       }
@@ -166,7 +181,7 @@ export function createCard(initial: WireMatched, send: Sender): CardHandle {
           "aria-pressed": String(state.amountCents === cents),
           ...(isBusy(state) ? { disabled: "" } : {}),
         },
-        on: { click: () => { dispatch({ type: "amount-selected", amountCents: cents }); } },
+        on: { click: userOnly(() => { dispatch({ type: "amount-selected", amountCents: cents }); }) },
       }),
     );
     const buyButton = (outcome: "yes" | "no", price: number | null) =>
@@ -180,7 +195,7 @@ export function createCard(initial: WireMatched, send: Sender): CardHandle {
           "aria-label": `Buy ${outcome} for ${formatDollars(state.amountCents)} at ${formatCents(price)}`,
           ...(enabled ? {} : { disabled: "" }),
         },
-        on: { click: () => void buy(outcome) },
+        on: { click: userOnly(() => void buy(outcome)) },
       });
     return h(
       "div",
@@ -197,7 +212,7 @@ export function createCard(initial: WireMatched, send: Sender): CardHandle {
     const trend = trendOf(state);
     const first = state.history[0]?.yesCents;
     const last = state.history.at(-1)?.yesCents;
-    const delta = first !== undefined && last !== undefined && state.history.length > 1 ? last - first : null;
+    const change = first !== undefined && last !== undefined && state.history.length > 1 ? formatChangePercent(first, last) : null;
     const body = h(
       "div",
       { className: "body" },
@@ -212,10 +227,11 @@ export function createCard(initial: WireMatched, send: Sender): CardHandle {
           h("div", { className: "sub", text: `${market.contractLabel} · ${market.category}` }),
           h(
             "div",
-            { className: "sub" },
-            h("strong", { text: `YES ${formatCents(market.yesCents)}` }),
-            h("span", { className: "pct", text: formatPercent(market.impliedYesPercent ?? market.yesCents), attributes: { "data-trend": trend } }),
-            h("span", { text: ` · NO ${formatCents(market.noCents)}${delta === null || delta === 0 ? "" : ` · ${delta > 0 ? "+" : "−"}${String(Math.abs(delta))}¢`}` }),
+            { className: "price-row" },
+            h("span", { className: "price-label", text: "YES " }),
+            h("span", { className: "price", text: formatCents(market.yesCents) }),
+            change === null ? null : h("span", { className: "change", text: change, attributes: { "data-trend": trend } }),
+            h("span", { className: "no-price", text: `NO ${formatCents(market.noCents)}` }),
           ),
         ),
         h("div", { className: "chart" }, chartView(state)),

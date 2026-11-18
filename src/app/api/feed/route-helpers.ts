@@ -37,28 +37,56 @@ export function feedGet(request: Request, handler: (desk: Desk) => Promise<Respo
   return guarded(request, () => withDesk(handler));
 }
 
+function jsonPost<S extends z.ZodType>(
+  request: Request,
+  schema: S,
+  handler: (body: z.output<S>, desk: Desk) => Promise<Response>,
+): Promise<Response> {
+  return isJson(request)
+    ? withBody(request, schema, handler)
+    : Promise.resolve(Response.json({ error: "unsupported-media-type", issues: ["content-type must be application/json"] }, { status: 415 }));
+}
+
 export function feedPost<S extends z.ZodType>(
   request: Request,
   schema: S,
   handler: (body: z.output<S>, desk: Desk) => Promise<Response>,
 ): Promise<Response> {
-  return guarded(request, () =>
-    isJson(request)
-      ? withBody(request, schema, handler)
-      : Promise.resolve(Response.json({ error: "unsupported-media-type", issues: ["content-type must be application/json"] }, { status: 415 })),
-  );
+  return guarded(request, () => jsonPost(request, schema, handler));
+}
+
+export function feedTradingPost<S extends z.ZodType>(
+  request: Request,
+  schema: S,
+  handler: (body: z.output<S>, desk: Desk) => Promise<Response>,
+): Promise<Response> {
+  return guarded(request, async () => {
+    const token = configuredToken("FEED_API_TOKEN");
+    if (token === undefined) return Response.json({ error: "feed-trading-disabled" }, { status: 503 });
+    return isBearer(request, token) ? jsonPost(request, schema, handler) : unauthorized();
+  });
+}
+
+function unauthorized(): Response {
+  return Response.json({ error: "unauthorized" }, { status: 401 });
 }
 
 function digest(value: string): Buffer {
   return createHash("sha256").update(value).digest();
 }
 
-export function withPrewarmToken(request: Request, run: () => Promise<Response>): Promise<Response> {
-  const token = process.env.FEED_PREWARM_TOKEN?.trim();
-  if (token === undefined || token === "") return run();
+function configuredToken(name: "FEED_API_TOKEN" | "FEED_PREWARM_TOKEN"): string | undefined {
+  const token = process.env[name]?.trim();
+  return token === undefined || token === "" ? undefined : token;
+}
+
+function isBearer(request: Request, token: string): boolean {
   const presented = /^Bearer (.+)$/u.exec(request.headers.get("authorization") ?? "")?.[1] ?? "";
-  if (!timingSafeEqual(digest(presented), digest(token))) {
-    return Promise.resolve(Response.json({ error: "unauthorized" }, { status: 401 }));
-  }
-  return run();
+  return timingSafeEqual(digest(presented), digest(token));
+}
+
+export function withPrewarmToken(request: Request, run: () => Promise<Response>): Promise<Response> {
+  const token = configuredToken("FEED_PREWARM_TOKEN");
+  if (token === undefined) return run();
+  return isBearer(request, token) ? run() : Promise.resolve(unauthorized());
 }

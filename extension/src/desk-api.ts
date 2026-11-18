@@ -2,14 +2,29 @@ import type { BackgroundReply, BackgroundRequest, ReplyValues } from "./protocol
 import { entryResponseSchema, feedMatchSchema, feedQuoteSchema } from "./wire";
 import type { WireEntry } from "./wire";
 
+interface CallInit {
+  readonly method: "GET" | "POST";
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly body?: string;
+}
+
 interface Call {
   readonly path: string;
-  readonly init: RequestInit;
+  readonly init: CallInit;
   readonly parse: (body: unknown) => unknown;
+}
+
+export interface DeskTarget {
+  readonly url: string;
+  readonly token: string;
 }
 
 function post(path: string, body: unknown, parse: Call["parse"]): Call {
   return { path, parse, init: { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } };
+}
+
+function authorized(call: Call, token: string): Call {
+  return token === "" ? call : { ...call, init: { ...call.init, headers: { ...call.init.headers, authorization: `Bearer ${token}` } } };
 }
 
 function entryOf(body: unknown): WireEntry | undefined {
@@ -36,7 +51,14 @@ function callFor(request: BackgroundRequest): Call {
     case "buy":
       return post(
         "/api/feed/buy",
-        { postId: request.postId, instrumentSymbol: request.instrumentSymbol, outcome: request.outcome, amountCents: request.amountCents },
+        {
+          postId: request.postId,
+          instrumentSymbol: request.instrumentSymbol,
+          outcome: request.outcome,
+          amountCents: request.amountCents,
+          clientOrderId: request.clientOrderId,
+          seenPriceCents: request.seenPriceCents,
+        },
         entryOf,
       );
     case "confirm":
@@ -50,20 +72,23 @@ function callFor(request: BackgroundRequest): Call {
 
 function statusError(status: number): string {
   if (status === 503) return "The desk is not configured.";
+  if (status === 401) return "The desk rejected the desk token. Check the extension options.";
+  if (status === 409) return "This card is out of date. Refresh the page.";
   if (status === 403) return "The desk refused this extension.";
   if (status === 404) return "The desk no longer knows this market.";
   return `The desk returned an error (${String(status)}).`;
 }
 
 export async function callDesk<K extends BackgroundRequest["type"]>(
-  deskUrl: string,
+  desk: DeskTarget,
   request: Extract<BackgroundRequest, { type: K }>,
   fetchImpl: typeof fetch,
 ): Promise<BackgroundReply<ReplyValues[K]>> {
-  const call = callFor(request);
+  const base = callFor(request);
+  const call = request.type === "buy" || request.type === "confirm" ? authorized(base, desk.token) : base;
   let response: Response;
   try {
-    response = await fetchImpl(`${deskUrl.replace(/\/+$/u, "")}${call.path}`, call.init);
+    response = await fetchImpl(`${desk.url.replace(/\/+$/u, "")}${call.path}`, { ...call.init, redirect: "error" });
   } catch {
     return { ok: false, error: "Can't reach the desk. Is it running?" };
   }

@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { createGeminiMarketsClient } from "@/features/markets";
 import type { MarketEvent } from "@/features/markets";
 import snapshot from "./fixtures/active-snapshot.json";
-import { MAX_WHY_LENGTH, MIN_POST_SCORE, isIntradayEvent, matchPostToEvents, sportsSearchTerms } from "./index";
+import { MAX_WHY_LENGTH, MIN_POST_SCORE, isIntradayEvent, matchPostToEvents, sportsSearchTerms, trimWhy } from "./index";
 
 const NOW = new Date("2026-11-17T12:00:00Z");
 let events: readonly MarketEvent[] = [];
@@ -88,19 +88,69 @@ describe("headline to market table", () => {
     ["product name only", "Claude Code is down again for me"],
     ["generic inflation", "Inflation is so annoying at the grocery store"],
     ["empty-ish", "lol"],
+    ["lone fed word", "I am fed up with this traffic"],
+    ["gold medal", "She won the gold medal in Paris"],
+    ["generic exploit", "New browser vulnerability exploited in the wild"],
+    ["generic AI product news", "OpenAI launches a new ChatGPT feature"],
+    ["wall street journal", "The Wall Street Journal profiles a baker"],
   ])("gives no card for %s", (_name, text) => {
     expect(pick(text)).toBeUndefined();
   });
 });
 
 describe("why lines", () => {
-  it("reads specifically for jobs and Fed posts", () => {
-    expect(pick("Jobs report: payrolls beat as jobless claims fall")?.why).toBe("Jobs data feeds directly into the 2026 unemployment market.");
-    expect(pick("Powell says the Fed will hold rates steady")?.why).toBe("Fed commentary from Powell moves the December rate decision odds.");
+  it("reads like an analyst, using only market data", () => {
+    expect(pick("Jobs report: payrolls beat as jobless claims fall")?.why).toMatch(/^Jobs data is the driver here; ".+" for 2026 unemployment is priced at \d+%\.$/u);
+    expect(pick("Powell says the Fed will hold rates steady")?.why).toMatch(/^Powell's comments are why traders price "Fed maintains rate" at \d+% for December\.$/u);
   });
 
-  it("names both teams for a game", () => {
-    expect(pick("49ers vs Vikings on Sunday night")?.why).toBe("49ers and Vikings news moves the live Minnesota vs San Francisco moneyline.");
+  it("describes a game from both sides", () => {
+    expect(pick("49ers vs Vikings on Sunday night")?.why).toBe("Minnesota–San Francisco moneyline: San Francisco at 60% is the favorite.");
+  });
+
+  it("calls a near-even moneyline a toss-up", () => {
+    expect(pick("Knicks beat the Timberwolves in a thriller")?.why).toBe("New York–Minnesota is a toss-up on the moneyline: New York at 53%.");
+  });
+
+  it("trims at a word boundary", () => {
+    const trimmed = trimWhy(`${"word ".repeat(40)}end`);
+    expect(trimmed.length).toBeLessThanOrEqual(MAX_WHY_LENGTH);
+    expect(trimmed.endsWith("word…")).toBe(true);
+  });
+
+  it("never leaves a placeholder or double space in any why line", () => {
+    for (const [, text] of [...REAL_POSTS, ...SYNTHETIC_POSTS]) {
+      const why = pick(text)?.why ?? "";
+      expect(why).not.toMatch(/[{}]|\s{2}/u);
+    }
+  });
+});
+
+describe("games need both sides or one side plus a game cue", () => {
+  const CHIEFS_BILLS = "Chiefs beat the Bills 27-24 on a last-second field goal, Kansas City Chiefs move to 9-1 ahead of next week's rematch";
+
+  it("gives no card for Chiefs/Bills without an open Chiefs-Bills game", () => {
+    expect(pick(CHIEFS_BILLS)).toBeUndefined();
+  });
+
+  it("gives a card for Chiefs/Bills when that game is open", () => {
+    const arizona = events.find((event) => event.ticker === "NFL-2611221800-ARI-KC-M");
+    if (!arizona) throw new Error("fixture missing");
+    const chiefsBills: MarketEvent = { ...arizona, ticker: "NFL-2611221800-KC-BUF-M", title: "Kansas City vs Buffalo" };
+    expect(matchPostToEvents(CHIEFS_BILLS, [chiefsBills], NOW)?.event.ticker).toBe("NFL-2611221800-KC-BUF-M");
+  });
+
+  it("matches Vikings/49ers to MIN-SF", () => {
+    expect(pick("Vikings and 49ers meet Sunday night")?.event.ticker).toBe("NFL-2611230120-MIN-SF-M");
+  });
+
+  it("needs a nickname, not just two cities", () => {
+    expect(pick("Minnesota and San Francisco weather this weekend")).toBeUndefined();
+  });
+
+  it("accepts one nickname with an unambiguous game cue", () => {
+    expect(pick("Vikings kickoff tonight")?.event.ticker).toBe("NFL-2611230120-MIN-SF-M");
+    expect(pick("Chiefs fans are loud")).toBeUndefined();
   });
 });
 

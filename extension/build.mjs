@@ -1,11 +1,20 @@
 import { build } from "esbuild";
-import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { deflateSync, crc32 } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const dist = `${root}dist`;
 const ICON_SIZES = [16, 48, 128];
+const TOKEN_NAME = "FEED_API_TOKEN";
+
+async function defaultDeskToken() {
+  const fromEnv = process.env[TOKEN_NAME]?.trim();
+  if (fromEnv) return fromEnv;
+  const envFile = await readFile(`${root}../.env.local`, "utf8").catch(() => "");
+  const line = envFile.split(/\r?\n/u).find((entry) => entry.startsWith(`${TOKEN_NAME}=`));
+  return (line?.slice(TOKEN_NAME.length + 1).trim().replace(/^(["'])(.*)\1$/u, "$2")) ?? "";
+}
 
 function chunk(type, data) {
   const body = Buffer.concat([Buffer.from(type), data]);
@@ -51,10 +60,18 @@ function iconPng(size) {
 await rm(dist, { recursive: true, force: true });
 await mkdir(`${dist}/icons`, { recursive: true });
 
-const shared = { bundle: true, minify: true, target: "chrome120", logLevel: "info", tsconfig: `${root}tsconfig.json` };
+const shared = { define: { __DEFAULT_DESK_TOKEN__: JSON.stringify("") }, bundle: true, minify: true, target: "chrome120", logLevel: "info", tsconfig: `${root}tsconfig.json` };
 await build({ ...shared, entryPoints: [`${root}src/content.ts`], outfile: `${dist}/content.js`, format: "iife" });
 await build({ ...shared, entryPoints: [`${root}src/options.ts`], outfile: `${dist}/options.js`, format: "iife" });
-await build({ ...shared, entryPoints: [`${root}src/background.ts`], outfile: `${dist}/background.js`, format: "esm" });
+const deskToken = await defaultDeskToken();
+await build({
+  ...shared,
+  entryPoints: [`${root}src/background.ts`],
+  outfile: `${dist}/background.js`,
+  format: "esm",
+  define: { __DEFAULT_DESK_TOKEN__: JSON.stringify(deskToken) },
+});
+console.log(deskToken === "" ? "Desk token: none baked in (set it in the extension options)" : "Desk token: baked into dist/background.js");
 
 await copyFile(`${root}manifest.json`, `${dist}/manifest.json`);
 await copyFile(`${root}options.html`, `${dist}/options.html`);

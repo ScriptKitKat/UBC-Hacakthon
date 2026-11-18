@@ -266,8 +266,40 @@ describe("desk feed", () => {
       kind: "matched", postId: "post-1", matchedBy: "keywords",
       market: { eventTicker: "FED261211", category: "Economics", yesCents: 62, noCents: 40, impliedYesPercent: 62, tradeable: true },
     });
-    const entry = await desk.buyFromFeed({ instrumentSymbol: match.kind === "matched" ? match.market.instrumentSymbol : "", outcome: "yes", notionalCents: 100 });
+    const entry = await desk.buyFromFeed({ clientOrderId: "order-1", instrumentSymbol: match.kind === "matched" ? match.market.instrumentSymbol : "", outcome: "yes", notionalCents: 100 });
     expect(entry).toMatchObject({ kind: "approve", source: "feed", senderId: "priscilla" });
+  });
+
+  it("executes a repeated clientOrderId once and returns the recorded entry", async () => {
+    const { desk, debit } = setup();
+    await desk.matchPost(post);
+    const order = { clientOrderId: "order-dup", instrumentSymbol: "GEMI-FED261211-MAINTAIN", outcome: "yes", notionalCents: 100 } as const;
+    const [first, concurrent] = await Promise.all([desk.buyFromFeed(order), desk.buyFromFeed(order)]);
+    const later = await desk.buyFromFeed(order);
+    expect(concurrent).toBe(first);
+    expect(later).toBe(first);
+    expect(debit).toHaveBeenCalledTimes(1);
+    await desk.buyFromFeed({ ...order, clientOrderId: "order-other" });
+    expect(debit).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses a feed buy when the live price is more than 2 cents worse than the price seen", async () => {
+    const { desk, debit } = setup();
+    await desk.matchPost(post);
+    const order = { instrumentSymbol: "GEMI-FED261211-MAINTAIN", outcome: "yes", notionalCents: 100 } as const;
+    const moved = await desk.buyFromFeed({ ...order, clientOrderId: "order-moved", seenPriceCents: 59 });
+    expect(moved).toMatchObject({ kind: "refuse", code: "price-moved", spokenReason: "The price moved from 59¢ to 62¢ since you saw it, so I did not place the trade." });
+    expect(debit).not.toHaveBeenCalled();
+    expect(await desk.buyFromFeed({ ...order, clientOrderId: "order-ok", seenPriceCents: 60 })).toMatchObject({ kind: "approve" });
+  });
+
+  it("only treats a cached match as the card for its own post and contract", async () => {
+    const { desk } = setup();
+    expect(await desk.isCardFor("post-1", "GEMI-FED261211-MAINTAIN")).toBe(false);
+    await desk.matchPost(post);
+    expect(await desk.isCardFor("post-1", "GEMI-FED261211-MAINTAIN")).toBe(true);
+    expect(await desk.isCardFor("post-1", "GEMI-FED261211-CUT25")).toBe(false);
+    expect(await desk.isCardFor("other-post", "GEMI-FED261211-MAINTAIN")).toBe(false);
   });
 
   it("caches matches per post id", async () => {
@@ -301,7 +333,7 @@ describe("desk feed", () => {
       kind: "matched",
       market: { category: "Sports", tradeable: false, tradeBlockedReason: "Sports markets are outside the desk's news-trading policy." },
     });
-    const entry = await desk.buyFromFeed({ instrumentSymbol: "GEMI-NFL-KC", outcome: "yes", notionalCents: 100 });
+    const entry = await desk.buyFromFeed({ clientOrderId: "order-2", instrumentSymbol: "GEMI-NFL-KC", outcome: "yes", notionalCents: 100 });
     expect(entry).toMatchObject({
       kind: "refuse", code: "market-category-not-allowed", spokenReason: "Sports markets are outside the desk's news-trading policy.",
     });
@@ -321,7 +353,7 @@ describe("desk feed", () => {
   it("holds feed buys above the auto-approve limit for approval and confirms only feed intents as the operator", async () => {
     const { desk, debit } = setup();
     await desk.matchPost(post);
-    const waiting = await desk.buyFromFeed({ instrumentSymbol: "GEMI-FED261211-MAINTAIN", outcome: "no", notionalCents: 500 });
+    const waiting = await desk.buyFromFeed({ clientOrderId: "order-3", instrumentSymbol: "GEMI-FED261211-MAINTAIN", outcome: "no", notionalCents: 500 });
     expect(waiting).toMatchObject({ kind: "needs-approval", source: "feed" });
     expect(debit).not.toHaveBeenCalled();
     const confirmed = await desk.confirmFromFeed(waiting.intentId);

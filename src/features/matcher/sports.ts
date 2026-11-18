@@ -8,12 +8,15 @@ const SIDE_QUALIFIER = /\s[A-Z]$/u;
 const MAX_SEARCH_TERMS = 3;
 const NICKNAME_SCORE = 5;
 const CITY_SCORE = 3;
+const TOSS_UP_RANGE_CENTS = 5;
+const EVEN_ODDS_CENTS = 50;
+const GAME_CUE = /\b(tonight|kick-?off|moneyline|point spread|tip-?off|tips off|puck drop|game ?day|start time)\b/iu;
 
 interface SideMention {
   readonly side: string;
   readonly score: number;
   readonly position: number;
-  readonly hit: string;
+  readonly isNickname: boolean;
 }
 
 export interface GamePick {
@@ -21,7 +24,7 @@ export interface GamePick {
   readonly contract: MarketContract;
   readonly score: number;
   readonly position: number;
-  readonly hits: readonly string[];
+  readonly why: string;
 }
 
 function city(side: string): string {
@@ -43,19 +46,15 @@ export function sportsSearchTerms(text: string): readonly string[] {
   return [...new Set([...nicknames, ...cities])].slice(0, MAX_SEARCH_TERMS);
 }
 
-function titleCase(phrase: string): string {
-  return phrase.replace(/\b[a-z]/gu, (letter) => letter.toUpperCase());
-}
-
 function mentionOf(side: string, league: string, normalized: string): SideMention | undefined {
   const nickname = TEAMS.filter((team) => team.league === league && team.side === side)
     .flatMap((team) => team.aliases)
     .map((alias) => ({ alias, position: phrasePosition(normalized, alias) }))
     .filter((found) => found.position >= 0)
     .sort((a, b) => a.position - b.position)[0];
-  if (nickname) return { side, score: NICKNAME_SCORE, position: nickname.position, hit: titleCase(nickname.alias) };
+  if (nickname) return { side, score: NICKNAME_SCORE, position: nickname.position, isNickname: true };
   const position = phrasePosition(normalized, normalizePhrase(city(side)));
-  return position < 0 ? undefined : { side, score: CITY_SCORE, position, hit: city(side) };
+  return position < 0 ? undefined : { side, score: CITY_SCORE, position, isNickname: false };
 }
 
 function isOpen(contract: MarketContract): boolean {
@@ -66,6 +65,21 @@ function chooseContract(event: MarketEvent, mentions: readonly SideMention[]): M
   const open = event.contracts.filter(isOpen);
   const [first] = mentions;
   return open.find((contract) => contract.label === first?.side) ?? open.find((contract) => !/^tie$/iu.test(contract.label));
+}
+
+function isConfident(mentions: readonly SideMention[], text: string): boolean {
+  const hasNickname = mentions.some((mention) => mention.isNickname);
+  if (mentions.length === 2) return hasNickname;
+  return mentions.length === 1 && hasNickname && GAME_CUE.test(text);
+}
+
+function describeMoneyline(event: MarketEvent, contract: MarketContract): string {
+  const [first = "", second = ""] = event.title.split(" vs ").map(city);
+  const cents = contract.prices.buyYesCents ?? 0;
+  const side = `${city(contract.label)} at ${String(cents)}%`;
+  const game = `${first}–${second}`;
+  if (Math.abs(cents - EVEN_ODDS_CENTS) <= TOSS_UP_RANGE_CENTS) return `${game} is a toss-up on the moneyline: ${side}.`;
+  return cents > EVEN_ODDS_CENTS ? `${game} moneyline: ${side} is the favorite.` : `${game} moneyline: ${side} is the underdog.`;
 }
 
 export function matchGame(text: string, events: readonly MarketEvent[]): GamePick | undefined {
@@ -79,13 +93,13 @@ export function matchGame(text: string, events: readonly MarketEvent[]): GamePic
       .flatMap((side) => mentionOf(side, leagueOf(event), normalized) ?? [])
       .sort((a, b) => a.position - b.position);
     const contract = chooseContract(event, mentions);
-    if (mentions.length === 0 || !contract) continue;
+    if (!contract || !isConfident(mentions, text)) continue;
     picks.push({
       event,
       contract,
       score: mentions.reduce((total, mention) => total + mention.score, 0),
       position: Math.min(...mentions.map((mention) => mention.position)),
-      hits: mentions.map((mention) => mention.hit),
+      why: describeMoneyline(event, contract),
     });
   }
   return picks.sort((a, b) => b.score - a.score || a.position - b.position)[0];

@@ -47,7 +47,10 @@ export function isIntradayEvent(event: Pick<MarketEvent, "ticker" | "title">): b
 
 export function trimWhy(why: string): string {
   const plain = why.replace(/\s+/gu, " ").trim();
-  return plain.length <= MAX_WHY_LENGTH ? plain : `${plain.slice(0, MAX_WHY_LENGTH - 1).trimEnd()}…`;
+  if (plain.length <= MAX_WHY_LENGTH) return plain;
+  const room = plain.slice(0, MAX_WHY_LENGTH - 1);
+  const boundary = room.lastIndexOf(" ");
+  return `${(boundary > 0 ? room.slice(0, boundary) : room).replace(/[\s,;:–-]+$/u, "")}…`;
 }
 
 function isOpen(contract: MarketContract): boolean {
@@ -113,8 +116,12 @@ function numericContract(topic: Topic, contracts: readonly MarketContract[], tex
   return nearestEvenOdds(ranked.filter((entry) => entry.distance === nearest).map((entry) => entry.contract));
 }
 
-function sentence(template: string, hit: string, label: string): string {
-  const filled = template.replace("{hit}", hit.trim()).replace("{label}", label);
+function sentence(template: string, hit: string, contract: MarketContract, event: MarketEvent): string {
+  const filled = template
+    .replaceAll("{hit}", hit.trim())
+    .replaceAll("{label}", contract.label)
+    .replaceAll("{pct}", `${String(yesCents(contract))}%`)
+    .replaceAll("{title}", event.title.replace(/\?$/u, ""));
   return trimWhy(`${filled.charAt(0).toUpperCase()}${filled.slice(1)}`);
 }
 
@@ -139,8 +146,8 @@ function scoreTopicEvent(topic: Topic, event: MarketEvent, text: string, normali
   const lead = strongestCue(cues);
   const positions = [...cues.map((entry) => entry.position), ...(usableName ? [usableName.position] : [])];
   const why = lead
-    ? sentence(lead.cue.reason, lead.hit, contract.label)
-    : sentence(`${contract.label} news moves the odds in ${event.title.replace(/\?$/u, "")}.`, "", contract.label);
+    ? sentence(lead.cue.reason, lead.hit, contract, event)
+    : sentence("{label} is priced at {pct} in {title}.", "", contract, event);
   return {
     event,
     contract,
@@ -175,7 +182,7 @@ function gameCandidate(text: string, events: readonly MarketEvent[]): Candidate 
     contract: game.contract,
     score: game.score,
     position: game.position,
-    why: trimWhy(`${game.hits.join(" and ")} news moves the live ${game.event.title} moneyline.`),
+    why: game.why,
   };
 }
 

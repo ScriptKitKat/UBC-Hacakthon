@@ -1,5 +1,12 @@
 export const DEFAULT_DESK_URL = "http://localhost:3000";
 export const DESK_URL_KEY = "deskUrl";
+export const DESK_TOKEN_KEY = "deskToken";
+
+const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+export function isLocalHost(url: string): boolean {
+  return LOOPBACK_HOSTNAMES.has(new URL(url).hostname);
+}
 
 export function parseDeskUrl(text: string): string | undefined {
   let url: URL;
@@ -8,13 +15,12 @@ export function parseDeskUrl(text: string): string | undefined {
   } catch {
     return undefined;
   }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
-  return url.origin;
+  if (url.protocol === "https:") return url.origin;
+  return url.protocol === "http:" && isLocalHost(url.origin) ? url.origin : undefined;
 }
 
-export function isLocalHost(url: string): boolean {
-  const { hostname } = new URL(url);
-  return hostname === "localhost" || hostname === "127.0.0.1";
+export function resolveDeskToken(stored: unknown, bakedIn: string): string {
+  return typeof stored === "string" && stored.trim() !== "" ? stored.trim() : bakedIn;
 }
 
 export async function loadDeskUrl(): Promise<string> {
@@ -23,6 +29,15 @@ export async function loadDeskUrl(): Promise<string> {
   return (typeof value === "string" ? parseDeskUrl(value) : undefined) ?? DEFAULT_DESK_URL;
 }
 
+export async function loadDeskToken(): Promise<string> {
+  const stored = await chrome.storage.local.get({ [DESK_TOKEN_KEY]: "" });
+  return resolveDeskToken(stored[DESK_TOKEN_KEY], __DEFAULT_DESK_TOKEN__);
+}
+
 export async function saveDeskUrl(url: string): Promise<void> {
   await chrome.storage.sync.set({ [DESK_URL_KEY]: url });
+}
+
+export async function saveDeskToken(token: string): Promise<void> {
+  await chrome.storage.local.set({ [DESK_TOKEN_KEY]: token.trim() });
 }

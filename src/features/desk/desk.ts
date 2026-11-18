@@ -34,6 +34,7 @@ const LOG_LIMIT = 200;
 const HISTORY_LIMIT = 90;
 const MATCH_CACHE_LIMIT = 300;
 const MATCH_CACHE_TTL_MS = 10 * 60 * 1000;
+const ORDER_MEMORY_LIMIT = 500;
 
 type PendingTrade = Extract<Decision, { kind: "needs-approval" }>;
 
@@ -49,9 +50,11 @@ export interface DeskDeps {
 }
 
 export interface FeedBuyRequest {
+  readonly clientOrderId: string;
   readonly instrumentSymbol: string;
   readonly outcome: Outcome;
   readonly notionalCents: number;
+  readonly seenPriceCents?: number;
 }
 
 export interface ProposeRequest {
@@ -60,6 +63,7 @@ export interface ProposeRequest {
   readonly notionalCents: number;
   readonly source: TradeSource;
   readonly senderId: string;
+  readonly seenPriceCents?: number;
 }
 
 export type ConfirmResult =
@@ -69,6 +73,7 @@ export type ConfirmResult =
 export interface Desk {
   readonly submitNews: (news: NewsItem) => Promise<MatchView>;
   readonly matchPost: (post: PostInput) => Promise<FeedMatch>;
+  readonly isCardFor: (postId: string, symbol: string) => Promise<boolean>;
   readonly quote: (symbol: string) => Promise<FeedQuote | undefined>;
   readonly buyFromFeed: (request: FeedBuyRequest) => Promise<DecisionLogEntry>;
   readonly confirmFromFeed: (intentId: string) => Promise<ConfirmResult>;
@@ -210,6 +215,7 @@ export function createDesk(deps: DeskDeps): Desk {
   const tickers = new Map<InstrumentSymbol, string>();
   const priceHistory = new Map<InstrumentSymbol, PricePoint[]>();
   const matchCache = new Map<string, { readonly at: number; readonly match: Promise<FeedMatch> }>();
+  const feedOrders = new Map<string, Promise<DecisionLogEntry>>();
 
   function recordPrice(market: LiveMarket): void {
     const yesCents = market.contract.prices.buyYesCents;
@@ -365,6 +371,7 @@ export function createDesk(deps: DeskDeps): Desk {
       source: request.source,
       senderId: request.senderId,
       createdAt: now(),
+      ...(request.seenPriceCents === undefined ? {} : { seenPriceCents: request.seenPriceCents }),
     };
     const quote = quoteFor(await resolveMarket(symbol, true), intent.outcome);
     const decision = evaluate(intent, quote, policy, state, now());
@@ -415,14 +422,30 @@ export function createDesk(deps: DeskDeps): Desk {
 
     matchPost: cachedFeedMatch,
 
+    async isCardFor(postId, symbol) {
+      const hit = matchCache.get(postId);
+      if (!hit || now().getTime() - hit.at >= MATCH_CACHE_TTL_MS) return false;
+      const match = await hit.match.catch(() => undefined);
+      return match?.kind === "matched" && match.market.instrumentSymbol === symbol;
+    },
+
     async quote(symbol) {
       const market = await resolveMarket(instrumentSymbol(symbol));
       if (!market) return undefined;
       return { market: feedMarketView(market), history: [...(priceHistory.get(market.contract.instrumentSymbol) ?? [])] };
     },
 
-    buyFromFeed(request) {
-      return proposeTrade({ ...request, source: "feed", senderId: deps.feed.operatorId });
+    buyFromFeed({ clientOrderId, ...request }) {
+      const previous = feedOrders.get(clientOrderId);
+      if (previous) return previous;
+      const order = proposeTrade({ ...request, source: "feed", senderId: deps.feed.operatorId });
+      feedOrders.set(clientOrderId, order);
+      for (const oldest of feedOrders.keys()) {
+        if (feedOrders.size <= ORDER_MEMORY_LIMIT) break;
+        feedOrders.delete(oldest);
+      }
+      order.catch(() => feedOrders.delete(clientOrderId));
+      return order;
     },
 
     confirmFromFeed(intentId) {

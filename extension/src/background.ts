@@ -1,15 +1,20 @@
 import { callDesk } from "./desk-api";
 import { backgroundRequestSchema } from "./protocol";
-import { loadDeskUrl } from "./settings";
+import { isTrustedSender } from "./sender-guard";
+import { loadDeskToken, loadDeskUrl } from "./settings";
 
-chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse: (reply: unknown) => void) => {
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (reply: unknown) => void) => {
+  if (!isTrustedSender(sender, chrome.runtime.id)) {
+    sendResponse({ ok: false, error: "Unsupported request." });
+    return false;
+  }
   const request = backgroundRequestSchema.safeParse(message);
   if (!request.success) {
     sendResponse({ ok: false, error: "Unsupported request." });
     return false;
   }
-  void loadDeskUrl()
-    .then((deskUrl) => callDesk(deskUrl, request.data, (input, init) => fetch(input, init)))
+  void Promise.all([loadDeskUrl(), loadDeskToken()])
+    .then(([url, token]) => callDesk({ url, token }, request.data, (input, init) => fetch(input, init)))
     .then(sendResponse);
   return true;
 });

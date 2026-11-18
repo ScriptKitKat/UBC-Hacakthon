@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
+  define: { __DEFAULT_DESK_TOKEN__: JSON.stringify("") },
   test: {
     projects: [
       { extends: true, test: { name: "node", include: ["src/**/*.test.ts", "eslint/**/*.test.ts"] } },

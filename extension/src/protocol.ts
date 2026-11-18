@@ -18,6 +18,8 @@ export const backgroundRequestSchema = z.discriminatedUnion("type", [
     instrumentSymbol: z.string().min(1),
     outcome: z.enum(["yes", "no"]),
     amountCents: z.number().int().positive(),
+    clientOrderId: z.uuid(),
+    seenPriceCents: z.number().int().min(1).max(100).optional(),
   }),
   z.object({ type: z.literal("confirm"), intentId: z.string().min(1) }),
 ]);
