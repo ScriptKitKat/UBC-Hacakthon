@@ -26,7 +26,7 @@ export interface DebitReceipt {
 
 export type LedgerError =
   | {
-      readonly code: "notional-overflow" | "unsafe-ledger-network" | "invalid-notional" | "debit-preparation-failed" | "debit-rejected" | "balance-failed" | "ledger-not-configured";
+      readonly code: "notional-overflow" | "unsafe-ledger-network" | "invalid-notional" | "debit-preparation-failed" | "debit-rejected" | "balance-failed" | "ledger-not-configured" | "recipient-ata-missing";
     }
   | { readonly code: "debit-unconfirmed"; readonly signature: string };
 
@@ -130,6 +130,9 @@ export async function createSolanaLedger(config: LedgerConfig): Promise<Configur
       try {
         if (!await hasExpectedGenesis(network, connection)) {
           return { ok: false, error: { code: "unsafe-ledger-network" } };
+        }
+        if (await connection.getAccountInfo(destination, commitment) === null) {
+          return { ok: false, error: { code: "recipient-ata-missing" } };
         }
         const block = await connection.getLatestBlockhash(commitment);
         const transaction = new Transaction({

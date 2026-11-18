@@ -26,7 +26,10 @@ function fakeRpc(hash: string) {
   });
   const send = vi.spyOn(Connection.prototype, "sendRawTransaction").mockResolvedValue("signature");
   vi.spyOn(Connection.prototype, "confirmTransaction").mockResolvedValue({ context: { slot: 1 }, value: { err: null } });
-  return { genesis, block, send };
+  const account = vi.spyOn(Connection.prototype, "getAccountInfo").mockResolvedValue({
+    data: Buffer.alloc(0), executable: false, lamports: 1, owner: Keypair.generate().publicKey,
+  });
+  return { genesis, block, send, account };
 }
 
 beforeEach(() => vi.mocked(loadKeypair).mockResolvedValue(authority));
@@ -49,6 +52,22 @@ it("requires the devnet genesis hash on devnet", async () => {
     ok: false, error: { code: "unsafe-ledger-network" },
   });
   expect(rpc.block).not.toHaveBeenCalled();
+});
+
+it.each([devnet, localnet])("refuses to debit on $cluster when the recipient token account is missing", async (network) => {
+  const rpc = fakeRpc(network.cluster === "devnet" ? devnetGenesis : Keypair.generate().publicKey.toBase58());
+  rpc.account.mockResolvedValue(null);
+  const ledger = await createSolanaLedger({ ...config, network });
+  expect(await ledger.debit("trade", usdCents(200), "trade|SYMBOL|yes|200")).toEqual({
+    ok: false, error: { code: "recipient-ata-missing" },
+  });
+  expect(rpc.block).not.toHaveBeenCalled();
+  expect(rpc.send).not.toHaveBeenCalled();
+});
+
+it("links devnet transactions to the devnet explorer without a custom url", () => {
+  expect(explorerUrl("signature", { cluster: "devnet", rpcUrl: "https://api.devnet.solana.com" }))
+    .toBe("https://explorer.solana.com/tx/signature?cluster=devnet");
 });
 
 it("rejects a remote localnet endpoint even when its URL mentions localhost", async () => {

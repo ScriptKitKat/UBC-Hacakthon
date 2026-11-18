@@ -32,7 +32,7 @@ describe("loadDeskConfig", () => {
   });
 
   it("lists the missing ledger settings instead of failing", () => {
-    const result = loadDeskConfig({ ...base, SOLANA_RPC_URL: "http://127.0.0.1:8899" });
+    const result = loadDeskConfig({ ...base, SOLANA_CLUSTER: "localnet", SOLANA_RPC_URL: "http://127.0.0.1:8899" });
     expect(result).toMatchObject({
       ok: true,
       value: { ledger: { configured: false, missing: ["SOLANA_KEYPAIR_PATH", "VAULT_RECIPIENT", "USDC_MINT"] } },
@@ -43,11 +43,23 @@ describe("loadDeskConfig", () => {
     expect(loadDeskConfig({ ...base, USDC_MINT: "not-a-key" })).toMatchObject({ ok: false });
   });
 
-  it("detects a localnet cluster from the rpc url", () => {
+  it.each(["localnet", "devnet"] as const)("reads the %s cluster explicitly", (cluster) => {
     const key = "11111111111111111111111111111111";
     const result = loadDeskConfig({
-      ...base, SOLANA_RPC_URL: "http://127.0.0.1:8899", SOLANA_KEYPAIR_PATH: "/k.json", VAULT_RECIPIENT: key, USDC_MINT: key,
+      ...base, SOLANA_CLUSTER: cluster, SOLANA_RPC_URL: "http://127.0.0.1:8899", SOLANA_KEYPAIR_PATH: "/k.json", VAULT_RECIPIENT: key, USDC_MINT: key,
     });
-    expect(result).toMatchObject({ ok: true, value: { ledger: { configured: true, cluster: "localnet" } } });
+    expect(result).toMatchObject({ ok: true, value: { ledger: { configured: true, cluster } } });
+  });
+
+  it("requires the cluster to be named", () => {
+    const key = "11111111111111111111111111111111";
+    const result = loadDeskConfig({
+      ...base, SOLANA_RPC_URL: "https://api.devnet.solana.com", SOLANA_KEYPAIR_PATH: "/k.json", VAULT_RECIPIENT: key, USDC_MINT: key,
+    });
+    expect(result).toMatchObject({ ok: true, value: { ledger: { configured: false, missing: ["SOLANA_CLUSTER"] } } });
+  });
+
+  it("rejects an unknown cluster", () => {
+    expect(loadDeskConfig({ ...base, SOLANA_CLUSTER: "mainnet-beta" })).toMatchObject({ ok: false });
   });
 });

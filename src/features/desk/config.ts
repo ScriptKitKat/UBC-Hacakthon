@@ -2,7 +2,6 @@ import { PublicKey } from "@solana/web3.js";
 import { z } from "zod";
 import { createPolicy } from "@/features/guardrails";
 import type { Policy } from "@/features/guardrails";
-import { isLocalLedgerRpc } from "@/features/ledger";
 import { instrumentSymbol, usdCents } from "@/shared";
 
 const dollarAmount = z
@@ -32,6 +31,7 @@ const envSchema = z.object({
   MARKET_ALLOWLIST: commaList,
   SENDER_ALLOWLIST: commaList,
   GEMINI_API_BASE: z.url().default("https://api.gemini.com"),
+  SOLANA_CLUSTER: z.enum(["devnet", "localnet"]).optional(),
   SOLANA_RPC_URL: z.url().optional(),
   SOLANA_KEYPAIR_PATH: z.string().min(1).optional(),
   VAULT_RECIPIENT: publicKey.optional(),
@@ -62,15 +62,15 @@ export type DeskConfigResult =
   | { readonly ok: false; readonly issues: readonly string[] };
 
 function ledgerSettings(env: z.output<typeof envSchema>): LedgerSettings {
-  const { SOLANA_RPC_URL: rpcUrl, SOLANA_KEYPAIR_PATH: keypairPath, VAULT_RECIPIENT: recipient, USDC_MINT: mint } = env;
+  const { SOLANA_CLUSTER: cluster, SOLANA_RPC_URL: rpcUrl, SOLANA_KEYPAIR_PATH: keypairPath, VAULT_RECIPIENT: recipient, USDC_MINT: mint } = env;
   const missing = [
+    ["SOLANA_CLUSTER", cluster],
     ["SOLANA_RPC_URL", rpcUrl],
     ["SOLANA_KEYPAIR_PATH", keypairPath],
     ["VAULT_RECIPIENT", recipient],
     ["USDC_MINT", mint],
   ].flatMap(([name, value]) => (value === undefined ? [String(name)] : []));
-  if (!rpcUrl || !keypairPath || !recipient || !mint) return { configured: false, missing };
-  const cluster = isLocalLedgerRpc(rpcUrl) ? "localnet" : "devnet";
+  if (!cluster || !rpcUrl || !keypairPath || !recipient || !mint) return { configured: false, missing };
   const testMint = env.SOLANA_TEST_MINT ?? (cluster === "localnet" ? mint : undefined);
   return { configured: true, cluster, rpcUrl, keypairPath, recipient, mint, ...(testMint ? { testMint } : {}) };
 }
