@@ -47,6 +47,12 @@ describe("project lint rules", () => {
     expect(ids).toContain("local/no-server-imports-in-client");
   });
 
+  it("rejects raw useEffect in app code but allows the polling wrapper", async () => {
+    const code = 'import { useEffect } from "react";\nexport { useEffect };\n';
+    expect(await ruleIds(code, "src/app/c.tsx")).toContain("no-restricted-imports");
+    expect(await ruleIds(code, "src/app/_desk/use-polling.ts")).toEqual([]);
+  });
+
   it("allows server features in server components", async () => {
     const ids = await ruleIds('import { x } from "@/features/ledger";\n', "src/app/s.tsx");
     expect(ids).toEqual([]);

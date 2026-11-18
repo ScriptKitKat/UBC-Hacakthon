@@ -48,8 +48,24 @@ export const projectRules = [
     files: ["src/app/**/*.{ts,tsx}"],
     plugins: { local: localPlugin },
     rules: {
-      ...importBan([["@/features/*/**"]], "App may import only features' index.ts."),
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [{ group: ["@/features/*/**"], message: "App may import only features' index.ts." }],
+          paths: [
+            {
+              name: "react",
+              importNames: ["useEffect", "useLayoutEffect"],
+              message: "Use the usePolling wrapper instead of raw effects.",
+            },
+          ],
+        },
+      ],
       "local/no-server-imports-in-client": "error",
     },
+  },
+  {
+    files: ["src/app/**/use-polling.ts"],
+    rules: importBan([["@/features/*/**"]], "App may import only features' index.ts."),
   },
 ];
