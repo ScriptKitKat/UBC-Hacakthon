@@ -1,0 +1,27 @@
+.voicePanel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 24px 28px; }
+.voiceTitle { margin: 0 0 16px; font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.voiceWarning { color: var(--amber); font-size: 18px; margin: 0 0 16px; }
+.voiceBody { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 28px; align-items: start; }
+.micColumn { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.micIdle, .micLive { width: 140px; height: 140px; border-radius: 50%; font: inherit; font-size: 26px; font-weight: 700; cursor: pointer; border: 3px solid var(--accent); }
+.micIdle { background: transparent; color: var(--accent); }
+.micLive { background: var(--red); border-color: var(--red); color: #200505; }
+.voiceStatus { margin: 0; font-size: 20px; color: var(--muted); text-align: center; }
+.voiceStatus[data-speaking="true"] { color: var(--green); font-weight: 700; }
+.muteButton { font: inherit; font-size: 16px; padding: 8px 18px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer; }
+.transcript { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-height: 340px; overflow-y: auto; }
+.transcriptEmpty { color: var(--muted); font-size: 20px; }
+.line { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 12px; font-size: 19px; line-height: 1.4; word-break: break-word; }
+.line[data-kind="tool"] { display: flex; flex-direction: column; gap: 2px; padding-left: 12px; border-left: 3px solid var(--accent); }
+.line[data-kind="notice"] { color: var(--muted); }
+.speaker { font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding-top: 4px; }
+.line[data-kind="agent"] .speaker { color: var(--accent); }
+.toolCall { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; color: var(--accent); }
+.toolResult { font-size: 18px; }
+.toolResult[data-status="refused"], .toolResult[data-status="failed"], .toolResult[data-status="invalid-request"] { color: var(--red); }
+.toolResult[data-status="needs-approval"] { color: var(--amber); }
+.toolResult[data-status="placed"] { color: var(--green); }
+
+@media (max-width: 1000px) {
+  .voiceBody { grid-template-columns: minmax(0, 1fr); }
+}
