@@ -1,1 +1,13 @@
-export {};
+export { createXBot } from "./bot";
+export type { IngestResult, PollSummary, ReplyResult, XBot, XBotDeps } from "./bot";
+export { loadXConfig } from "./config";
+export type { XConfig, XCredentials } from "./config";
+export { createFakeXClient } from "./fake-client";
+export type { FakeXClient, PostedReply } from "./fake-client";
+export { createLiveXClient } from "./live-client";
+export type { LiveXClientOptions } from "./live-client";
+export { parseCommand } from "./parse-command";
+export type { XCommand } from "./parse-command";
+export { getXBot } from "./runtime";
+export type { XBotAccess } from "./runtime";
+export type { NewsPost, XClient, XError, XPost, XReply } from "./types";
