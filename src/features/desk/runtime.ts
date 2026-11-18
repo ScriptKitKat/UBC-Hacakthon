@@ -22,6 +22,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
       const configured = await createSolanaLedger({
         network: { cluster: settings.cluster, rpcUrl: settings.rpcUrl },
         mint: settings.mint,
+        ...(settings.testMint ? { testMint: settings.testMint } : {}),
         recipient: settings.recipient,
         keypairPath: settings.keypairPath,
       });

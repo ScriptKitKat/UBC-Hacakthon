@@ -2,6 +2,7 @@ import { PublicKey } from "@solana/web3.js";
 import { z } from "zod";
 import { createPolicy } from "@/features/guardrails";
 import type { PolicyConfig } from "@/features/guardrails";
+import { isLocalLedgerRpc } from "@/features/ledger";
 import { instrumentSymbol, usdCents } from "@/shared";
 
 const dollarAmount = z
@@ -35,6 +36,7 @@ const envSchema = z.object({
   SOLANA_KEYPAIR_PATH: z.string().min(1).optional(),
   VAULT_RECIPIENT: publicKey.optional(),
   USDC_MINT: publicKey.optional(),
+  SOLANA_TEST_MINT: publicKey.optional(),
 });
 
 export type LedgerSettings =
@@ -45,6 +47,7 @@ export type LedgerSettings =
       readonly keypairPath: string;
       readonly recipient: PublicKey;
       readonly mint: PublicKey;
+      readonly testMint?: PublicKey;
     }
   | { readonly configured: false; readonly missing: readonly string[] };
 
@@ -58,8 +61,6 @@ export type DeskConfigResult =
   | { readonly ok: true; readonly value: DeskConfig }
   | { readonly ok: false; readonly issues: readonly string[] };
 
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
-
 function ledgerSettings(env: z.output<typeof envSchema>): LedgerSettings {
   const { SOLANA_RPC_URL: rpcUrl, SOLANA_KEYPAIR_PATH: keypairPath, VAULT_RECIPIENT: recipient, USDC_MINT: mint } = env;
   const missing = [
@@ -69,8 +70,9 @@ function ledgerSettings(env: z.output<typeof envSchema>): LedgerSettings {
     ["USDC_MINT", mint],
   ].flatMap(([name, value]) => (value === undefined ? [String(name)] : []));
   if (!rpcUrl || !keypairPath || !recipient || !mint) return { configured: false, missing };
-  const cluster = LOCAL_HOSTS.has(new URL(rpcUrl).hostname) ? "localnet" : "devnet";
-  return { configured: true, cluster, rpcUrl, keypairPath, recipient, mint };
+  const cluster = isLocalLedgerRpc(rpcUrl) ? "localnet" : "devnet";
+  const testMint = env.SOLANA_TEST_MINT ?? (cluster === "localnet" ? mint : undefined);
+  return { configured: true, cluster, rpcUrl, keypairPath, recipient, mint, ...(testMint ? { testMint } : {}) };
 }
 
 export function loadDeskConfig(env: Readonly<Record<string, string | undefined>>): DeskConfigResult {

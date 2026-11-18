@@ -134,6 +134,7 @@ function failureReason(error: ExecutionError): string {
     case "invalid-limit-price": return "I couldn't get a valid price for this market, so I did not place the trade.";
     case "quantity-below-minimum": return "That amount is below the market's minimum order size, so I did not place the trade.";
     case "debit-unconfirmed": return "The payment could not be confirmed, so those funds stay reserved until it is checked.";
+    case "unsafe-ledger-network": return "The ledger network is not approved for test payments.";
     case "invalid-notional":
     case "debit-preparation-failed":
     case "debit-rejected":
