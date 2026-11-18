@@ -33,6 +33,7 @@ describe("propose_trade", () => {
     expect(result).toMatchObject({ status: "placed", side: "yes", amountUsd: 1, ticketId: expect.any(String) as unknown });
     const status = await runVoiceTool(deps, "get_desk_status", {});
     expect(status).toMatchObject({ status: "desk-status", spentUsd: 1, remainingUsd: 19 });
+    expect(status.say).toContain("spent 1 dollar today and have 19 dollars left");
   });
 
   it("holds a larger trade for approval, then approves the most recent pending trade", async () => {

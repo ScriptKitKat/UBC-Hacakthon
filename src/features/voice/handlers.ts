@@ -67,7 +67,8 @@ const TRADE_STATUS: Record<DecisionKind, TradeStatus> = {
 
 function dollars(cents: number): string {
   const amount = centsToUsd(cents);
-  return Number.isInteger(amount) ? `${String(amount)} dollars` : `${amount.toFixed(2)} dollars`;
+  const text = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+  return amount === 1 ? "1 dollar" : `${text} dollars`;
 }
 
 function odds(cents: number | null): string {
