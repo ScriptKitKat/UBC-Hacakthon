@@ -95,7 +95,7 @@ describe("getEvent", () => {
     const { client, urls } = setup(() => jsonResponse(eventFixture));
     const result = await client.getEvent("FED261211");
     expect(urls).toEqual(["https://example.test/v1/prediction-markets/events/FED261211"]);
-    expect(result.ok && result.value.contracts.length).toBe(4);
+    expect(result.ok && result.value.contracts.length).toBe(5);
   });
 });
 

@@ -1,0 +1,424 @@
+{
+ "data": [
+  {
+   "id": "301111",
+   "title": "Fed decision in December?",
+   "slug": "fed-decision-in-december",
+   "type": "categorical",
+   "category": "Economics",
+   "ticker": "FED261211",
+   "status": "active",
+   "createdAt": "2026-10-02T16:34:37.931Z",
+   "contracts": [
+    {
+     "id": "301111-735865",
+     "label": "Hike 25bps",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.93",
+       "no": "0.12"
+      },
+      "sell": {
+       "yes": "0.88",
+       "no": "0.07"
+      },
+      "bestBid": "0.88",
+      "bestAsk": "0.93",
+      "lastTradePrice": "0.93"
+     },
+     "status": "active",
+     "createdAt": "2026-10-02T16:34:37.931Z",
+     "termsAndConditionsUrl": "https://assets.gemini.com/predictions/terms_and_conditions/Gemini_402_Product_Filing_-_FEDDEC_-_20251211_6927e3ff-608d-4f76-98c4-f16ad6402cc6.pdf",
+     "ticker": "HIKE25",
+     "instrumentSymbol": "GEMI-FED261211-HIKE25",
+     "marketState": "open",
+     "abbreviatedName": "Hike 25bps",
+     "color": "#0f9ee7",
+     "expiryDate": "2026-12-11T05:00:00.000Z",
+     "effectiveDate": "2026-10-02T16:40:00.000Z",
+     "sortOrder": 1,
+     "isCombo": false,
+     "quantityIncrement": "0.01",
+     "quantityMinimum": "0.01",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    },
+    {
+     "id": "301111-735866",
+     "label": "Fed maintains rate",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.07",
+       "no": "0.95"
+      },
+      "sell": {
+       "yes": "0.05",
+       "no": "0.93"
+      },
+      "bestBid": "0.05",
+      "bestAsk": "0.07",
+      "lastTradePrice": "0.08"
+     },
+     "status": "active",
+     "createdAt": "2026-10-02T16:34:37.931Z",
+     "termsAndConditionsUrl": "https://assets.gemini.com/predictions/terms_and_conditions/Gemini_402_Product_Filing_-_FEDDEC_-_20251211_6927e3ff-608d-4f76-98c4-f16ad6402cc6.pdf",
+     "ticker": "MAINTAIN",
+     "instrumentSymbol": "GEMI-FED261211-MAINTAIN",
+     "marketState": "open",
+     "abbreviatedName": "Fed maintains rate",
+     "color": "#0f9ee7",
+     "expiryDate": "2026-12-11T05:00:00.000Z",
+     "effectiveDate": "2026-10-02T16:40:00.000Z",
+     "sortOrder": 5,
+     "isCombo": false,
+     "quantityIncrement": "0.01",
+     "quantityMinimum": "0.01",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    },
+    {
+     "id": "301111-735867",
+     "label": "Hike >25bps",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.07",
+       "no": "0.98"
+      },
+      "sell": {
+       "yes": "0.02",
+       "no": "0.93"
+      },
+      "bestBid": "0.02",
+      "bestAsk": "0.07",
+      "lastTradePrice": "0.08"
+     },
+     "status": "active",
+     "createdAt": "2026-10-02T16:34:37.931Z",
+     "termsAndConditionsUrl": "https://assets.gemini.com/predictions/terms_and_conditions/Gemini_402_Product_Filing_-_FEDDEC_-_20251211_6927e3ff-608d-4f76-98c4-f16ad6402cc6.pdf",
+     "ticker": "HIKEGT25",
+     "instrumentSymbol": "GEMI-FED261211-HIKEGT25",
+     "marketState": "open",
+     "abbreviatedName": "Hike >25bps",
+     "color": "#0f9ee7",
+     "expiryDate": "2026-12-11T05:00:00.000Z",
+     "effectiveDate": "2026-10-02T16:40:00.000Z",
+     "sortOrder": 3,
+     "isCombo": false,
+     "quantityIncrement": "0.01",
+     "quantityMinimum": "0.01",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    },
+    {
+     "id": "301111-735863",
+     "label": "Cut >25bps",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.03",
+       "no": "0.97"
+      },
+      "sell": {
+       "yes": "0.03",
+       "no": "0.97"
+      },
+      "bestAsk": "0.03",
+      "lastTradePrice": "0.03"
+     },
+     "status": "active",
+     "createdAt": "2026-10-02T16:34:37.931Z",
+     "termsAndConditionsUrl": "https://assets.gemini.com/predictions/terms_and_conditions/Gemini_402_Product_Filing_-_FEDDEC_-_20251211_6927e3ff-608d-4f76-98c4-f16ad6402cc6.pdf",
+     "ticker": "CUTGT25",
+     "instrumentSymbol": "GEMI-FED261211-CUTGT25",
+     "marketState": "open",
+     "abbreviatedName": "Cut >25bps",
+     "color": "#0f9ee7",
+     "expiryDate": "2026-12-11T05:00:00.000Z",
+     "effectiveDate": "2026-10-02T16:40:00.000Z",
+     "sortOrder": 4,
+     "isCombo": false,
+     "quantityIncrement": "0.01",
+     "quantityMinimum": "0.01",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    },
+    {
+     "id": "301111-735864",
+     "label": "Cut 25bps",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.02",
+       "no": "0.98"
+      },
+      "sell": {
+       "yes": "0.02",
+       "no": "0.98"
+      },
+      "bestAsk": "0.02",
+      "lastTradePrice": "0.02"
+     },
+     "status": "active",
+     "createdAt": "2026-10-02T16:34:37.931Z",
+     "termsAndConditionsUrl": "https://assets.gemini.com/predictions/terms_and_conditions/Gemini_402_Product_Filing_-_FEDDEC_-_20251211_6927e3ff-608d-4f76-98c4-f16ad6402cc6.pdf",
+     "ticker": "CUT25",
+     "instrumentSymbol": "GEMI-FED261211-CUT25",
+     "marketState": "open",
+     "abbreviatedName": "Cut 25bps",
+     "color": "#0f9ee7",
+     "expiryDate": "2026-12-11T05:00:00.000Z",
+     "effectiveDate": "2026-10-02T16:40:00.000Z",
+     "sortOrder": 2,
+     "isCombo": false,
+     "quantityIncrement": "0.01",
+     "quantityMinimum": "0.01",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    }
+   ],
+   "effectiveDate": "2026-10-02T16:34:37.931Z",
+   "isLive": false,
+   "participants": [],
+   "description": "Fed decision in December?",
+   "imageUrl": "https://assets.gemini.com/predictions/images/fed_Contract_Image_0473d1d2-593c-4acf-b619-cc645a4347fb.avif",
+   "volume": "13303.52",
+   "volume24h": "0",
+   "tags": [
+    "Economics"
+   ],
+   "expiryDate": "2026-12-11T05:00:00.000Z",
+   "termsLink": "https://assets.gemini.com/predictions/terms_and_conditions/Gemini_402_Product_Filing_-_FEDDEC_-_20251211_6927e3ff-608d-4f76-98c4-f16ad6402cc6.pdf",
+   "subcategory": {
+    "id": 2,
+    "slug": "economics",
+    "name": "Economics",
+    "path": [
+     "Economics"
+    ]
+   },
+   "socialImageUrl": "https://assets.gemini.com/predictions/images/fedsocial_4309ce72-4300-4775-a709-34aa9fa685dc.png",
+   "template": "binary",
+   "volumeDelta24hPct": "-100"
+  },
+  {
+   "id": "28771",
+   "title": "Who will be charged with a federal crime in 2026?",
+   "slug": "who-will-be-charged-with-a-federal-crime-in-2026",
+   "type": "categorical",
+   "category": "Politics",
+   "ticker": "FEDCRIME26",
+   "status": "active",
+   "createdAt": "2026-04-30T18:38:39.831Z",
+   "contracts": [
+    {
+     "id": "28771-149366",
+     "label": "Ilhan Omar",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.2",
+       "no": "0.81"
+      },
+      "sell": {
+       "yes": "0.19",
+       "no": "0.8"
+      },
+      "bestBid": "0.19",
+      "bestAsk": "0.2",
+      "lastTradePrice": "0.34"
+     },
+     "status": "active",
+     "createdAt": "2026-04-30T18:38:39.831Z",
+     "termsAndConditionsUrl": "",
+     "ticker": "ILHANOMAR",
+     "instrumentSymbol": "GEMI-FEDCRIME26-ILHANOMAR",
+     "marketState": "open",
+     "abbreviatedName": "Ilhan Omar",
+     "color": "#0f9ee7",
+     "expiryDate": "2027-01-01T00:00:00.000Z",
+     "effectiveDate": "2026-04-30T19:00:00.000Z",
+     "isCombo": false,
+     "quantityIncrement": "1",
+     "quantityMinimum": "1",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    },
+    {
+     "id": "28771-149368",
+     "label": "John Brennan",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.15",
+       "no": "0.86"
+      },
+      "sell": {
+       "yes": "0.14",
+       "no": "0.85"
+      },
+      "bestBid": "0.14",
+      "bestAsk": "0.15",
+      "lastTradePrice": "0.22"
+     },
+     "status": "active",
+     "createdAt": "2026-04-30T18:38:39.831Z",
+     "termsAndConditionsUrl": "",
+     "ticker": "JOHNBRENNAN",
+     "instrumentSymbol": "GEMI-FEDCRIME26-JOHNBRENNAN",
+     "marketState": "open",
+     "abbreviatedName": "John Brennan",
+     "color": "#0f9ee7",
+     "expiryDate": "2027-01-01T00:00:00.000Z",
+     "effectiveDate": "2026-04-30T19:00:00.000Z",
+     "isCombo": false,
+     "quantityIncrement": "1",
+     "quantityMinimum": "1",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    },
+    {
+     "id": "28771-149369",
+     "label": "Anthony Fauci",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.09",
+       "no": "0.93"
+      },
+      "sell": {
+       "yes": "0.07",
+       "no": "0.91"
+      },
+      "bestBid": "0.07",
+      "bestAsk": "0.09",
+      "lastTradePrice": "0.16"
+     },
+     "status": "active",
+     "createdAt": "2026-04-30T18:38:39.831Z",
+     "termsAndConditionsUrl": "",
+     "ticker": "ANTHONYFAUCI",
+     "instrumentSymbol": "GEMI-FEDCRIME26-ANTHONYFAUCI",
+     "marketState": "open",
+     "abbreviatedName": "Anthony Fauci",
+     "color": "#0f9ee7",
+     "expiryDate": "2027-01-01T00:00:00.000Z",
+     "effectiveDate": "2026-04-30T19:00:00.000Z",
+     "isCombo": false,
+     "quantityIncrement": "1",
+     "quantityMinimum": "1",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    },
+    {
+     "id": "28771-149367",
+     "label": "Letitia James",
+     "description": {
+      "data": {},
+      "content": [],
+      "nodeType": "document"
+     },
+     "prices": {
+      "buy": {
+       "yes": "0.07",
+       "no": "0.97"
+      },
+      "sell": {
+       "yes": "0.03",
+       "no": "0.93"
+      },
+      "bestBid": "0.03",
+      "bestAsk": "0.07",
+      "lastTradePrice": "0.16"
+     },
+     "status": "active",
+     "createdAt": "2026-04-30T18:38:39.831Z",
+     "termsAndConditionsUrl": "",
+     "ticker": "LETITIAJAMES",
+     "instrumentSymbol": "GEMI-FEDCRIME26-LETITIAJAMES",
+     "marketState": "open",
+     "abbreviatedName": "Letitia James",
+     "color": "#0f9ee7",
+     "expiryDate": "2027-01-01T00:00:00.000Z",
+     "effectiveDate": "2026-04-30T19:00:00.000Z",
+     "isCombo": false,
+     "quantityIncrement": "1",
+     "quantityMinimum": "1",
+     "priceIncrement": "0.01",
+     "quoteAssetPrecision": 2,
+     "priceMinimum": "0.01"
+    }
+   ],
+   "effectiveDate": "2026-04-30T18:38:39.831Z",
+   "isLive": false,
+   "participants": [],
+   "description": "Which listed people will be formally charged with a federal crime before Jan 1, 2027?",
+   "imageUrl": "https://images.ctfassets.net/jg6lo9a2ukvr/1X12y7OhZNqwdNenVwemrA/81a6784737b185a4bd7be2276a69d5cf/Contract_Image.png",
+   "volume": "55889",
+   "volume24h": "0",
+   "tags": [
+    "Courts"
+   ],
+   "expiryDate": "2027-01-01T00:00:00.000Z",
+   "termsLink": "",
+   "subcategory": {
+    "id": 149,
+    "slug": "politics_courts",
+    "name": "Courts",
+    "path": [
+     "Politics",
+     "Courts"
+    ]
+   },
+   "socialImageUrl": "https://images.ctfassets.net/jg6lo9a2ukvr/1X12y7OhZNqwdNenVwemrA/81a6784737b185a4bd7be2276a69d5cf/Contract_Image.png",
+   "volumeDelta24hPct": "0"
+  }
+ ],
+ "pagination": {
+  "limit": 20,
+  "offset": 0,
+  "total": 3
+ }
+}
