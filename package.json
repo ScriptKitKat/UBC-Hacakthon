@@ -14,7 +14,9 @@
     "smoke:gemini": "node scripts/gemini-smoke.mjs",
     "test:integration": "vitest run --config src/features/ledger/vitest.integration.config.ts",
     "setup:devnet": "node scripts/ledger-devnet-setup",
-    "setup:localnet": "node scripts/localnet-setup"
+    "setup:localnet": "node scripts/localnet-setup",
+    "voice:setup-agent": "tsx scripts/voice-setup-agent.mjs",
+    "voice:simulate": "node scripts/voice-simulate.mjs"
   },
   "dependencies": {
     "@elevenlabs/react": "^1.23.0",
@@ -32,6 +34,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "eslint": "^10.15.0",
+    "tsx": "^4.23.15",
     "typescript": "~6.0",
     "typescript-eslint": "^8.73.0",
     "vitest": "^5.1.0"
