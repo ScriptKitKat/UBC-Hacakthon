@@ -23,6 +23,8 @@ export interface ElevenLabsAdminOptions {
 
 const DEFAULT_BASE_URL = "https://api.elevenlabs.io";
 const TOOLS_PAGE_SIZE = 100;
+const ERROR_MESSAGE_MAX_LENGTH = 300;
+const REDACTED = "[redacted]";
 
 const toolResponse = z.object({ id: z.string(), tool_config: z.object({ name: z.string() }) });
 const toolsPage = z.object({
@@ -33,6 +35,23 @@ const toolsPage = z.object({
 const agentCreated = z.object({ agent_id: z.string() });
 const conversationToken = z.object({ token: z.string() });
 const signedUrl = z.object({ signed_url: z.string() });
+
+const errorBody = z.object({
+  detail: z.union([
+    z.string(),
+    z.object({ message: z.string() }),
+    z.array(z.object({ msg: z.string() })),
+  ]),
+});
+
+function describeError(body: unknown, apiKey: string): string | undefined {
+  const parsed = errorBody.safeParse(body);
+  if (!parsed.success) return undefined;
+  const { detail } = parsed.data;
+  const text = typeof detail === "string" ? detail : Array.isArray(detail) ? detail.map((entry) => entry.msg).join("; ") : detail.message;
+  const safe = apiKey === "" ? text : text.replaceAll(apiKey, REDACTED);
+  return safe === "" ? undefined : safe.slice(0, ERROR_MESSAGE_MAX_LENGTH);
+}
 
 function summary(tool: z.output<typeof toolResponse>): ToolSummary {
   return { id: tool.id, name: tool.tool_config.name };
@@ -61,7 +80,10 @@ export function createElevenLabsAdmin(options: ElevenLabsAdminOptions): ElevenLa
     } catch {
       return fail({ kind: "network" });
     }
-    if (!response.ok) return fail({ kind: "http", status: response.status });
+    if (!response.ok) {
+      const message = describeError(await response.json().catch(() => undefined), options.apiKey);
+      return fail({ kind: "http", status: response.status, ...(message === undefined ? {} : { message }) });
+    }
     let json: unknown;
     try {
       json = await response.json();

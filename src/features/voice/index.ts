@@ -5,7 +5,7 @@ export { createClientTools, readSpokenResult } from "./client-tools";
 export type { VoiceClientTools, VoiceToolForwarder } from "./client-tools";
 export { loadVoiceEnv, missingSessionSettings } from "./env";
 export type { VoiceEnv } from "./env";
-export type { AdminError, AgentConfig, ClientToolConfig, ToolSummary } from "./elevenlabs-types";
+export type { AdminError, AgentConfig, ClientToolConfig, EnglishTtsModel, ToolSummary } from "./elevenlabs-types";
 export { createFakeElevenLabsAdmin } from "./fake-admin";
 export type { FakeElevenLabsAdmin } from "./fake-admin";
 export { runVoiceTool } from "./handlers";

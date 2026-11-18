@@ -17,7 +17,8 @@ if (env.apiKey === undefined) {
 const admin = createElevenLabsAdmin({ apiKey: env.apiKey, fetch });
 const result = await setupVoiceAgent(admin, env.agentId === undefined ? {} : { agentId: env.agentId });
 if (!result.ok) {
-  const detail = result.error.kind === "http" ? `HTTP ${String(result.error.status)}` : result.error.kind;
+  const { error } = result;
+  const detail = error.kind === "http" ? `HTTP ${String(error.status)}${error.message === undefined ? "" : `: ${error.message}`}` : error.kind;
   console.error(`ElevenLabs setup failed (${detail}). Check ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID.`);
   process.exit(1);
 }

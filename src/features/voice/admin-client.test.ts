@@ -91,12 +91,43 @@ describe("elevenlabs admin client", () => {
       await notJson.admin.getConversationToken("agent_1"),
     ];
     expect(results).toEqual([
-      { ok: false, error: { kind: "http", status: 401 } },
+      { ok: false, error: { kind: "http", status: 401, message: "bad key [redacted]" } },
       { ok: false, error: { kind: "network" } },
       { ok: false, error: { kind: "parse" } },
       { ok: false, error: { kind: "parse" } },
     ]);
     expect(JSON.stringify(results)).not.toContain(API_KEY);
     expect(JSON.stringify(Object.values(http.admin))).not.toContain(API_KEY);
+  });
+
+  it("carries the structured validation message of an http failure", async () => {
+    const english = adminWith(() => json({ detail: { type: "validation_error", code: "invalid_parameters", message: "English Agents must use turbo or flash v2." } }, 400));
+    const list = adminWith(() => json({ detail: [{ msg: "field required", loc: ["a"] }, { msg: "too short" }] }, 422));
+    const long = adminWith(() => json({ detail: { message: "x".repeat(1000) } }, 400));
+    const unstructured = adminWith(() => new Response("<html>", { status: 502 }));
+    const errors = [
+      await english.admin.createAgent(buildAgentConfig(["t"])),
+      await list.admin.listTools(),
+      await long.admin.listTools(),
+      await unstructured.admin.listTools(),
+    ].map((result) => (result.ok ? undefined : result.error));
+    expect(errors).toEqual([
+      { kind: "http", status: 400, message: "English Agents must use turbo or flash v2." },
+      { kind: "http", status: 422, message: "field required; too short" },
+      { kind: "http", status: 400, message: "x".repeat(300) },
+      { kind: "http", status: 502 },
+    ]);
+  });
+
+  it("never lets the api key into an http error even when upstream echoes it", async () => {
+    const echoes = [
+      { detail: { message: `invalid key ${API_KEY}` } },
+      { detail: [{ msg: `${API_KEY} rejected` }] },
+      { detail: `${API_KEY}${API_KEY}` },
+    ];
+    for (const body of echoes) {
+      const { admin } = adminWith(() => json(body, 401));
+      expect(JSON.stringify(await admin.listTools())).not.toContain(API_KEY);
+    }
   });
 });
