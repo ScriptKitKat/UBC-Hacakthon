@@ -1,0 +1,9 @@
+node_modules/
+.next/
+coverage/
+.env
+.env.local
+*.keypair.json
+id.json
+*.tsbuildinfo
+next-env.d.ts
