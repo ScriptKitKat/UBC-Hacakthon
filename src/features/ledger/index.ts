@@ -76,8 +76,12 @@ async function hasExpectedGenesis(network: LedgerNetwork, connection: Pick<Conne
 
 export function explorerUrl(signature: string, network: LedgerNetwork): string {
   const url = new URL(`https://explorer.solana.com/tx/${encodeURIComponent(signature)}`);
-  url.searchParams.set("cluster", network.cluster === "localnet" ? "custom" : "devnet");
-  if (network.cluster === "localnet") url.searchParams.set("customUrl", network.rpcUrl);
+  const localOrigin = network.cluster === "localnet" ? localhostOrigin(network.rpcUrl) : undefined;
+  if (network.cluster === "devnet") url.searchParams.set("cluster", "devnet");
+  if (localOrigin) {
+    url.searchParams.set("cluster", "custom");
+    url.searchParams.set("customUrl", localOrigin);
+  }
   return url.href;
 }
 

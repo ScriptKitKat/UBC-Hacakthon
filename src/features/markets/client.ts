@@ -40,19 +40,21 @@ export function createGeminiMarketsClient(options: GeminiMarketsClientOptions): 
       return ok(cached as z.output<S>);
     }
     let response: Response;
-    let body: unknown;
     try {
       response = await limit(() => options.fetch(url, { headers: { accept: "application/json" } }));
-      if (!response.ok) {
-        return fail({ kind: "http", status: response.status });
-      }
+    } catch {
+      return fail({ kind: "network" });
+    }
+    if (!response.ok) return fail({ kind: "http", status: response.status });
+    let body: unknown;
+    try {
       body = await response.json();
-    } catch (error) {
-      return fail({ kind: "network", message: error instanceof Error ? error.message : String(error) });
+    } catch {
+      return fail({ kind: "parse" });
     }
     const parsed = schema.safeParse(body);
     if (!parsed.success) {
-      return fail({ kind: "parse", message: parsed.error.message });
+      return fail({ kind: "parse" });
     }
     cache.set(url, parsed.data);
     return ok(parsed.data);

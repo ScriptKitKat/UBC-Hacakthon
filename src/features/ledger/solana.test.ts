@@ -1,7 +1,7 @@
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { usdCents } from "@/shared";
-import { createSolanaLedger } from "./index";
+import { createSolanaLedger, explorerUrl } from "./index";
 import { loadKeypair } from "./keypair";
 
 vi.mock("./keypair", () => ({ loadKeypair: vi.fn() }));
@@ -74,4 +74,32 @@ it("accepts Circle devnet USDC and rechecks the network before each debit", asyn
     ok: false, error: { code: "unsafe-ledger-network" },
   });
   expect(rpc.send).toHaveBeenCalledOnce();
+});
+
+it("exposes only localhost origins in explorer links", () => {
+  const credential = "RPC_SECRET_SENTINEL";
+  const rpcUrl = `https://rpc.example.test/${credential}?key=${credential}`;
+  for (const cluster of ["localnet", "devnet"] as const) {
+    const url = new URL(explorerUrl("signature", { cluster, rpcUrl }));
+    expect(url.searchParams.has("customUrl")).toBe(false);
+    expect(url.href).not.toContain(credential);
+  }
+  const url = new URL(explorerUrl("signature", {
+    cluster: "localnet", rpcUrl: `http://user:${credential}@localhost:8899/${credential}?key=${credential}`,
+  }));
+  expect(url.searchParams.get("customUrl")).toBe("http://localhost:8899");
+  expect(url.href).not.toContain(credential);
+});
+
+it("maps RPC exceptions to fixed ledger errors", async () => {
+  const rpc = fakeRpc(devnetGenesis);
+  const secret = new Error("https://rpc.example.test/?key=RPC_SECRET_SENTINEL");
+  rpc.genesis.mockRejectedValue(secret);
+  vi.spyOn(Connection.prototype, "getTokenAccountBalance").mockRejectedValue(secret);
+  const ledger = await createSolanaLedger(config);
+  expect(await ledger.debit("trade", usdCents(200), "trade|SYMBOL|yes|200")).toEqual({
+    ok: false, error: { code: "debit-preparation-failed" },
+  });
+  expect(await ledger.balance()).toEqual({ ok: false, error: { code: "balance-failed" } });
+  expect(rpc.send).not.toHaveBeenCalled();
 });

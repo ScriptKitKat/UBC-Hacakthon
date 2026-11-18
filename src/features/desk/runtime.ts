@@ -34,8 +34,8 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
         mint: settings.mint.toBase58(),
         recipient: settings.recipient.toBase58(),
       };
-    } catch (error) {
-      return { ok: false, issues: [`ledger: ${error instanceof Error ? error.message : "failed to initialise"}`] };
+    } catch {
+      return { ok: false, issues: ["ledger: failed to initialise"] };
     }
   }
   const markets = createGeminiMarketsClient({ baseUrl: config.value.geminiBaseUrl, fetch });

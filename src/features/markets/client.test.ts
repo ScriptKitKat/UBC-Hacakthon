@@ -125,10 +125,10 @@ describe("errors", () => {
     const clock = createFakeClock();
     const client = createGeminiMarketsClient({
       baseUrl: "https://example.test",
-      fetch: (() => Promise.reject(new Error("offline"))),
+      fetch: (() => Promise.reject(new Error("https://example.test/?key=FETCH_SECRET_SENTINEL"))),
       clock,
     });
-    expect(await client.getEvent("X")).toEqual({ ok: false, error: { kind: "network", message: "offline" } });
+    expect(await client.getEvent("X")).toEqual({ ok: false, error: { kind: "network" } });
   });
 
   it("returns a parse error when instrumentSymbol is missing", async () => {

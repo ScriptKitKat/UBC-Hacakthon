@@ -11,7 +11,7 @@ export interface MatchOptions {
 }
 
 function describeError(error: MarketsError): string {
-  return error.kind === "http" ? `HTTP ${String(error.status)}` : error.kind === "network" ? error.message : "unexpected response";
+  return error.kind === "http" ? `HTTP ${String(error.status)}` : error.kind === "network" ? "network unavailable" : "unexpected response";
 }
 
 function noMatch(reason: string): MatchResult {

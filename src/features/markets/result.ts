@@ -1,7 +1,7 @@
 export type MarketsError =
-  | { readonly kind: "network"; readonly message: string }
+  | { readonly kind: "network" }
   | { readonly kind: "http"; readonly status: number }
-  | { readonly kind: "parse"; readonly message: string };
+  | { readonly kind: "parse" };
 
 export type Result<T, E> =
   | { readonly ok: true; readonly value: T }

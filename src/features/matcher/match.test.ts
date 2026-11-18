@@ -147,6 +147,16 @@ describe("matchNews", () => {
     expect(result).toEqual({ kind: "no-match", reason: "Market search failed (HTTP 503)." });
   });
 
+  it("keeps fetch credentials out of the match result", async () => {
+    const client = createGeminiMarketsClient({
+      baseUrl: "https://example.test/RPC_SECRET_SENTINEL",
+      fetch: (url) => Promise.reject(new Error(typeof url === "string" ? url : "RPC_SECRET_SENTINEL")),
+    });
+    expect(await matchNews(news("Fed"), { client, allowlist: allowAll })).toEqual({
+      kind: "no-match", reason: "Market search failed (network unavailable).",
+    });
+  });
+
   it("makes at most three search calls", async () => {
     const searches: (string | null)[] = [];
     const client = buildClient((search) => {
