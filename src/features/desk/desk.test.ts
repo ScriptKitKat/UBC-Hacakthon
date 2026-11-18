@@ -53,12 +53,12 @@ function setup(options: { ledger?: UsdcLedger; ledgerView?: LedgerView; markets?
   const markets = options.markets ?? fakeMarkets();
   const policy = createPolicy({
     dailyCap: usdCents(2000), autoApproveMax: usdCents(200), perTradeMax: usdCents(1000),
-    marketAllowlist: new Set([symbol, otherSymbol]), senderAllowlist: new Set(["priscilla"]), killSwitch: options.killSwitch ?? false,
+    marketAllowlist: new Set([symbol, otherSymbol]), marketCategories: new Set(["Economics"]), senderAllowlist: new Set(["priscilla"]), killSwitch: options.killSwitch ?? false,
   });
   if (!policy.ok) throw new Error("invalid policy");
   let ids = 0;
   const desk = createDesk({
-    policy: policy.value, markets, ledger, ledgerView: options.ledgerView ?? configuredLedger,
+    policy: policy.value, feed: { operatorId: "priscilla", grok: { apiKey: undefined, model: "grok-test" } }, markets, ledger, ledgerView: options.ledgerView ?? configuredLedger,
     now: () => new Date("2026-11-17T12:00:00Z"), idGen: () => `id-${String(++ids)}`,
   });
   return { desk, debit, markets };
@@ -110,10 +110,10 @@ describe("desk", () => {
     expect((await desk.getSnapshot()).log.map((entry) => entry.kind)).toEqual(["refuse", "refuse"]);
   });
 
-  it("refuses a contract that was never matched without calling the ledger", async () => {
+  it("refuses a contract that was never seen without calling the ledger", async () => {
     const { desk, debit } = await readyDesk();
     const entry = await desk.proposeTrade({ ...propose(), instrumentSymbol: "GEMI-UNKNOWN" });
-    expect(entry).toMatchObject({ kind: "refuse", code: "market-not-allowlisted" });
+    expect(entry).toMatchObject({ kind: "refuse", code: "market-closed" });
     expect(debit).not.toHaveBeenCalled();
   });
 
@@ -251,4 +251,80 @@ describe("desk", () => {
     expect((await desk.getSnapshot()).match).toEqual({ kind: "no-news" });
     expect(await desk.submitNews(news)).toMatchObject({ kind: "no-match" });
   });
+
+describe("desk feed", () => {
+  const post = { id: "post-1", text: news.text, author: "@Reuters" };
+  const sportsEvent: MarketEvent = {
+    ticker: "NFL-KC-BUF", title: "Chiefs vs Bills", category: "Sports", status: "active", expiryDate: null, tags: [],
+    contracts: [contract(instrumentSymbol("GEMI-NFL-KC"), "Chiefs")],
+  };
+
+  it("matches a post by keywords without a Grok key and registers the market for trading", async () => {
+    const { desk } = setup();
+    const match = await desk.matchPost(post);
+    expect(match).toMatchObject({
+      kind: "matched", postId: "post-1", matchedBy: "keywords",
+      market: { eventTicker: "FED261211", category: "Economics", yesCents: 62, noCents: 40, impliedYesPercent: 62, tradeable: true },
+    });
+    const entry = await desk.buyFromFeed({ instrumentSymbol: match.kind === "matched" ? match.market.instrumentSymbol : "", outcome: "yes", notionalCents: 100 });
+    expect(entry).toMatchObject({ kind: "approve", source: "feed", senderId: "priscilla" });
+  });
+
+  it("caches matches per post id", async () => {
+    const { desk, markets } = setup();
+    await desk.matchPost(post);
+    const calls = markets.searchEvents.mock.calls.length;
+    await desk.matchPost(post);
+    expect(markets.searchEvents.mock.calls).toHaveLength(calls);
+  });
+
+  it("reports no-match for unrelated posts", async () => {
+    const { desk } = setup();
+    expect(await desk.matchPost({ id: "p2", text: "Just had the best sandwich of my life today" })).toMatchObject({ kind: "no-match", postId: "p2" });
+  });
+
+  it("shows sports cards as not tradeable and refuses the buy with the policy reason", async () => {
+    const markets = fakeMarkets(() => sportsEvent);
+    const { desk, debit } = setup({ markets });
+    const match = await desk.matchPost({ id: "p3", text: "Chiefs vs Bills tonight: Chiefs favored by three points" });
+    expect(match).toMatchObject({
+      kind: "matched",
+      market: { category: "Sports", tradeable: false, tradeBlockedReason: "Sports markets are outside the desk's news-trading policy." },
+    });
+    const entry = await desk.buyFromFeed({ instrumentSymbol: "GEMI-NFL-KC", outcome: "yes", notionalCents: 100 });
+    expect(entry).toMatchObject({
+      kind: "refuse", code: "market-category-not-allowed", spokenReason: "Sports markets are outside the desk's news-trading policy.",
+    });
+    expect(debit).not.toHaveBeenCalled();
+  });
+
+  it("records observed yes prices and serves quote with history", async () => {
+    const { desk } = setup();
+    await desk.matchPost(post);
+    const quote = await desk.quote("GEMI-FED261211-MAINTAIN");
+    expect(quote?.market.yesCents).toBe(62);
+    expect(quote?.history.length).toBeGreaterThanOrEqual(2);
+    expect(quote?.history[0]).toMatchObject({ yesCents: 62 });
+    expect(await desk.quote("GEMI-UNSEEN")).toBeUndefined();
+  });
+
+  it("holds feed buys above the auto-approve limit for approval and confirms only feed intents as the operator", async () => {
+    const { desk, debit } = setup();
+    await desk.matchPost(post);
+    const waiting = await desk.buyFromFeed({ instrumentSymbol: "GEMI-FED261211-MAINTAIN", outcome: "no", notionalCents: 500 });
+    expect(waiting).toMatchObject({ kind: "needs-approval", source: "feed" });
+    expect(debit).not.toHaveBeenCalled();
+    const confirmed = await desk.confirmFromFeed(waiting.intentId);
+    expect(confirmed).toMatchObject({ ok: true, entry: { kind: "approve", source: "feed" } });
+    expect(await desk.confirmFromFeed(waiting.intentId)).toEqual({ ok: false, error: "unknown-intent" });
+  });
+
+  it("does not let the feed confirm intents from other sources", async () => {
+    const { desk } = await readyDesk();
+    const other = await desk.proposeTrade({ ...propose("yes", 500), source: "x" });
+    expect(other.kind).toBe("needs-approval");
+    expect(await desk.confirmFromFeed(other.intentId)).toEqual({ ok: false, error: "unknown-intent" });
+  });
+});
+
 });

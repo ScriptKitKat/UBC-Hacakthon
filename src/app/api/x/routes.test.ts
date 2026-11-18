@@ -22,6 +22,7 @@ function makeBot(client: XClient = createFakeXClient()) {
     autoApproveMax: usdCents(200),
     perTradeMax: usdCents(1000),
     marketAllowlist: new Set([instrumentSymbol("GEMI-A-B")]),
+    marketCategories: new Set(["Economics"]),
     senderAllowlist: new Set(["@priscilla"]),
     killSwitch: false,
   });
@@ -32,6 +33,7 @@ function makeBot(client: XClient = createFakeXClient()) {
       searchEvents: () => Promise.resolve(ok({ events: [], total: 0 })),
       getEvent: () => Promise.reject(new Error("unused")),
     },
+    feed: { operatorId: "priscilla", grok: { apiKey: undefined, model: "grok-test" } },
     ledger: createUnconfiguredLedger(),
     ledgerView: { configured: false, missing: [] },
     now: () => new Date("2026-11-17T12:00:00Z"),

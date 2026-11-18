@@ -10,12 +10,12 @@ const now = new Date("2026-11-18T00:00:00Z");
 const symbol = instrumentSymbol("RATE-DEC");
 const policy = createPolicy({
   dailyCap: usdCents(2000), perTradeMax: usdCents(500), autoApproveMax: usdCents(200),
-  marketAllowlist: new Set([symbol]), senderAllowlist: new Set(["desk"]), killSwitch: false,
+  marketAllowlist: new Set([symbol]), marketCategories: new Set(["Economics"]), senderAllowlist: new Set(["desk"]), killSwitch: false,
 });
 if (!policy.ok) throw new Error("Expected a valid policy");
 const decision = evaluate(
   { intentId: "trade-2", instrumentSymbol: symbol, outcome: "no", notional: usdCents(200), source: "desk", senderId: "desk", createdAt: now },
-  { instrumentSymbol: symbol, marketState: "open", status: "active", eventStatus: "active", limitPrice: usdCents(50) },
+  { instrumentSymbol: symbol, marketState: "open", status: "active", eventStatus: "active", category: "Economics", limitPrice: usdCents(50) },
   policy.value,
   { day: "2026-11-18", spentToday: usdCents(0), reservedToday: usdCents(0), seenIntentIds: new Set() },
   now,

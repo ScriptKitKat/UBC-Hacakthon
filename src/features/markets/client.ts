@@ -15,6 +15,7 @@ export interface SearchEventsQuery {
   readonly category?: string;
   readonly status?: string;
   readonly limit?: number;
+  readonly offset?: number;
 }
 
 export interface GeminiMarketsClient {
@@ -66,6 +67,9 @@ export function createGeminiMarketsClient(options: GeminiMarketsClientOptions): 
         status: query.status ?? "active",
         limit: String(query.limit ?? DEFAULT_LIMIT),
       });
+      if (query.offset !== undefined) {
+        params.set("offset", String(query.offset));
+      }
       if (query.search !== undefined) {
         params.set("search", query.search);
       }

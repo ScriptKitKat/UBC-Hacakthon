@@ -67,4 +67,19 @@ describe("project lint rules", () => {
     const ids = await ruleIds("// a\n/* b */\n/* eslint-disable */\nexport {};\n", "src/shared/a.ts");
     expect(ids.filter((id) => id === "local/no-comments")).toHaveLength(3);
   });
+
+  it.each([
+    ['import { x } from "@/features/desk";\n', "extension/src/a.ts"],
+    ['import { x } from "@/app/page";\n', "extension/src/a.ts"],
+    ['import { x } from "../../src/features/desk";\n', "extension/src/a.ts"],
+    ['import { x } from "@/shared/desk";\n', "extension/src/a.ts"],
+  ])("rejects extension import %s", async (code, filePath) => {
+    expect(await ruleIds(code, filePath)).toContain("no-restricted-imports");
+  });
+
+  it("allows the extension to import shared types and its own modules", async () => {
+    const ids = await ruleIds('import { x } from "@/shared";\nimport { y } from "./y";\nexport { x, y };\n', "extension/src/a.ts");
+    expect(ids).toEqual([]);
+  });
+
 });

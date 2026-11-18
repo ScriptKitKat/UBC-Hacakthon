@@ -1,4 +1,4 @@
-import type { Outcome } from "./types";
+import type { Outcome, TradeSource } from "./types";
 
 export type DecisionKind = "approve" | "needs-approval" | "refuse" | "execution-failed";
 
@@ -21,6 +21,7 @@ export interface DecisionLogEntry {
   readonly outcome: Outcome;
   readonly notionalCents: number;
   readonly senderId: string;
+  readonly source: TradeSource;
   readonly signature?: string;
   readonly explorerUrl?: string;
   readonly ticket?: TicketView;
@@ -59,6 +60,7 @@ export interface PolicyView {
   readonly perTradeMaxCents: number;
   readonly killSwitch: boolean;
   readonly marketAllowlist: readonly string[];
+  readonly marketCategories: readonly string[];
   readonly senderAllowlist: readonly string[];
 }
 

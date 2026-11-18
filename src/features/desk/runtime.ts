@@ -39,7 +39,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     }
   }
   const markets = createGeminiMarketsClient({ baseUrl: config.value.geminiBaseUrl, fetch });
-  return { ok: true, desk: createDesk({ policy: config.value.policy, markets, ledger, ledgerView, now: () => new Date(), idGen: randomUUID }) };
+  return { ok: true, desk: createDesk({ policy: config.value.policy, feed: config.value.feed, markets, ledger, ledgerView, now: () => new Date(), idGen: randomUUID }) };
 }
 
 const deskKey: unique symbol = Symbol.for("news-to-trade-desk.desk");

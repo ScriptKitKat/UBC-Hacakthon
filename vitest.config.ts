@@ -5,5 +5,10 @@ export default defineConfig({
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
-  test: { include: ["src/**/*.test.ts", "eslint/**/*.test.ts"] },
+  test: {
+    projects: [
+      { extends: true, test: { name: "node", include: ["src/**/*.test.ts", "eslint/**/*.test.ts"] } },
+      { extends: true, test: { name: "extension", include: ["extension/**/*.test.ts"], environment: "happy-dom" } },
+    ],
+  },
 });

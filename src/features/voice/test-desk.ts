@@ -50,6 +50,7 @@ export function voiceFixture(options: { readonly senders?: readonly string[] } =
     autoApproveMax: usdCents(200),
     perTradeMax: usdCents(1000),
     marketAllowlist: new Set([maintain, cut]),
+    marketCategories: new Set(["Economics"]),
     senderAllowlist: new Set(options.senders ?? [OPERATOR_ID]),
     killSwitch: false,
   });
@@ -58,6 +59,7 @@ export function voiceFixture(options: { readonly senders?: readonly string[] } =
   const desk = createDesk({
     policy: policy.value,
     markets,
+    feed: { operatorId: "priscilla", grok: { apiKey: undefined, model: "grok-test" } },
     ledger: { debit, balance: vi.fn() },
     ledgerView: { configured: true, cluster: "localnet", authority: "Authority1", mint: "Mint1", recipient: "Recipient1" },
     now: () => new Date("2026-11-17T12:00:00Z"),

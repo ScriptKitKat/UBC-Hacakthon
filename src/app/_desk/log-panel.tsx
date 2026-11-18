@@ -43,7 +43,7 @@ export function LogPanel({ log }: { readonly log: readonly DecisionLogEntry[] })
                   <span className={styles.logAmount}>{formatDollars(entry.notionalCents)}</span>
                 </span>
                 <span className={styles.logSymbol}>{entry.symbol}</span>
-                <span className={styles.logSender}>{entry.senderId}</span>
+                <span className={styles.logSender}>{entry.source === "feed" ? `X feed card · ${entry.senderId}` : entry.senderId}</span>
               </span>
               <span className={styles.logReason}>{entry.spokenReason}</span>
               <span className={styles.logProof}>

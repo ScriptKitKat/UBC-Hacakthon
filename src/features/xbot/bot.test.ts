@@ -35,6 +35,7 @@ const policy: PolicyView = {
   perTradeMaxCents: 1000,
   killSwitch: false,
   marketAllowlist: [SYMBOL],
+  marketCategories: ["Economics"],
   senderAllowlist: ["@Priscilla", "@Kelly"],
 };
 
@@ -75,6 +76,7 @@ function entryFor(kind: DecisionLogEntry["kind"], senderId: string, extra: Parti
     outcome: "yes",
     notionalCents: 200,
     senderId,
+    source: "x",
     at: "2026-11-17T12:00:00.000Z",
     ...extra,
   };
@@ -106,7 +108,10 @@ function fakeDesk(script: DeskScript = {}) {
   const getSnapshot = vi.fn<Desk["getSnapshot"]>(() =>
     Promise.resolve({ news: null, match: matched, policy, pending, log: [], ledger: { configured: false, missing: [] } } satisfies DeskSnapshot),
   );
-  const desk: Desk = { submitNews, proposeTrade, confirmPending, setKillSwitch: vi.fn(), getSnapshot };
+  const desk: Desk = {
+    submitNews, proposeTrade, confirmPending, getSnapshot, setKillSwitch: vi.fn(),
+    matchPost: vi.fn(), quote: vi.fn(), buyFromFeed: vi.fn(), confirmFromFeed: vi.fn(),
+  };
   return { desk, proposeTrade, confirmPending, submitNews };
 }
 
@@ -268,12 +273,14 @@ describe("handleReply bets", () => {
       autoApproveMax: usdCents(200),
       perTradeMax: usdCents(1000),
       marketAllowlist: new Set([instrumentSymbol(SYMBOL)]),
+      marketCategories: new Set(["Economics"]),
       senderAllowlist: new Set(["@Priscilla"]),
       killSwitch: false,
     });
     if (!created.ok) throw new Error("invalid policy");
     const desk = createDesk({
       policy: created.value,
+      feed: { operatorId: "@Priscilla", grok: { apiKey: undefined, model: "grok-test" } },
       markets,
       ledger: { debit, balance: vi.fn() },
       ledgerView: { configured: false, missing: [] },

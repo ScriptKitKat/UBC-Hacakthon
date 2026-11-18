@@ -11,6 +11,7 @@ const policy: PolicyView = {
   perTradeMaxCents: 1000,
   killSwitch: false,
   marketAllowlist: [],
+  marketCategories: [],
   senderAllowlist: [],
 };
 
@@ -43,6 +44,7 @@ function entry(overrides: Partial<DecisionLogEntry>): DecisionLogEntry {
     outcome: "yes",
     notionalCents: 200,
     senderId: "@priscilla",
+    source: "x",
     at: "2026-11-17T12:00:00.000Z",
     ...overrides,
   };

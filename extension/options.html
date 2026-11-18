@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>News-to-Trade Desk</title>
+    <style>
+      body { margin: 0; padding: 24px; background: #000; color: #e7e9ea; font: 15px/20px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      main { max-width: 480px; display: grid; gap: 16px; }
+      h1 { margin: 0; font-size: 20px; }
+      label { display: grid; gap: 6px; font-weight: 700; }
+      input { height: 40px; padding: 0 12px; border-radius: 8px; border: 1px solid #2f3336; background: #16181c; color: inherit; font: inherit; }
+      input:focus-visible, button:focus-visible { outline: 2px solid #1d9bf0; outline-offset: 2px; }
+      button { justify-self: start; height: 36px; padding: 0 20px; border-radius: 999px; border: 0; background: #eff3f4; color: #0f1419; font: inherit; font-weight: 700; cursor: pointer; }
+      #status { min-height: 20px; color: #00ba7c; }
+      #status[data-failed="true"] { color: #f91880; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>News-to-Trade Desk</h1>
+      <form id="settings">
+        <label>
+          Desk URL
+          <input id="desk-url" type="url" required autocomplete="off" />
+        </label>
+        <button type="submit">Save</button>
+      </form>
+      <p id="status" role="status"></p>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -21,7 +21,7 @@ export function scoreContract(profile: NewsProfile, event: MarketEvent, contract
     }
   }
   return { eventStatus: event.status,
-    eventTicker: event.ticker, eventTitle: event.title, contract, score, matchedTokens };
+    eventTicker: event.ticker, eventTitle: event.title, eventCategory: event.category, contract, score, matchedTokens };
 }
 
 export function compareCandidates(a: MatchCandidate, b: MatchCandidate): number {

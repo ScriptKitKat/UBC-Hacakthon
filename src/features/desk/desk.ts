@@ -1,15 +1,21 @@
 import { executeApproved } from "@/features/execution";
 import type { ExecutionError, TradeRecord } from "@/features/execution";
-import { confirm, evaluate, rollDay } from "@/features/guardrails";
+import { createPostMatcher } from "@/features/grok";
+import type { PostCandidate, PostInput } from "@/features/grok";
+import { confirm, evaluate, marketPolicyRefusal, rollDay } from "@/features/guardrails";
 import type { ApprovedTrade, Decision, Policy, PolicyState } from "@/features/guardrails";
 import type { UsdcLedger } from "@/features/ledger";
 import type { ContractLimits, GeminiMarketsClient, MarketContract } from "@/features/markets";
-import { allowOnly, matchNews } from "@/features/matcher";
+import { allowAll, matchNews } from "@/features/matcher";
 import type { MatchCandidate, MatchResult, NewsItem } from "@/features/matcher";
 import { instrumentSymbol, usdCents } from "@/shared";
+import type { FeedSettings } from "./config";
 import type {
   DecisionLogEntry,
   DeskSnapshot,
+  FeedMarketView,
+  FeedMatch,
+  FeedQuote,
   InstrumentSymbol,
   LedgerView,
   MarketView,
@@ -18,12 +24,16 @@ import type {
   Outcome,
   PendingView,
   PolicyView,
+  PricePoint,
   TradeIntent,
   TradeSource,
   UsdCents,
 } from "@/shared";
 
 const LOG_LIMIT = 200;
+const HISTORY_LIMIT = 90;
+const MATCH_CACHE_LIMIT = 300;
+const MATCH_CACHE_TTL_MS = 10 * 60 * 1000;
 
 type PendingTrade = Extract<Decision, { kind: "needs-approval" }>;
 
@@ -32,8 +42,16 @@ export interface DeskDeps {
   readonly markets: Pick<GeminiMarketsClient, "searchEvents" | "getEvent">;
   readonly ledger: UsdcLedger;
   readonly ledgerView: LedgerView;
+  readonly feed: FeedSettings;
+  readonly fetch?: typeof fetch;
   readonly now: () => Date;
   readonly idGen: () => string;
+}
+
+export interface FeedBuyRequest {
+  readonly instrumentSymbol: string;
+  readonly outcome: Outcome;
+  readonly notionalCents: number;
 }
 
 export interface ProposeRequest {
@@ -50,6 +68,10 @@ export type ConfirmResult =
 
 export interface Desk {
   readonly submitNews: (news: NewsItem) => Promise<MatchView>;
+  readonly matchPost: (post: PostInput) => Promise<FeedMatch>;
+  readonly quote: (symbol: string) => Promise<FeedQuote | undefined>;
+  readonly buyFromFeed: (request: FeedBuyRequest) => Promise<DecisionLogEntry>;
+  readonly confirmFromFeed: (intentId: string) => Promise<ConfirmResult>;
   readonly proposeTrade: (request: ProposeRequest) => Promise<DecisionLogEntry>;
   readonly confirmPending: (intentId: string, approverId: string) => Promise<ConfirmResult>;
   readonly setKillSwitch: (on: boolean) => void;
@@ -60,6 +82,7 @@ interface LiveMarket {
   readonly eventStatus: string;
   readonly eventTicker: string;
   readonly eventTitle: string;
+  readonly category: string;
   readonly contract: MarketContract;
 }
 
@@ -67,6 +90,7 @@ interface Quote {
   readonly instrumentSymbol: InstrumentSymbol;
   readonly status: string;
   readonly eventStatus: string;
+  readonly category: string;
   readonly marketState: string;
   readonly limitPrice: UsdCents;
   readonly limits: ContractLimits | null;
@@ -111,7 +135,23 @@ function marketView(market: LiveMarket): MarketView {
 }
 
 function candidateMarket(candidate: MatchCandidate): LiveMarket {
-  return { eventStatus: candidate.eventStatus, eventTicker: candidate.eventTicker, eventTitle: candidate.eventTitle, contract: candidate.contract };
+  return {
+    eventStatus: candidate.eventStatus,
+    eventTicker: candidate.eventTicker,
+    eventTitle: candidate.eventTitle,
+    category: candidate.eventCategory,
+    contract: candidate.contract,
+  };
+}
+
+function postCandidateMarket(candidate: PostCandidate): LiveMarket {
+  return {
+    eventStatus: candidate.eventStatus,
+    eventTicker: candidate.eventTicker,
+    eventTitle: candidate.eventTitle,
+    category: candidate.category,
+    contract: candidate.contract,
+  };
 }
 
 function matchView(match: MatchResult | undefined, best: LiveMarket | undefined): MatchView {
@@ -124,7 +164,7 @@ function quoteFor(market: LiveMarket | undefined, outcome: Outcome): Quote | und
   if (!market) return undefined;
   const { buyYesCents, buyNoCents } = market.contract.prices;
   const { instrumentSymbol, status, marketState, limits } = market.contract;
-  return { instrumentSymbol, status, marketState, eventStatus: market.eventStatus,
+  return { instrumentSymbol, status, marketState, eventStatus: market.eventStatus, category: market.category,
     limitPrice: usdCents((outcome === "yes" ? buyYesCents : buyNoCents) ?? 0), limits };
 }
 
@@ -150,6 +190,13 @@ function failureReason(error: ExecutionError): string {
 
 export function createDesk(deps: DeskDeps): Desk {
   const { markets, ledger, now, idGen } = deps;
+  const postMatcher = createPostMatcher({
+    markets,
+    settings: deps.feed.grok,
+    categories: [...deps.policy.marketCategories],
+    fetch: deps.fetch ?? fetch,
+    now,
+  });
   let policy = deps.policy;
   let state: PolicyState = {
     day: now().toISOString().slice(0, 10),
@@ -161,6 +208,40 @@ export function createDesk(deps: DeskDeps): Desk {
   let log: readonly DecisionLogEntry[] = [];
   const pending = new Map<string, PendingRecord>();
   const tickers = new Map<InstrumentSymbol, string>();
+  const priceHistory = new Map<InstrumentSymbol, PricePoint[]>();
+  const matchCache = new Map<string, { readonly at: number; readonly match: Promise<FeedMatch> }>();
+
+  function recordPrice(market: LiveMarket): void {
+    const yesCents = market.contract.prices.buyYesCents;
+    if (yesCents === null) return;
+    const points = priceHistory.get(market.contract.instrumentSymbol) ?? [];
+    points.push({ at: now().toISOString(), yesCents });
+    priceHistory.set(market.contract.instrumentSymbol, points.slice(-HISTORY_LIMIT));
+  }
+
+  function tradeBlockedReason(market: LiveMarket): string | undefined {
+    const { contract } = market;
+    const refusal = marketPolicyRefusal(policy, contract.instrumentSymbol, market.category);
+    if (refusal) return refusal;
+    const open = market.eventStatus === "active" && contract.status === "active" && contract.marketState === "open";
+    if (!open) return "This market isn't open for trading.";
+    return contract.prices.buyYesCents === null || contract.prices.buyNoCents === null ? "This contract has no live price right now." : undefined;
+  }
+
+  function feedMarketView(market: LiveMarket): FeedMarketView {
+    const { prices } = market.contract;
+    const blocked = tradeBlockedReason(market);
+    return {
+      ...marketView(market),
+      category: market.category,
+      impliedYesPercent: prices.buyYesCents,
+      bestBidCents: prices.bestBidCents,
+      bestAskCents: prices.bestAskCents,
+      lastTradeCents: prices.lastTradeCents,
+      tradeable: blocked === undefined,
+      ...(blocked === undefined ? {} : { tradeBlockedReason: blocked }),
+    };
+  }
 
   function record(entry: Omit<DecisionLogEntry, "entryId" | "at">): DecisionLogEntry {
     const complete = { ...entry, entryId: idGen(), at: now().toISOString() };
@@ -175,6 +256,7 @@ export function createDesk(deps: DeskDeps): Desk {
       outcome: intent.outcome,
       notionalCents: intent.notional,
       senderId: intent.senderId,
+      source: intent.source,
     };
   }
 
@@ -184,7 +266,44 @@ export function createDesk(deps: DeskDeps): Desk {
     const result = await markets.getEvent(eventTicker, { refresh });
     if (!result.ok) return undefined;
     const contract = result.value.contracts.find((candidate) => candidate.instrumentSymbol === symbol);
-    return contract ? { eventTicker, eventStatus: result.value.status, eventTitle: result.value.title, contract } : undefined;
+    if (!contract) return undefined;
+    const market = { eventTicker, eventStatus: result.value.status, eventTitle: result.value.title, category: result.value.category, contract };
+    recordPrice(market);
+    return market;
+  }
+
+  async function computeFeedMatch(post: PostInput): Promise<FeedMatch> {
+    const result = await postMatcher.matchPost(post);
+    if (result.kind === "no-match") return { kind: "no-match", postId: post.id, matchedBy: result.matchedBy, reason: result.reason };
+    const symbol = result.candidate.contract.instrumentSymbol;
+    tickers.set(symbol, result.candidate.eventTicker);
+    const market = (await resolveMarket(symbol)) ?? postCandidateMarket(result.candidate);
+    return {
+      kind: "matched",
+      postId: post.id,
+      matchedBy: result.matchedBy,
+      confidence: result.confidence,
+      why: result.why,
+      market: feedMarketView(market),
+    };
+  }
+
+  function cachedFeedMatch(post: PostInput): Promise<FeedMatch> {
+    const nowMs = now().getTime();
+    const hit = matchCache.get(post.id);
+    if (hit && nowMs - hit.at < MATCH_CACHE_TTL_MS) {
+      matchCache.delete(post.id);
+      matchCache.set(post.id, hit);
+      return hit.match;
+    }
+    const match = computeFeedMatch(post);
+    matchCache.set(post.id, { at: nowMs, match });
+    for (const oldest of matchCache.keys()) {
+      if (matchCache.size <= MATCH_CACHE_LIMIT) break;
+      matchCache.delete(oldest);
+    }
+    match.catch(() => matchCache.delete(post.id));
+    return match;
   }
 
   function reserve(approved: ApprovedTrade): void {
@@ -236,9 +355,55 @@ export function createDesk(deps: DeskDeps): Desk {
     });
   }
 
+  async function proposeTrade(request: ProposeRequest): Promise<DecisionLogEntry> {
+    const symbol = instrumentSymbol(request.instrumentSymbol);
+    const intent: TradeIntent = {
+      intentId: idGen(),
+      instrumentSymbol: symbol,
+      outcome: request.outcome,
+      notional: usdCents(request.notionalCents),
+      source: request.source,
+      senderId: request.senderId,
+      createdAt: now(),
+    };
+    const quote = quoteFor(await resolveMarket(symbol, true), intent.outcome);
+    const decision = evaluate(intent, quote, policy, state, now());
+    switch (decision.kind) {
+      case "refuse":
+        return record({ ...tradeFields(intent), kind: "refuse", code: decision.code, spokenReason: decision.spokenReason });
+      case "needs-approval":
+        pending.set(intent.intentId, { decision, intent });
+        return record({ ...tradeFields(intent), kind: "needs-approval", spokenReason: decision.spokenReason });
+      case "approve":
+        if (!quote) throw new Error("Approval requires a quote");
+        return execute(decision, intent, quote);
+      default: {
+        const exhaustive: never = decision;
+        return exhaustive;
+      }
+    }
+  }
+
+  async function confirmPending(intentId: string, approverId: string): Promise<ConfirmResult> {
+    const waiting = pending.get(intentId);
+    if (!waiting) return { ok: false, error: "unknown-intent" };
+    const quote = quoteFor(await resolveMarket(waiting.intent.instrumentSymbol, true), waiting.intent.outcome);
+    const confirmed = confirm(waiting.decision, approverId, quote, policy, state, now());
+    if (confirmed.kind === "refuse") {
+      if (confirmed.code === "duplicate-intent") pending.delete(intentId);
+      return {
+        ok: true,
+        entry: record({ ...tradeFields(waiting.intent), kind: "refuse", code: confirmed.code, spokenReason: confirmed.spokenReason }),
+      };
+    }
+    if (!pending.delete(intentId)) return { ok: false, error: "unknown-intent" };
+    if (!quote) throw new Error("Approval requires a quote");
+    return { ok: true, entry: await execute(confirmed, waiting.intent, quote) };
+  }
+
   return {
     async submitNews(news) {
-      const match = await matchNews(news, { client: markets, allowlist: allowOnly(policy.marketAllowlist) });
+      const match = await matchNews(news, { client: markets, allowlist: allowAll });
       current = { news, match };
       if (match.kind === "matched") {
         for (const candidate of [match.best, ...match.alternatives]) {
@@ -248,51 +413,26 @@ export function createDesk(deps: DeskDeps): Desk {
       return matchView(match, undefined);
     },
 
-    async proposeTrade(request) {
-      const symbol = instrumentSymbol(request.instrumentSymbol);
-      const intent: TradeIntent = {
-        intentId: idGen(),
-        instrumentSymbol: symbol,
-        outcome: request.outcome,
-        notional: usdCents(request.notionalCents),
-        source: request.source,
-        senderId: request.senderId,
-        createdAt: now(),
-      };
-      const quote = quoteFor(await resolveMarket(symbol, true), intent.outcome);
-      const decision = evaluate(intent, quote, policy, state, now());
-      switch (decision.kind) {
-        case "refuse":
-          return record({ ...tradeFields(intent), kind: "refuse", code: decision.code, spokenReason: decision.spokenReason });
-        case "needs-approval":
-          pending.set(intent.intentId, { decision, intent });
-          return record({ ...tradeFields(intent), kind: "needs-approval", spokenReason: decision.spokenReason });
-        case "approve":
-          if (!quote) throw new Error("Approval requires a quote");
-          return execute(decision, intent, quote);
-        default: {
-          const exhaustive: never = decision;
-          return exhaustive;
-        }
-      }
+    matchPost: cachedFeedMatch,
+
+    async quote(symbol) {
+      const market = await resolveMarket(instrumentSymbol(symbol));
+      if (!market) return undefined;
+      return { market: feedMarketView(market), history: [...(priceHistory.get(market.contract.instrumentSymbol) ?? [])] };
     },
 
-    async confirmPending(intentId, approverId) {
-      const waiting = pending.get(intentId);
-      if (!waiting) return { ok: false, error: "unknown-intent" };
-      const quote = quoteFor(await resolveMarket(waiting.intent.instrumentSymbol, true), waiting.intent.outcome);
-      const confirmed = confirm(waiting.decision, approverId, quote, policy, state, now());
-      if (confirmed.kind === "refuse") {
-        if (confirmed.code === "duplicate-intent") pending.delete(intentId);
-        return {
-          ok: true,
-          entry: record({ ...tradeFields(waiting.intent), kind: "refuse", code: confirmed.code, spokenReason: confirmed.spokenReason }),
-        };
-      }
-      if (!pending.delete(intentId)) return { ok: false, error: "unknown-intent" };
-      if (!quote) throw new Error("Approval requires a quote");
-      return { ok: true, entry: await execute(confirmed, waiting.intent, quote) };
+    buyFromFeed(request) {
+      return proposeTrade({ ...request, source: "feed", senderId: deps.feed.operatorId });
     },
+
+    confirmFromFeed(intentId) {
+      if (pending.get(intentId)?.intent.source !== "feed") return Promise.resolve({ ok: false, error: "unknown-intent" });
+      return confirmPending(intentId, deps.feed.operatorId);
+    },
+
+    proposeTrade,
+
+    confirmPending,
 
     setKillSwitch(on) {
       policy = policy.withKillSwitch(on);
@@ -310,6 +450,7 @@ export function createDesk(deps: DeskDeps): Desk {
         perTradeMaxCents: config.perTradeMax,
         killSwitch: config.killSwitch,
         marketAllowlist: [...config.marketAllowlist],
+        marketCategories: [...config.marketCategories],
         senderAllowlist: [...config.senderAllowlist],
       };
       const pendingViews: PendingView[] = [...pending.values()].map(({ decision, intent }) => ({

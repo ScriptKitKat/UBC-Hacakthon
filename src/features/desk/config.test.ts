@@ -62,4 +62,39 @@ describe("loadDeskConfig", () => {
   it("rejects an unknown cluster", () => {
     expect(loadDeskConfig({ ...base, SOLANA_CLUSTER: "mainnet-beta" })).toMatchObject({ ok: false });
   });
+
+describe("market policy and feed settings", () => {
+  it("defaults the market categories and makes the allowlist optional", () => {
+    const withoutAllowlist = Object.fromEntries(Object.entries(base).filter(([name]) => name !== "MARKET_ALLOWLIST"));
+    const result = loadDeskConfig(withoutAllowlist);
+    if (!result.ok) throw new Error(result.issues.join(";"));
+    expect([...result.value.policy.marketCategories]).toEqual(["Economics", "Politics", "Tech", "Culture", "Crypto", "Commodities"]);
+    expect([...result.value.policy.marketAllowlist]).toEqual([]);
+  });
+
+  it("reads custom market categories", () => {
+    const result = loadDeskConfig({ ...base, MARKET_CATEGORIES: "Politics, Sports" });
+    if (!result.ok) throw new Error(result.issues.join(";"));
+    expect([...result.value.policy.marketCategories]).toEqual(["Politics", "Sports"]);
+  });
+
+  it.each([
+    ["FEED_OPERATOR_ID first", { FEED_OPERATOR_ID: "feed", VOICE_OPERATOR_ID: "voice" }, "feed"],
+    ["then VOICE_OPERATOR_ID", { VOICE_OPERATOR_ID: "voice" }, "voice"],
+    ["then the first sender", {}, "priscilla"],
+  ])("picks the feed operator: %s", (_name, extra, expected) => {
+    const result = loadDeskConfig({ ...base, SENDER_ALLOWLIST: "priscilla,other", ...extra });
+    if (!result.ok) throw new Error(result.issues.join(";"));
+    expect(result.value.feed.operatorId).toBe(expected);
+  });
+
+  it("reads Grok settings with a default model and no key", () => {
+    const plain = loadDeskConfig(base);
+    const custom = loadDeskConfig({ ...base, XAI_API_KEY: "k", XAI_MODEL: "grok-x" });
+    if (!plain.ok || !custom.ok) throw new Error("expected ok");
+    expect(plain.value.feed.grok).toEqual({ apiKey: undefined, model: "grok-4.20-0309-non-reasoning" });
+    expect(custom.value.feed.grok).toEqual({ apiKey: "k", model: "grok-x" });
+  });
+});
+
 });

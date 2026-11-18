@@ -41,6 +41,12 @@ function setup(respond: (url: string) => Response) {
 }
 
 describe("searchEvents", () => {
+  it("passes the pagination offset", async () => {
+    const { client, urls } = setup(() => jsonResponse(fedFixture));
+    await client.searchEvents({ limit: 10, offset: 20 });
+    expect(urls).toEqual(["https://example.test/v1/prediction-markets/events?status=active&limit=10&offset=20"]);
+  });
+
   it("builds the query url and parses events into domain types", async () => {
     const { client, urls } = setup(() => jsonResponse(fedFixture));
     const result = await client.searchEvents({ search: "FED", category: "Economics", limit: 5 });

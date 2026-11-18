@@ -20,7 +20,7 @@ const snapshot: DeskSnapshot = {
   },
   policy: {
     dailyCapCents: 2000, spentCents: 0, remainingCents: 2000, autoApproveMaxCents: 200, perTradeMaxCents: 1000,
-    killSwitch: false, marketAllowlist: [], senderAllowlist: ["priscilla"],
+    killSwitch: false, marketAllowlist: [], marketCategories: ["Economics"], senderAllowlist: ["priscilla"],
   },
   pending: [],
   log: [],
@@ -29,7 +29,7 @@ const snapshot: DeskSnapshot = {
 
 const entry: DecisionLogEntry = {
   entryId: "e1", kind: "approve", spokenReason: "Done.", intentId: "i1", symbol: "GEMI-FED-HOLD", outcome: "yes",
-  notionalCents: 100, senderId: "priscilla", at: "2026-11-17T12:00:00.000Z",
+  notionalCents: 100, senderId: "priscilla", source: "voice", at: "2026-11-17T12:00:00.000Z",
 };
 
 const proposeTrade = vi.fn<Desk["proposeTrade"]>();
@@ -38,6 +38,10 @@ const stubDesk: Desk = {
   submitNews: vi.fn(),
   proposeTrade,
   confirmPending: vi.fn(),
+  matchPost: vi.fn(),
+  quote: vi.fn(),
+  buyFromFeed: vi.fn(),
+  confirmFromFeed: vi.fn(),
   setKillSwitch: vi.fn(),
   getSnapshot: () => Promise.resolve(snapshot),
 };

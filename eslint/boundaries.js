@@ -45,6 +45,13 @@ export const projectRules = [
     ),
   },
   {
+    files: ["extension/**/*.ts"],
+    rules: importBan(
+      [["@/features", "@/features/**"], forbidAppImports, ["@/shared/**"], ["**/src/**"]],
+      "Extension code may import only src/shared (types) and its own folder.",
+    ),
+  },
+  {
     files: ["src/app/**/*.{ts,tsx}"],
     plugins: { local: localPlugin },
     rules: {

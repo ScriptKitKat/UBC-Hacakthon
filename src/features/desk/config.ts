@@ -1,6 +1,8 @@
 import { PublicKey } from "@solana/web3.js";
 import { z } from "zod";
-import { createPolicy } from "@/features/guardrails";
+import { loadGrokSettings } from "@/features/grok";
+import type { GrokSettings } from "@/features/grok";
+import { DEFAULT_MARKET_CATEGORIES, createPolicy } from "@/features/guardrails";
 import type { Policy } from "@/features/guardrails";
 import { instrumentSymbol, usdCents } from "@/shared";
 
@@ -28,7 +30,10 @@ const envSchema = z.object({
   DAILY_CAP_USD: dollarAmount,
   AUTO_APPROVE_MAX_USD: dollarAmount,
   PER_TRADE_MAX_USD: dollarAmount.default(usdCents(1000)),
-  MARKET_ALLOWLIST: commaList,
+  MARKET_ALLOWLIST: commaList.optional(),
+  MARKET_CATEGORIES: commaList.default([...DEFAULT_MARKET_CATEGORIES]),
+  FEED_OPERATOR_ID: z.string().trim().min(1).optional(),
+  VOICE_OPERATOR_ID: z.string().trim().min(1).optional(),
   SENDER_ALLOWLIST: commaList,
   GEMINI_API_BASE: z.url().default("https://api.gemini.com"),
   SOLANA_CLUSTER: z.enum(["devnet", "localnet"]).optional(),
@@ -51,8 +56,14 @@ export type LedgerSettings =
     }
   | { readonly configured: false; readonly missing: readonly string[] };
 
+export interface FeedSettings {
+  readonly operatorId: string;
+  readonly grok: GrokSettings;
+}
+
 export interface DeskConfig {
   readonly policy: Policy;
+  readonly feed: FeedSettings;
   readonly geminiBaseUrl: string;
   readonly ledger: LedgerSettings;
 }
@@ -86,12 +97,16 @@ export function loadDeskConfig(env: Readonly<Record<string, string | undefined>>
     dailyCap: values.DAILY_CAP_USD,
     autoApproveMax: values.AUTO_APPROVE_MAX_USD,
     perTradeMax: values.PER_TRADE_MAX_USD,
-    marketAllowlist: new Set(values.MARKET_ALLOWLIST.map(instrumentSymbol)),
+    marketAllowlist: new Set((values.MARKET_ALLOWLIST ?? []).map(instrumentSymbol)),
+    marketCategories: new Set(values.MARKET_CATEGORIES),
     senderAllowlist: new Set(values.SENDER_ALLOWLIST),
     killSwitch: false,
   });
   if (!policy.ok) {
     return { ok: false, issues: ["AUTO_APPROVE_MAX_USD <= PER_TRADE_MAX_USD <= DAILY_CAP_USD must hold"] };
   }
-  return { ok: true, value: { policy: policy.value, geminiBaseUrl: values.GEMINI_API_BASE, ledger: ledgerSettings(values) } };
+  const operatorId = values.FEED_OPERATOR_ID ?? values.VOICE_OPERATOR_ID ?? values.SENDER_ALLOWLIST[0];
+  if (operatorId === undefined) return { ok: false, issues: ["SENDER_ALLOWLIST: must list at least one value"] };
+  const feed: FeedSettings = { operatorId, grok: loadGrokSettings(present) };
+  return { ok: true, value: { policy: policy.value, feed, geminiBaseUrl: values.GEMINI_API_BASE, ledger: ledgerSettings(values) } };
 }

@@ -1,18 +1,18 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { instrumentSymbol, usdCents } from "@/shared";
 import type { TradeIntent } from "@/shared";
-import { applyApproved, confirm, createPolicy, evaluate, rollDay } from "./index";
+import { DEFAULT_MARKET_CATEGORIES, applyApproved, confirm, createPolicy, evaluate, marketPolicyRefusal, rollDay } from "./index";
 import type { PolicyConfig, PolicyState } from "./index";
 
 const now = new Date("2026-11-17T23:59:59Z");
 const symbol = instrumentSymbol("RATE-DEC");
-const market = { instrumentSymbol: symbol, marketState: "open", status: "active", eventStatus: "active", limitPrice: usdCents(50) };
+const market = { instrumentSymbol: symbol, marketState: "open", status: "active", eventStatus: "active", category: "Economics", limitPrice: usdCents(50) };
 const state: PolicyState = {
   day: "2026-11-17", spentToday: usdCents(0), reservedToday: usdCents(0), seenIntentIds: new Set(),
 };
 const config: PolicyConfig = {
   dailyCap: usdCents(2000), perTradeMax: usdCents(1000), autoApproveMax: usdCents(500),
-  marketAllowlist: new Set([symbol]), senderAllowlist: new Set(["desk"]), killSwitch: false,
+  marketAllowlist: new Set(), marketCategories: new Set(DEFAULT_MARKET_CATEGORIES), senderAllowlist: new Set(["desk"]), killSwitch: false,
 };
 const intent: TradeIntent = {
   intentId: "trade-1", instrumentSymbol: symbol, outcome: "yes", notional: usdCents(500),
@@ -42,31 +42,39 @@ describe("trade policy", () => {
 
   it("isolates authorization from input and exported set mutations", () => {
     const marketAllowlist = new Set([symbol]);
+    const marketCategories = new Set(["Economics"]);
     const senderAllowlist = new Set(["desk"]);
-    const isolated = validated({ ...config, marketAllowlist, senderAllowlist });
+    const isolated = validated({ ...config, marketAllowlist, marketCategories, senderAllowlist });
     const otherSymbol = instrumentSymbol("OTHER");
     marketAllowlist.delete(symbol);
     marketAllowlist.add(otherSymbol);
+    marketCategories.add("Sports");
     senderAllowlist.delete("desk");
     senderAllowlist.add("guest");
 
     expect(isolated.marketAllowlist).toEqual(new Set([symbol]));
+    expect(isolated.marketCategories).toEqual(new Set(["Economics"]));
     expect(isolated.senderAllowlist).toEqual(new Set(["desk"]));
     const exportedMarkets = isolated.marketAllowlist as Set<typeof symbol>;
     const exportedSenders = isolated.senderAllowlist as Set<string>;
     exportedMarkets.add(otherSymbol);
     exportedSenders.add("guest");
+    const exportedCategories = isolated.marketCategories as Set<string>;
+    exportedCategories.add("Sports");
     expect(evaluate(intent, market, isolated, state, now).kind).toBe("approve");
+    const unlisted = instrumentSymbol("UNLISTED");
+    expect(evaluate({ ...intent, instrumentSymbol: unlisted }, { ...market, instrumentSymbol: unlisted, category: "Sports" }, isolated, state, now))
+      .toMatchObject({ code: "market-category-not-allowed" });
     expect(evaluate({ ...intent, senderId: "guest" }, market, isolated, state, now)).toMatchObject({ code: "unauthorized-sender" });
-    expect(evaluate({ ...intent, instrumentSymbol: otherSymbol }, { ...market, instrumentSymbol: otherSymbol }, isolated, state, now))
-      .toMatchObject({ code: "market-not-allowlisted" });
+    expect(evaluate({ ...intent, instrumentSymbol: otherSymbol }, { ...market, instrumentSymbol: otherSymbol }, isolated, state, now).kind)
+      .toBe("approve");
   });
 
   it.each([
     ["kill-switch", evaluate({ ...intent, senderId: "guest" }, market, policy.withKillSwitch(true), state, now)],
     ["unauthorized-sender", evaluate({ ...intent, senderId: "guest" }, market, policy, state, now)],
     ["duplicate-intent", evaluate(intent, market, policy, { ...state, seenIntentIds: new Set([intent.intentId]) }, now)],
-    ["market-not-allowlisted", evaluate(intent, market, validated({ ...config, marketAllowlist: new Set() }), state, now)],
+    ["market-category-not-allowed", evaluate(intent, { ...market, category: "Sports" }, policy, state, now)],
     ["market-closed", evaluate(intent, { ...market, marketState: "closed" }, policy, state, now)],
     ["zero-notional", evaluate({ ...intent, notional: usdCents(0) }, market, policy, state, now)],
     ["over-per-trade-cap", evaluate({ ...intent, notional: usdCents(1001) }, market, policy, state, now)],
@@ -85,6 +93,22 @@ describe("trade policy", () => {
     expect(evaluate(intent, market, policy, state, now)).toMatchObject({
       kind: "approve", spokenReason: "I approved the $5 trade.",
     });
+  });
+
+  it("allows any category by symbol allowlist and matches categories case-insensitively", () => {
+    const sports = { ...market, category: "Sports" };
+    const byCategory = validated({ ...config, marketCategories: new Set(["sports "]) });
+    const bySymbol = validated({ ...config, marketAllowlist: new Set([symbol]), marketCategories: new Set() });
+    expect(evaluate(intent, sports, byCategory, state, now).kind).toBe("approve");
+    expect(evaluate(intent, sports, bySymbol, state, now).kind).toBe("approve");
+    expect(evaluate(intent, sports, policy, state, now)).toMatchObject({
+      code: "market-category-not-allowed", spokenReason: "Sports markets are outside the desk's news-trading policy.",
+    });
+  });
+
+  it("explains category refusals for cards", () => {
+    expect(marketPolicyRefusal(policy, symbol, "Weather")).toBe("Weather markets are outside the desk's news-trading policy.");
+    expect(marketPolicyRefusal(policy, symbol, "Politics")).toBeUndefined();
   });
 
   it("requires an allowlisted approver one cent above the threshold", () => {
@@ -119,7 +143,7 @@ describe("trade policy", () => {
     const pending = evaluate({ ...intent, notional: usdCents(501) }, market, policy, state, now);
     if (pending.kind !== "needs-approval") throw new Error("Expected pending decision");
     expect(confirm(pending, "desk", market, validated({ ...config, perTradeMax: usdCents(500) }), state, now)).toMatchObject({ code: "over-per-trade-cap" });
-    expect(confirm(pending, "desk", market, validated({ ...config, marketAllowlist: new Set() }), state, now)).toMatchObject({ code: "market-not-allowlisted" });
+    expect(confirm(pending, "desk", market, validated({ ...config, marketCategories: new Set() }), state, now)).toMatchObject({ code: "market-category-not-allowed" });
   });
 
   it("rolls UTC spend and reservations over while retaining replay protection", () => {

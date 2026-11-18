@@ -23,6 +23,7 @@ export interface MatchCandidate {
   readonly eventStatus: string;
   readonly eventTicker: string;
   readonly eventTitle: string;
+  readonly eventCategory: string;
   readonly contract: MarketContract;
   readonly score: number;
   readonly matchedTokens: readonly string[];

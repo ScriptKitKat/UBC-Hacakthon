@@ -45,14 +45,26 @@ export function GuardrailPanel({ policy, ledger, busy, onKillSwitch }: Guardrail
         <dd>{formatDollars(policy.autoApproveMaxCents)}</dd>
         <dt>Per-trade limit</dt>
         <dd>{formatDollars(policy.perTradeMaxCents)}</dd>
-        <dt>Allowlist</dt>
+        <dt>Categories</dt>
         <dd>
           <ul className={styles.chips}>
-            {policy.marketAllowlist.map((symbol) => (
-              <li key={symbol}>{symbol}</li>
+            {policy.marketCategories.map((category) => (
+              <li key={category}>{category}</li>
             ))}
           </ul>
         </dd>
+        {policy.marketAllowlist.length > 0 ? (
+          <>
+            <dt>Allowlist</dt>
+            <dd>
+              <ul className={styles.chips}>
+                {policy.marketAllowlist.map((symbol) => (
+                  <li key={symbol}>{symbol}</li>
+                ))}
+              </ul>
+            </dd>
+          </>
+        ) : null}
       </dl>
       <button
         type="button"

@@ -13,3 +13,4 @@ export type {
   TicketView,
 } from "./desk";
 export type { XBotStatusView, XMessageRole, XMessageView, XOutcomeView, XThreadView } from "./xbot";
+export type { FeedMarketView, FeedMatch, FeedMatchedBy, FeedQuote, PricePoint } from "./feed";

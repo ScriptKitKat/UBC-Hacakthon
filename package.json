@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p extension",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
     "check": "npm run typecheck && npm run lint && npm run test",
@@ -16,7 +16,8 @@
     "setup:devnet": "node scripts/ledger-devnet-setup",
     "setup:localnet": "node scripts/localnet-setup",
     "voice:setup-agent": "tsx scripts/voice-setup-agent.mjs",
-    "voice:simulate": "node scripts/voice-simulate.mjs"
+    "voice:simulate": "node scripts/voice-simulate.mjs",
+    "extension:build": "node extension/build.mjs"
   },
   "dependencies": {
     "@elevenlabs/react": "^1.23.0",
@@ -30,10 +31,13 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/chrome": "^0.3.7",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "esbuild": "^0.28.2",
     "eslint": "^10.15.0",
+    "happy-dom": "^21.0.4",
     "tsx": "^4.23.15",
     "typescript": "~6.0",
     "typescript-eslint": "^8.73.0",
