@@ -1,16 +1,13 @@
-import type { GeminiMarketsClient } from "@/features/markets";
-import { allowAll, matchNews } from "@/features/matcher";
-import { createCandidateSource, isIntradayEvent, selectCandidates } from "./candidates";
+import type { GeminiMarketsClient, MarketEvent } from "@/features/markets";
+import { matchPostToEvents, trimWhy } from "@/features/matcher";
+import { createCandidateSource, selectCandidates } from "./candidates";
 import type { GrokSettings } from "./env";
-import { buildRequestBody, parseCompletion, trimWhy } from "./request";
+import { buildRequestBody, parseCompletion } from "./request";
 import type { PostCandidate, PostInput, PostMatcher, PostMatchResult } from "./types";
 
 export const MIN_CONFIDENCE = 0.6;
 const GROK_URL = "https://api.x.ai/v1/chat/completions";
 const DEFAULT_TIMEOUT_MS = 8000;
-const SCORE_FOR_FULL_CONFIDENCE = 8;
-const MAX_FALLBACK_CONFIDENCE = 0.95;
-const FALLBACK_TOKENS_SHOWN = 3;
 
 export interface PostMatcherOptions {
   readonly markets: Pick<GeminiMarketsClient, "searchEvents">;
@@ -19,13 +16,6 @@ export interface PostMatcherOptions {
   readonly fetch: typeof fetch;
   readonly now: () => Date;
   readonly timeoutMs?: number;
-}
-
-function mentionedWords(text: string, tokens: readonly string[]): readonly string[] {
-  const words = text.toLowerCase().match(/[a-z0-9]+/gu) ?? [];
-  return tokens
-    .slice(0, FALLBACK_TOKENS_SHOWN)
-    .map((token) => words.find((word) => word.startsWith(token)) ?? token);
 }
 
 function noMatch(matchedBy: "grok" | "keywords", reason: string): PostMatchResult {
@@ -70,26 +60,25 @@ export function createPostMatcher(options: PostMatcherOptions): PostMatcher {
   }
 
   async function matchWithKeywords(post: PostInput): Promise<PostMatchResult> {
-    const result = await matchNews({ id: post.id, text: post.text, postedAt: now() }, { client: markets, allowlist: allowAll });
-    if (result.kind === "no-match") return noMatch("keywords", result.reason);
-    const best = [result.best, ...result.alternatives].find(
-      (candidate) => candidate.contract.prices.buyYesCents !== null && !isIntradayEvent({ ticker: candidate.eventTicker, title: candidate.eventTitle }),
-    );
-    if (!best) return noMatch("keywords", "No tradeable market matches this post.");
-    const confidence = Math.min(MAX_FALLBACK_CONFIDENCE, best.score / SCORE_FOR_FULL_CONFIDENCE);
-    if (confidence < MIN_CONFIDENCE) return noMatch("keywords", "No market matches this post closely enough.");
-    const mentioned = mentionedWords(post.text, best.matchedTokens).join(", ");
+    let events: readonly MarketEvent[];
+    try {
+      events = await source.eventsFor(post.text);
+    } catch {
+      return noMatch("keywords", "Market data is unavailable right now.");
+    }
+    const pick = matchPostToEvents(post.text, events, now());
+    if (!pick || pick.confidence < MIN_CONFIDENCE) return noMatch("keywords", "No live market matches this post closely enough.");
     return {
       kind: "matched",
       matchedBy: "keywords",
-      confidence,
-      why: trimWhy(`Headline mentions ${mentioned}; this market prices ${best.eventTitle}.`),
+      confidence: pick.confidence,
+      why: pick.why,
       candidate: {
-        eventTicker: best.eventTicker,
-        eventTitle: best.eventTitle,
-        eventStatus: best.eventStatus,
-        category: best.eventCategory,
-        contract: best.contract,
+        eventTicker: pick.event.ticker,
+        eventTitle: pick.event.title,
+        eventStatus: pick.event.status,
+        category: pick.event.category,
+        contract: pick.contract,
       },
     };
   }

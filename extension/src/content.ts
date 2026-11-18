@@ -11,7 +11,7 @@ const controller = createFeedController({
       },
       { rootMargin: "200px 0px" },
     );
-    return { observe: (element) => { observer.observe(element); } };
+    return { observe: (element) => { observer.observe(element); }, unobserve: (element) => { observer.unobserve(element); } };
   },
 });
 

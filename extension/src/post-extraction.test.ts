@@ -12,14 +12,55 @@ beforeEach(() => {
 describe("extractPost", () => {
   it("reads id, text, author and url from every fixture post", () => {
     const posts = [...document.querySelectorAll(TWEET_SELECTOR)].map((article) => extractPost(article));
-    expect(posts).toHaveLength(5);
-    expect(posts[0]).toEqual({
-      id: "1857300000000000001",
-      text: "Fed officials signal they could hold rates steady at the December FOMC meeting, Powell says inflation progress has stalled.",
-      author: "@reuters",
-      url: "https://x.com/reuters/status/1857300000000000001",
+    expect(posts.map((post) => post?.id)).toEqual([
+      "2122621916934500390",
+      "2122569858189861012",
+      "2121332661851709507",
+      "2122556892543394292",
+      "2122900000000000005",
+    ]);
+    expect(posts[3]).toEqual({
+      id: "2122556892543394292",
+      text: "8-1 49ers vs 7-2 Vikings on Sunday Night Football. SF by 3.",
+      author: "@joinantic",
+      url: "https://x.com/joinantic/status/2122556892543394292",
     });
-    expect(posts.map((post) => post?.id)).toEqual(Array.from({ length: 5 }, (_, index) => `185730000000000000${String(index + 1)}`));
+  });
+
+  it("includes emoji alt text in the post text", () => {
+    const article = document.querySelectorAll(TWEET_SELECTOR)[4] as Element;
+    expect(extractPost(article)?.text).toBe("Good morning☕ coffee time and a slow Sunday ahead, no notes.");
+  });
+
+  it("uses the outer post's own text, author and time link when it quotes another post", () => {
+    const article = document.querySelectorAll(TWEET_SELECTOR)[0] as Element;
+    expect(article.querySelector('div[role="link"] [data-testid="tweetText"]')?.textContent).toContain("Wall Street");
+    expect(extractPost(article)).toMatchObject({
+      id: "2122621916934500390",
+      author: "@Jeremybtc",
+      text: expect.stringMatching(/^POLYMARKET PUTS DECEMBER FED RATE HIKE ODDS/u) as string,
+    });
+    expect(extractPost(article)?.text).not.toContain("Wall Street");
+  });
+
+  it("ignores a quoted post's time link and text even when the outer post has no text of its own", () => {
+    document.body.innerHTML = `<article data-testid="tweet">
+      <div data-testid="User-Name"><a href="/outer"><span>@outer</span></a><a href="/outer/status/111"><time>1h</time></a></div>
+      <div role="link" tabindex="0">
+        <div data-testid="User-Name"><a href="/quoted"><span>@quoted</span></a><a href="/quoted/status/222"><time>2h</time></a></div>
+        <div data-testid="tweetText">Quoted words that belong to someone else</div>
+      </div></article>`;
+    const article = document.querySelector(TWEET_SELECTOR);
+    expect(article && extractPost(article)).toBeUndefined();
+  });
+
+  it("falls back to the page path for the focal post on a status page", () => {
+    document.body.innerHTML = `<article data-testid="tweet">
+      <div data-testid="User-Name"><a href="/focal"><span>@focal</span></a></div>
+      <div data-testid="tweetText">The focal post has no time link wrapper</div></article>`;
+    const article = document.querySelector(TWEET_SELECTOR) as Element;
+    expect(extractPost(article, "/focal/status/12345")).toMatchObject({ id: "12345", author: "@focal", url: "https://x.com/focal/status/12345" });
+    expect(extractPost(article, "/home")).toBeUndefined();
   });
 
   it("ignores status links that do not wrap a time element", () => {

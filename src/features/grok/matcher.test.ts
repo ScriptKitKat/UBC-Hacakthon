@@ -4,8 +4,8 @@ import type { GeminiMarketsClient, MarketContract, MarketEvent } from "@/feature
 import { instrumentSymbol } from "@/shared";
 import { loadGrokSettings } from "./env";
 import { createPostMatcher } from "./matcher";
-import { MAX_CONTRACTS_PER_EVENT, MAX_EVENTS, isIntradayEvent } from "./candidates";
-import { trimWhy } from "./request";
+import { trimWhy } from "@/features/matcher";
+import { MAX_CONTRACTS_PER_EVENT, MAX_EVENTS } from "./candidates";
 
 function contract(symbol: string, label: string, yes = 62): MarketContract {
   return {
@@ -27,7 +27,7 @@ const fed = event("FED261211", "Fed decision in December?", "Economics", [
   contract("GEMI-FED261211-CUT25", "Cut 25bps", 30),
 ]);
 const pres = event("PRES2028", "Presidential Election Winner 2028?", "Politics", [contract("GEMI-PRES2028-VANCE", "J.D. Vance")]);
-const sports = event("NFL-KC-BUF", "Kansas City Chiefs vs Buffalo Bills", "Sports", [contract("GEMI-NFL-KC", "Chiefs")]);
+const sports = event("NFL-2611221800-KC-BUF-M", "Kansas City vs Buffalo", "Sports", [contract("GEMI-NFL-KC", "Kansas City", 60), contract("GEMI-NFL-BUF", "Buffalo", 40)]);
 const unrelatedSports = event("NBA-X", "Charlotte vs Los Angeles", "Sports", [contract("GEMI-NBA-X", "Charlotte")]);
 const intraday = event("BTC15M2611180415", "BTC price today at 11:15pm EST", "Crypto", [contract("GEMI-BTC15M", "Up")]);
 
@@ -157,16 +157,14 @@ describe("grok post matcher", () => {
     const result = await matcher.matchPost(FED_POST);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(result).toMatchObject({ kind: "matched", matchedBy: "keywords" });
-    expect(result.kind === "matched" && result.why).toMatch(/^Headline mentions .*; this market prices Fed decision in December\?\.$/u);
+    expect(result.kind === "matched" && result.why).toMatch(/Fed/u);
   });
 
-  it("shows the post's own words, not stems, and skips intraday or unpriced contracts in the fallback", async () => {
-    const kansas = event("KC", "Kansas City Chiefs season wins", "Politics", [contract("GEMI-KC", "Chiefs")]);
-    const unpriced = event("KC2", "Kansas City Chiefs title", "Politics", [{ ...contract("GEMI-KC2", "Chiefs"), prices: { bestBidCents: null, bestAskCents: null, lastTradeCents: null, buyYesCents: null, buyNoCents: 5 } }]);
-    const { matcher } = setup({ apiKey: undefined, markets: fakeMarkets([unpriced, intraday, kansas]) });
-    const result = await matcher.matchPost({ id: "5", text: "Kansas City Chiefs clinch season title, Chiefs fans in Kansas City celebrate" });
-    expect(result).toMatchObject({ kind: "matched", candidate: { eventTicker: "KC" } });
-    expect(result.kind === "matched" && result.why).toContain("kansas");
+  it("matches a sports post from the nickname's city and skips unpriced contracts", async () => {
+    const unpriced = event("NFL-2611221800-KC-BUF-S", "Kansas City vs Buffalo: Point Spread", "Sports", [{ ...contract("GEMI-KC2", "Kansas City"), prices: { bestBidCents: null, bestAskCents: null, lastTradeCents: null, buyYesCents: null, buyNoCents: 5 } }]);
+    const { matcher } = setup({ apiKey: undefined, markets: fakeMarkets([unpriced, intraday, sports]) });
+    const result = await matcher.matchPost({ id: "5", text: "Chiefs host the Bills on Sunday, Chiefs favored" });
+    expect(result).toMatchObject({ kind: "matched", matchedBy: "keywords", candidate: { eventTicker: "NFL-2611221800-KC-BUF-M", contract: { label: "Kansas City" } } });
   });
 
   it("reports no match from keywords for unrelated posts", async () => {
@@ -196,13 +194,6 @@ describe("grok post matcher", () => {
     const events = new Set([...symbols].map((symbol) => symbol.split("-")[1]));
     expect(events.size).toBeLessThanOrEqual(MAX_EVENTS);
     expect(symbols.size).toBeLessThanOrEqual(MAX_EVENTS * MAX_CONTRACTS_PER_EVENT);
-  });
-});
-
-describe("intraday filter", () => {
-  it("flags short-window crypto events", () => {
-    expect(isIntradayEvent(intraday)).toBe(true);
-    expect(isIntradayEvent(fed)).toBe(false);
   });
 });
 

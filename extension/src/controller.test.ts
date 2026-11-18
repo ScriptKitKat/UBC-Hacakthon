@@ -7,8 +7,8 @@ import type { BackgroundReply, BackgroundRequest, Sender } from "./protocol";
 import { TWEET_SELECTOR } from "./post-extraction";
 
 const fixture = readFileSync(resolve(process.cwd(), "extension/fixtures/x-timeline.html"), "utf8");
-const FED_ID = "1857300000000000001";
-const FOOD_ID = "1857300000000000005";
+const FED_ID = "2122621916934500390";
+const FOOD_ID = "2122900000000000005";
 
 function setup(respond: (request: BackgroundRequest) => BackgroundReply<unknown> = defaultReply) {
   document.body.innerHTML = /<body>([\s\S]*)<\/body>/u.exec(fixture)?.[1] ?? "";
@@ -24,7 +24,7 @@ function setup(respond: (request: BackgroundRequest) => BackgroundReply<unknown>
     send,
     watchVisibility: (onChange) => {
       notify = onChange;
-      return { observe: (element) => { observed.push(element); } };
+      return { observe: (element) => { observed.push(element); }, unobserve: () => undefined };
     },
     dwellMs: 300,
     refreshMs: 20_000,
@@ -64,7 +64,7 @@ describe("feed controller", () => {
     await vi.advanceTimersByTimeAsync(299);
     expect(requests).toEqual([]);
     await vi.advanceTimersByTimeAsync(2);
-    expect(requests[0]).toMatchObject({ type: "match", postId: FED_ID, author: "@reuters" });
+    expect(requests[0]).toMatchObject({ type: "match", postId: FED_ID, author: "@Jeremybtc" });
   });
 
   it("does not match posts that scroll past before the dwell time", async () => {
@@ -135,6 +135,64 @@ describe("feed controller", () => {
     await vi.advanceTimersByTimeAsync(400);
     expect(articles()[0]?.querySelector("[data-ntd-card]")).toBe(first);
     expect(requests.filter((request) => request.type === "match")).toHaveLength(1);
+  });
+
+  it("re-attaches the cached card when X re-renders an article without a new visibility event", async () => {
+    const { controller, requests, articles, show } = setup();
+    controller.start();
+    show(0);
+    await vi.advanceTimersByTimeAsync(400);
+    const host = articles()[0]?.querySelector("[data-ntd-card]");
+    host?.remove();
+    await vi.advanceTimersByTimeAsync(10);
+    articles()[0]?.append(document.createElement("div"));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(articles()[0]?.querySelector("[data-ntd-card]")).toBe(host);
+    expect(articles()[0]?.querySelectorAll("[data-ntd-card]")).toHaveLength(1);
+    expect(requests.filter((request) => request.type === "match")).toHaveLength(1);
+  });
+
+  it("never inserts a second card into the same article", async () => {
+    const { controller, articles, show } = setup();
+    controller.start();
+    show(0);
+    await vi.advanceTimersByTimeAsync(400);
+    show(0);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(articles()[0]?.querySelectorAll("[data-ntd-card]")).toHaveLength(1);
+  });
+
+  it("places the card inside the article, after the text and quote and before the action bar", async () => {
+    const { controller, articles, show } = setup();
+    controller.start();
+    show(0);
+    await vi.advanceTimersByTimeAsync(400);
+    const article = articles()[0] as Element;
+    const host = article.querySelector("[data-ntd-card]") as Element;
+    expect(host.getAttribute("data-ntd-card")).toBe(FED_ID);
+    expect(host.shadowRoot).not.toBeNull();
+    expect(host.previousElementSibling?.querySelector('[data-testid="tweetText"]')).not.toBeNull();
+    expect(host.nextElementSibling?.matches('[role="group"]') || host.nextElementSibling?.querySelector('[role="group"]') !== null).toBe(true);
+    expect(article.contains(host)).toBe(true);
+  });
+
+  it("removes the stale card and matches the new post when X reuses an article node for another post", async () => {
+    const { controller, requests, articles, show } = setup();
+    controller.start();
+    show(0);
+    await vi.advanceTimersByTimeAsync(400);
+    const article = articles()[0] as Element;
+    const stale = article.querySelector("[data-ntd-card]");
+    expect(stale).not.toBeNull();
+    const donor = articles()[4] as Element;
+    const text = article.querySelector('[data-testid="tweetText"]');
+    const time = article.querySelector("a[href*='/status/']");
+    if (text) text.textContent = "Quiet weekend plans: a long hike, then pancakes with the whole family.";
+    time?.setAttribute("href", `/someone/status/${donor.querySelector("a[href*='/status/']")?.getAttribute("href")?.split("/").pop() ?? ""}`);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(article.querySelector("[data-ntd-card]")).toBeNull();
+    expect(stale?.isConnected).toBe(false);
+    expect(requests.filter((request) => request.type === "match").at(-1)).toMatchObject({ postId: FOOD_ID });
   });
 
   it("picks up posts added later by the timeline", async () => {

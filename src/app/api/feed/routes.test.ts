@@ -4,6 +4,7 @@ import type { DecisionLogEntry, FeedMatch } from "@/shared";
 import { OPTIONS as buyOptions, POST as buy } from "./buy/route";
 import { POST as confirm } from "./confirm/route";
 import { OPTIONS as matchOptions, POST as match } from "./match/route";
+import { MAX_PREWARM_POSTS, POST as prewarm } from "./prewarm/route";
 import { GET as quote } from "./quote/route";
 
 const getDesk = vi.hoisted(() => vi.fn<() => Promise<DeskAccess>>());
@@ -164,5 +165,51 @@ describe("feed behaviour", () => {
     expect((await buy(post("http://desk.test", validBuy))).status).toBe(503);
     buyFromFeed.mockRejectedValueOnce(new Error("boom"));
     expect((await buy(post("http://desk.test", validBuy, { origin: EXTENSION }))).status).toBe(500);
+  });
+});
+
+describe("feed prewarm", () => {
+  const posts = [
+    { postId: "p1", text: "Fed holds rates", author: "@Reuters", url: "https://x.com/Reuters/status/1" },
+    { postId: "p2", text: "Bitcoin slides" },
+  ];
+
+  it("matches every post through the desk's cached matcher", async () => {
+    matchPost.mockImplementation((input) => Promise.resolve({ kind: "no-match", postId: input.id, matchedBy: "keywords", reason: "none" }));
+    const response = await prewarm(post("http://desk.test", { posts }));
+    expect(await response.json()).toEqual({ warmed: [{ postId: "p1", kind: "no-match" }, { postId: "p2", kind: "no-match" }] });
+    expect(matchPost).toHaveBeenCalledTimes(2);
+    expect(matchPost).toHaveBeenNthCalledWith(1, { id: "p1", text: "Fed holds rates", author: "@Reuters" });
+    expect(matchPost).toHaveBeenNthCalledWith(2, { id: "p2", text: "Bitcoin slides" });
+  });
+
+  it("accepts server calls without an Origin header and extension origins, and rejects web pages", async () => {
+    expect((await prewarm(post("http://desk.test", { posts }))).status).toBe(200);
+    const fromExtension = await prewarm(post("http://desk.test", { posts }, { origin: EXTENSION }));
+    expect(fromExtension.headers.get("access-control-allow-origin")).toBe(EXTENSION);
+    expect((await prewarm(post("http://desk.test", { posts }, { origin: "https://x.com" }))).status).toBe(403);
+  });
+
+  it.each([
+    ["no posts", { posts: [] }],
+    ["too many posts", { posts: Array.from({ length: MAX_PREWARM_POSTS + 1 }, (_, index) => ({ postId: `p${String(index)}`, text: "hello" })) }],
+    ["a bad post", { posts: [{ postId: "", text: "hello" }] }],
+  ])("returns 400 for %s", async (_name, body) => {
+    expect((await prewarm(post("http://desk.test", body))).status).toBe(400);
+    expect(matchPost).not.toHaveBeenCalled();
+  });
+
+  it("requires the bearer token only when FEED_PREWARM_TOKEN is set", async () => {
+    vi.stubEnv("FEED_PREWARM_TOKEN", "s3cret");
+    expect((await prewarm(post("http://desk.test", { posts }))).status).toBe(401);
+    expect((await prewarm(post("http://desk.test", { posts }, { authorization: "Bearer nope" }))).status).toBe(401);
+    expect(matchPost).not.toHaveBeenCalled();
+    expect((await prewarm(post("http://desk.test", { posts }, { authorization: "Bearer s3cret" }))).status).toBe(200);
+    expect(matchPost).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves match open without the token", async () => {
+    vi.stubEnv("FEED_PREWARM_TOKEN", "s3cret");
+    expect((await match(post("http://desk.test", { postId: "p1", text: "Fed holds rates" }))).status).toBe(200);
   });
 });

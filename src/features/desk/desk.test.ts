@@ -255,8 +255,8 @@ describe("desk", () => {
 describe("desk feed", () => {
   const post = { id: "post-1", text: news.text, author: "@Reuters" };
   const sportsEvent: MarketEvent = {
-    ticker: "NFL-KC-BUF", title: "Chiefs vs Bills", category: "Sports", status: "active", expiryDate: null, tags: [],
-    contracts: [contract(instrumentSymbol("GEMI-NFL-KC"), "Chiefs")],
+    ticker: "NFL-2611221800-KC-BUF-M", title: "Kansas City vs Buffalo", category: "Sports", status: "active", expiryDate: null, tags: [],
+    contracts: [contract(instrumentSymbol("GEMI-NFL-KC"), "Kansas City")],
   };
 
   it("matches a post by keywords without a Grok key and registers the market for trading", async () => {
@@ -275,6 +275,16 @@ describe("desk feed", () => {
     await desk.matchPost(post);
     const calls = markets.searchEvents.mock.calls.length;
     await desk.matchPost(post);
+    expect(markets.searchEvents.mock.calls).toHaveLength(calls);
+  });
+
+  it("serves posts matched ahead of time from the cache without matching again", async () => {
+    const { desk, markets } = setup();
+    const posts = [post, { id: "post-2", text: "Powell says the Fed will hold rates" }];
+    const warmed = await Promise.all(posts.map((warm) => desk.matchPost(warm)));
+    const calls = markets.searchEvents.mock.calls.length;
+    const served = await Promise.all(posts.map((later) => desk.matchPost(later)));
+    expect(served).toEqual(warmed);
     expect(markets.searchEvents.mock.calls).toHaveLength(calls);
   });
 

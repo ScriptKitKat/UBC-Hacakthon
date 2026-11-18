@@ -1,7 +1,7 @@
 import { z } from "zod";
+import { MAX_WHY_LENGTH } from "@/features/matcher";
 import type { PostCandidate, PostInput } from "./types";
 
-export const MAX_WHY_LENGTH = 110;
 const MAX_POST_CHARS = 700;
 
 const SYSTEM_PROMPT = [
@@ -80,9 +80,4 @@ export function parseCompletion(body: unknown): GrokAnswer | undefined {
   }
   const answer = grokAnswer.safeParse(json);
   return answer.success ? answer.data : undefined;
-}
-
-export function trimWhy(why: string): string {
-  const plain = why.replace(/\s+/gu, " ").trim();
-  return plain.length <= MAX_WHY_LENGTH ? plain : `${plain.slice(0, MAX_WHY_LENGTH - 1).trimEnd()}…`;
 }

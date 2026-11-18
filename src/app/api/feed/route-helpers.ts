@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { z } from "zod";
 import { withBody, withDesk } from "../desk/route-helpers";
 import type { Desk } from "@/features/desk";
@@ -46,4 +47,18 @@ export function feedPost<S extends z.ZodType>(
       ? withBody(request, schema, handler)
       : Promise.resolve(Response.json({ error: "unsupported-media-type", issues: ["content-type must be application/json"] }, { status: 415 })),
   );
+}
+
+function digest(value: string): Buffer {
+  return createHash("sha256").update(value).digest();
+}
+
+export function withPrewarmToken(request: Request, run: () => Promise<Response>): Promise<Response> {
+  const token = process.env.FEED_PREWARM_TOKEN?.trim();
+  if (token === undefined || token === "") return run();
+  const presented = /^Bearer (.+)$/u.exec(request.headers.get("authorization") ?? "")?.[1] ?? "";
+  if (!timingSafeEqual(digest(presented), digest(token))) {
+    return Promise.resolve(Response.json({ error: "unauthorized" }, { status: 401 }));
+  }
+  return run();
 }

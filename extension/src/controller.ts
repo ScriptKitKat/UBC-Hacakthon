@@ -1,6 +1,6 @@
-import { createCard } from "./card-view";
+import { CARD_HOST_ATTRIBUTE, createCard } from "./card-view";
 import type { CardHandle } from "./card-view";
-import { MIN_TEXT_LENGTH, TWEET_SELECTOR, extractPost, isTopLevelTweet } from "./post-extraction";
+import { MIN_TEXT_LENGTH, TWEET_SELECTOR, extractPost, isTopLevelTweet, ownElements } from "./post-extraction";
 import type { Sender } from "./protocol";
 
 const DEFAULT_DWELL_MS = 350;
@@ -11,6 +11,7 @@ const MATCH_CONCURRENCY = 2;
 
 export interface VisibilityWatcher {
   readonly observe: (element: Element) => void;
+  readonly unobserve: (element: Element) => void;
 }
 
 export interface ControllerDeps {
@@ -50,13 +51,17 @@ function createQueue(limit: number): <T>(task: () => Promise<T>) => Promise<T> {
   };
 }
 
+function removeCards(article: Element, keep: Element | undefined): void {
+  for (const host of article.querySelectorAll(`[${CARD_HOST_ATTRIBUTE}]`)) {
+    if (host !== keep) host.remove();
+  }
+}
+
 function insertCard(article: Element, card: CardHandle): void {
-  const existing = article.querySelector("[data-ntd-card]");
-  if (existing === card.host) return;
-  existing?.remove();
-  const groups = article.querySelectorAll('[role="group"]');
-  const anchor = groups[groups.length - 1];
-  const slot = anchor?.parentElement ?? anchor;
+  removeCards(article, card.host);
+  if (article.contains(card.host)) return;
+  const bar = ownElements(article, '[role="group"]').at(-1);
+  const slot = bar?.parentElement && bar.parentElement !== article ? bar.parentElement : bar;
   if (slot?.parentElement) {
     slot.parentElement.insertBefore(card.host, slot);
   } else {
@@ -135,8 +140,9 @@ export function createFeedController(deps: ControllerDeps): FeedController {
   function activate(article: Element): void {
     if (!article.isConnected || !visibleArticles.has(article)) return;
     const post = extractPost(article);
-    if (!post || post.text.length < MIN_TEXT_LENGTH) return;
+    if (!post) return;
     postIdOf.set(article, post.id);
+    if (post.text.length < MIN_TEXT_LENGTH) return;
     articleOf.set(post.id, article);
     const entry = entryFor(post.id);
     if (entry.matchState === "matched") {
@@ -152,7 +158,7 @@ export function createFeedController(deps: ControllerDeps): FeedController {
     dwellTimers.delete(article);
     if (visible) {
       visibleArticles.add(article);
-      dwellTimers.set(article, setTimeout(() => { activate(article); }, dwellMs));
+      scheduleDwell(article);
       return;
     }
     visibleArticles.delete(article);
@@ -162,6 +168,33 @@ export function createFeedController(deps: ControllerDeps): FeedController {
 
   const watcher = deps.watchVisibility(onVisibility);
 
+  function scheduleDwell(article: Element): void {
+    const pending = dwellTimers.get(article);
+    if (pending !== undefined) clearTimeout(pending);
+    dwellTimers.set(article, setTimeout(() => {
+      dwellTimers.delete(article);
+      activate(article);
+    }, dwellMs));
+  }
+
+  function reconcile(article: Element): void {
+    const known = postIdOf.get(article);
+    const current = extractPost(article)?.id;
+    if (known === undefined && dwellTimers.has(article)) return;
+    if (current === known) {
+      const entry = current === undefined ? undefined : entries.get(current);
+      if (current !== undefined && entry?.matchState === "matched") showCard(article, current, entry);
+      return;
+    }
+    removeCards(article, undefined);
+    if (known !== undefined) {
+      postIdOf.delete(article);
+      if (articleOf.get(known) === article) articleOf.delete(known);
+      stopRefresh(known);
+    }
+    if (current !== undefined) scheduleDwell(article);
+  }
+
   function scan(): void {
     for (const article of doc.querySelectorAll(TWEET_SELECTOR)) {
       if (!isTopLevelTweet(article) || observed.has(article)) continue;
@@ -169,7 +202,12 @@ export function createFeedController(deps: ControllerDeps): FeedController {
       watcher.observe(article);
     }
     for (const article of visibleArticles) {
-      if (!article.isConnected) onVisibility(article, false);
+      if (article.isConnected) {
+        reconcile(article);
+      } else {
+        onVisibility(article, false);
+        watcher.unobserve(article);
+      }
     }
   }
 

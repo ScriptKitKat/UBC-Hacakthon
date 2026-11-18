@@ -18,7 +18,7 @@ export const market: WireMarket = {
 
 export const matched: WireMatched = {
   kind: "matched",
-  postId: "1857300000000000001",
+  postId: "2122621916934500390",
   matchedBy: "grok",
   confidence: 0.9,
   why: "Powell signalling a hold makes a December rate cut less likely.",
