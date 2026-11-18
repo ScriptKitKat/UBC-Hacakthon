@@ -7,6 +7,8 @@ const dollarsToCents = z
   .regex(/^\d+(\.\d+)?$/)
   .transform((text) => Math.round(Number(text) * 100));
 
+const decimalText = z.string().regex(/^\d+(\.\d+)?$/);
+
 const optionalCents = dollarsToCents.nullish().transform((cents) => cents ?? null);
 
 const pricesSchema = z
@@ -33,6 +35,10 @@ const contractSchema = z
     marketState: z.string(),
     status: z.string(),
     prices: pricesSchema,
+    quantityIncrement: decimalText.nullish(),
+    quantityMinimum: decimalText.nullish(),
+    priceIncrement: decimalText.nullish(),
+    priceMinimum: decimalText.nullish(),
   })
   .transform(
     (raw): MarketContract => ({
@@ -41,6 +47,15 @@ const contractSchema = z
       marketState: raw.marketState,
       status: raw.status,
       prices: raw.prices,
+      limits:
+        raw.quantityIncrement && raw.quantityMinimum && raw.priceIncrement && raw.priceMinimum
+          ? {
+              quantityIncrement: raw.quantityIncrement,
+              quantityMinimum: raw.quantityMinimum,
+              priceIncrement: raw.priceIncrement,
+              priceMinimum: raw.priceMinimum,
+            }
+          : null,
     }),
   );
 

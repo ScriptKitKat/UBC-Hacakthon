@@ -29,12 +29,29 @@ describe("paper execution", () => {
   });
 
   it("uses quantity increments without rounding above the budget", () => {
-    expect(buildGeminiOrderPayload(approved, usdCents(67), "fill-or-kill")).toEqual({
-      symbol, orderType: "limit", side: "buy", quantity: "2.98", price: "0.67", outcome: "no",
-      timeInForce: "fill-or-kill", clientOrderId: "trade-2",
+    expect(buildGeminiOrderPayload(approved, usdCents(67), { timeInForce: "fill-or-kill" })).toEqual({
+      ok: true,
+      value: { symbol, orderType: "limit", side: "buy", quantity: "2.98", price: "0.67", outcome: "no", timeInForce: "fill-or-kill" },
     });
-    expect(buildGeminiOrderPayload(approved, usdCents(100))).toMatchObject({ quantity: "2.00", price: "1.00" });
-    expect(buildGeminiOrderPayload(approved, usdCents(1))).toMatchObject({ quantity: "200.00", price: "0.01" });
+    expect(buildGeminiOrderPayload(approved, usdCents(100))).toMatchObject({ ok: true, value: { quantity: "2.00", price: "1.00" } });
+    expect(buildGeminiOrderPayload(approved, usdCents(1))).toMatchObject({ ok: true, value: { quantity: "200.00", price: "0.01" } });
+  });
+
+  it("omits fields that are not part of Gemini's order schema", () => {
+    const built = buildGeminiOrderPayload(approved, usdCents(67));
+    if (!built.ok) throw new Error("Expected payload");
+    expect(Object.keys(built.value).sort()).toEqual(["orderType", "outcome", "price", "quantity", "side", "symbol", "timeInForce"]);
+  });
+
+  it("applies the contract's quantity and price limits", () => {
+    const limits = { quantityIncrement: "0.5", quantityMinimum: "1", priceIncrement: "0.05", priceMinimum: "0.05" };
+    expect(buildGeminiOrderPayload(approved, usdCents(65), { limits })).toMatchObject({
+      ok: true, value: { quantity: "3.00", price: "0.65" },
+    });
+    expect(buildGeminiOrderPayload(approved, usdCents(67), { limits })).toEqual({ ok: false, error: { code: "invalid-limit-price" } });
+    expect(buildGeminiOrderPayload(approved, usdCents(100), { limits: { ...limits, quantityMinimum: "3" } })).toEqual({
+      ok: false, error: { code: "quantity-below-minimum" },
+    });
   });
 
   it("awaits the debit before creating the ticket", async () => {
@@ -54,7 +71,9 @@ describe("paper execution", () => {
       spokenReason: "I approved the $2 trade.",
       debit: receipt,
       ticket: {
-        ticketId: "paper-2", mode: "paper", createdAt: now, payload: buildGeminiOrderPayload(approved, usdCents(67)),
+        ticketId: "paper-2", mode: "paper", createdAt: now, payload: {
+          symbol, orderType: "limit", side: "buy", quantity: "2.98", price: "0.67", outcome: "no", timeInForce: "good-til-cancel",
+        },
       },
     });
   });
@@ -67,6 +86,14 @@ describe("paper execution", () => {
     expect(record).toMatchObject({ kind: "execution-failed", intentId: "trade-2", error });
     expect(record).not.toHaveProperty("ticket");
     expect(idGen).not.toHaveBeenCalled();
+  });
+
+  it("refuses a ticket below the quantity minimum before debiting", async () => {
+    const debit = vi.fn<UsdcLedger["debit"]>();
+    const limits = { quantityIncrement: "0.01", quantityMinimum: "5", priceIncrement: "0.01", priceMinimum: "0.01" };
+    const record = await executeApproved(approved, { ledger: { debit }, idGen: () => "paper-2", now: () => now, limitPrice: usdCents(67), limits });
+    expect(record).toMatchObject({ kind: "execution-failed", error: { code: "quantity-below-minimum" } });
+    expect(debit).not.toHaveBeenCalled();
   });
 
   it.each([0, 101])("rejects a %d-cent limit price before debiting", async (price) => {

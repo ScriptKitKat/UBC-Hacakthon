@@ -67,6 +67,22 @@ describe("searchEvents", () => {
     });
   });
 
+  it("parses order limits and maps absent ones to null", async () => {
+    const { client } = setup(() => jsonResponse(activeFixture));
+    const result = await client.searchEvents();
+    if (!result.ok) {
+      throw new Error("expected ok");
+    }
+    const contracts = result.value.events.flatMap((event) => event.contracts);
+    expect(contracts[0]?.limits).toEqual({
+      quantityIncrement: "0.01",
+      quantityMinimum: "0.01",
+      priceIncrement: "0.01",
+      priceMinimum: "0.01",
+    });
+    expect(contracts.every((contract) => contract.limits === null || contract.limits.priceMinimum.length > 0)).toBe(true);
+  });
+
   it("maps missing price fields to null", async () => {
     const { client } = setup(() => jsonResponse(activeFixture));
     const result = await client.searchEvents();

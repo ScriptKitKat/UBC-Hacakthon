@@ -8,12 +8,20 @@ export interface ContractPrices {
   readonly buyNoCents: number | null;
 }
 
+export interface ContractLimits {
+  readonly quantityIncrement: string;
+  readonly quantityMinimum: string;
+  readonly priceIncrement: string;
+  readonly priceMinimum: string;
+}
+
 export interface MarketContract {
   readonly instrumentSymbol: InstrumentSymbol;
   readonly label: string;
   readonly marketState: string;
   readonly status: string;
   readonly prices: ContractPrices;
+  readonly limits: ContractLimits | null;
 }
 
 export interface MarketEvent {
