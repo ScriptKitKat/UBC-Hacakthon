@@ -119,37 +119,46 @@ function refusalReason(code: RefusalCode, notional: UsdCents, policy: PolicyConf
   }
 }
 
-export function evaluate(intent: TradeIntent, market: PolicyMarket, policy: PolicyConfig, state: PolicyState, now: Date): Decision {
-  const current = rollDay(state, now);
-  const remaining = usdCents(Math.max(0, policy.dailyCap - current.spentToday - current.reservedToday));
-  const { intentId, notional } = intent;
-  const refuse = (code: RefusalCode): Refusal => ({
-    kind: "refuse", intentId, code, spokenReason: refusalReason(code, notional, policy, remaining),
-  });
-
-  if (policy.killSwitch) return refuse("kill-switch");
-  if (!policy.senderAllowlist.has(intent.senderId)) return refuse("unauthorized-sender");
-  if (current.seenIntentIds.has(intentId)) return refuse("duplicate-intent");
-  if (!policy.marketAllowlist.has(intent.instrumentSymbol)) return refuse("market-not-allowlisted");
-  if (market.instrumentSymbol !== intent.instrumentSymbol || market.marketState !== "open") return refuse("market-closed");
-  if (notional === 0) return refuse("zero-notional");
-  if (notional > policy.perTradeMax) return refuse("over-per-trade-cap");
-  if (notional > remaining) return refuse("over-daily-cap");
-  if (notional > policy.autoApproveMax) return new PendingApproval(intent);
-  return new Approval(intent);
+function findRefusal(
+  trade: Pick<TradeIntent, "intentId" | "instrumentSymbol" | "notional">,
+  actorId: string,
+  policy: PolicyConfig,
+  state: PolicyState,
+  remaining: UsdCents,
+  market: PolicyMarket | undefined,
+): RefusalCode | undefined {
+  if (policy.killSwitch) return "kill-switch";
+  if (!policy.senderAllowlist.has(actorId)) return "unauthorized-sender";
+  if (state.seenIntentIds.has(trade.intentId)) return "duplicate-intent";
+  if (!policy.marketAllowlist.has(trade.instrumentSymbol)) return "market-not-allowlisted";
+  if (market && (market.instrumentSymbol !== trade.instrumentSymbol || market.marketState !== "open")) return "market-closed";
+  if (trade.notional === 0) return "zero-notional";
+  if (trade.notional > policy.perTradeMax) return "over-per-trade-cap";
+  if (trade.notional > remaining) return "over-daily-cap";
+  return undefined;
 }
 
-export function confirm(pending: PendingApproval, approverId: string, policy: PolicyConfig): ApprovedTrade | Refusal {
-  const code = policy.killSwitch ? "kill-switch" : "unauthorized-sender";
-  if (policy.killSwitch || !policy.senderAllowlist.has(approverId)) {
-    return {
-      kind: "refuse",
-      intentId: pending.intentId,
-      code,
-      spokenReason: refusalReason(code, pending.notional, policy, usdCents(0)),
-    };
-  }
-  return new Approval(pending);
+function remainingToday(policy: PolicyConfig, state: PolicyState): UsdCents {
+  return usdCents(Math.max(0, policy.dailyCap - state.spentToday - state.reservedToday));
+}
+
+function refusal(trade: Pick<TradeIntent, "intentId" | "notional">, code: RefusalCode, policy: PolicyConfig, remaining: UsdCents): Refusal {
+  return { kind: "refuse", intentId: trade.intentId, code, spokenReason: refusalReason(code, trade.notional, policy, remaining) };
+}
+
+export function evaluate(intent: TradeIntent, market: PolicyMarket, policy: PolicyConfig, state: PolicyState, now: Date): Decision {
+  const current = rollDay(state, now);
+  const remaining = remainingToday(policy, current);
+  const code = findRefusal(intent, intent.senderId, policy, current, remaining, market);
+  if (code) return refusal(intent, code, policy, remaining);
+  return intent.notional > policy.autoApproveMax ? new PendingApproval(intent) : new Approval(intent);
+}
+
+export function confirm(pending: PendingApproval, approverId: string, policy: PolicyConfig, state: PolicyState, now: Date): ApprovedTrade | Refusal {
+  const current = rollDay(state, now);
+  const remaining = remainingToday(policy, current);
+  const code = findRefusal(pending, approverId, policy, current, remaining, undefined);
+  return code ? refusal(pending, code, policy, remaining) : new Approval(pending);
 }
 
 export function applyApproved(state: PolicyState, approved: ApprovedTrade): PolicyState {
