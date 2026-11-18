@@ -49,27 +49,15 @@ interface ExecutionDeps {
   readonly limits?: ContractLimits | null;
 }
 
-const DECIMAL_SCALE = 6;
-const SCALE = 10n ** BigInt(DECIMAL_SCALE);
-const DEFAULT_INCREMENT = 10_000n;
-const MIN_DISPLAY_DECIMALS = 2;
+const HUNDREDTHS_PER_UNIT = 100n;
 
 function validLimitPrice(price: UsdCents): boolean {
   return Number.isInteger(price) && price > 0 && price <= 100;
 }
 
-function parseScaled(decimal: string): bigint {
-  const [whole = "0", fraction = ""] = decimal.split(".");
-  return BigInt(whole) * SCALE + BigInt(fraction.padEnd(DECIMAL_SCALE, "0").slice(0, DECIMAL_SCALE));
-}
-
-function formatScaled(amount: bigint, decimals: number): string {
-  const fraction = String(amount % SCALE).padStart(DECIMAL_SCALE, "0").slice(0, decimals);
-  return `${String(amount / SCALE)}.${fraction}`;
-}
-
-function decimalPlaces(decimal: string): number {
-  return Math.max(MIN_DISPLAY_DECIMALS, decimal.split(".")[1]?.replace(/0+$/, "").length ?? 0);
+function formatHundredths(amount: bigint): string {
+  const fraction = String(amount % HUNDREDTHS_PER_UNIT).padStart(2, "0");
+  return `${String(amount / HUNDREDTHS_PER_UNIT)}.${fraction}`;
 }
 
 export function buildGeminiOrderPayload(
@@ -79,25 +67,26 @@ export function buildGeminiOrderPayload(
 ): Result<GeminiOrderPayload, OrderBuildError> {
   if (!validLimitPrice(limitPrice)) return { ok: false, error: { code: "invalid-limit-price" } };
   const { timeInForce = "good-til-cancel", limits = null } = options;
-  const priceScaled = BigInt(limitPrice) * SCALE / 100n;
-  if (limits && (priceScaled < parseScaled(limits.priceMinimum) || priceScaled % parseScaled(limits.priceIncrement) !== 0n)) {
+  const priceCents = BigInt(limitPrice);
+  if (limits && (limits.priceIncrementCents <= 0n || priceCents < limits.priceMinimumCents
+    || priceCents % limits.priceIncrementCents !== 0n)) {
     return { ok: false, error: { code: "invalid-limit-price" } };
   }
-  const increment = limits ? parseScaled(limits.quantityIncrement) : DEFAULT_INCREMENT;
-  const affordable = BigInt(approved.notional) * SCALE / BigInt(limitPrice);
-  const quantityScaled = affordable - (affordable % increment);
-  const minimum = limits ? parseScaled(limits.quantityMinimum) : DEFAULT_INCREMENT;
-  if (quantityScaled === 0n || quantityScaled < minimum) return { ok: false, error: { code: "quantity-below-minimum" } };
-  const decimals = limits ? decimalPlaces(limits.quantityIncrement) : MIN_DISPLAY_DECIMALS;
-  const priceDecimals = limits ? decimalPlaces(limits.priceIncrement) : MIN_DISPLAY_DECIMALS;
+  const increment = limits?.quantityIncrementHundredths ?? 1n;
+  if (increment <= 0n) return { ok: false, error: { code: "quantity-below-minimum" } };
+  const affordable = BigInt(approved.notional) * HUNDREDTHS_PER_UNIT / priceCents;
+  const quantity = affordable - (affordable % increment);
+  if (quantity === 0n || quantity < (limits?.quantityMinimumHundredths ?? 1n)) {
+    return { ok: false, error: { code: "quantity-below-minimum" } };
+  }
   return {
     ok: true,
     value: {
       symbol: approved.instrumentSymbol,
       orderType: "limit",
       side: "buy",
-      quantity: formatScaled(quantityScaled, decimals),
-      price: formatScaled(priceScaled, priceDecimals),
+      quantity: formatHundredths(quantity),
+      price: formatHundredths(priceCents),
       outcome: approved.outcome,
       timeInForce,
     },

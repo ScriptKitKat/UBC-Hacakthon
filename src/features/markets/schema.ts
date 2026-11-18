@@ -2,14 +2,16 @@ import { z } from "zod";
 import { instrumentSymbol } from "@/shared";
 import type { EventsPage, MarketContract, MarketEvent } from "./types";
 
-const dollarsToCents = z
-  .string()
-  .regex(/^\d+(\.\d+)?$/)
-  .transform((text) => Math.round(Number(text) * 100));
+const hundredths = z.string()
+  .regex(/^\d+(?:\.\d{1,2}0*)?$/)
+  .transform((text) => {
+    const [whole, fraction = ""] = text.split(".");
+    return BigInt(whole ?? "0") * 100n + BigInt(fraction.padEnd(2, "0").slice(0, 2));
+  });
 
-const decimalText = z.string().regex(/^\d+(\.\d+)?$/);
-
-const optionalCents = dollarsToCents.nullish().transform((cents) => cents ?? null);
+const increment = hundredths.pipe(z.bigint().positive());
+const optionalCents = hundredths.pipe(z.bigint().max(100n))
+  .nullish().transform((cents) => cents == null ? null : Number(cents));
 
 const pricesSchema = z
   .object({
@@ -35,29 +37,34 @@ const contractSchema = z
     marketState: z.string(),
     status: z.string(),
     prices: pricesSchema,
-    quantityIncrement: decimalText.nullish(),
-    quantityMinimum: decimalText.nullish(),
-    priceIncrement: decimalText.nullish(),
-    priceMinimum: decimalText.nullish(),
+    quantityIncrement: increment.nullish(),
+    quantityMinimum: hundredths.nullish(),
+    priceIncrement: increment.nullish(),
+    priceMinimum: hundredths.nullish(),
   })
-  .transform(
-    (raw): MarketContract => ({
+  .transform((raw, context): MarketContract => {
+    const {
+      quantityIncrement: quantityIncrementHundredths, quantityMinimum: quantityMinimumHundredths,
+      priceIncrement: priceIncrementCents, priceMinimum: priceMinimumCents,
+    } = raw;
+    let limits: MarketContract["limits"] = null;
+    if (quantityIncrementHundredths != null && quantityMinimumHundredths != null
+      && priceIncrementCents != null && priceMinimumCents != null) {
+      limits = { quantityIncrementHundredths, quantityMinimumHundredths, priceIncrementCents, priceMinimumCents };
+    } else if ([quantityIncrementHundredths, quantityMinimumHundredths, priceIncrementCents, priceMinimumCents]
+      .some((value) => value != null)) {
+      context.addIssue({ code: "custom", message: "Order limits must be complete" });
+      return z.NEVER;
+    }
+    return {
       instrumentSymbol: raw.instrumentSymbol,
       label: raw.label ?? raw.abbreviatedName ?? "",
       marketState: raw.marketState,
       status: raw.status,
       prices: raw.prices,
-      limits:
-        raw.quantityIncrement && raw.quantityMinimum && raw.priceIncrement && raw.priceMinimum
-          ? {
-              quantityIncrement: raw.quantityIncrement,
-              quantityMinimum: raw.quantityMinimum,
-              priceIncrement: raw.priceIncrement,
-              priceMinimum: raw.priceMinimum,
-            }
-          : null,
-    }),
-  );
+      limits,
+    };
+  });
 
 export const eventSchema = z
   .object({

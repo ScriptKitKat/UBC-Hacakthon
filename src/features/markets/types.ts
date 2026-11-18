@@ -9,10 +9,10 @@ export interface ContractPrices {
 }
 
 export interface ContractLimits {
-  readonly quantityIncrement: string;
-  readonly quantityMinimum: string;
-  readonly priceIncrement: string;
-  readonly priceMinimum: string;
+  readonly quantityIncrementHundredths: bigint;
+  readonly quantityMinimumHundredths: bigint;
+  readonly priceIncrementCents: bigint;
+  readonly priceMinimumCents: bigint;
 }
 
 export interface MarketContract {

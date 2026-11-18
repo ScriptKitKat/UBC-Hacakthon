@@ -67,7 +67,7 @@ describe("searchEvents", () => {
     });
   });
 
-  it("parses order limits and maps absent ones to null", async () => {
+  it("parses order limits into integer units", async () => {
     const { client } = setup(() => jsonResponse(activeFixture));
     const result = await client.searchEvents();
     if (!result.ok) {
@@ -75,12 +75,21 @@ describe("searchEvents", () => {
     }
     const contracts = result.value.events.flatMap((event) => event.contracts);
     expect(contracts[0]?.limits).toEqual({
-      quantityIncrement: "0.01",
-      quantityMinimum: "0.01",
-      priceIncrement: "0.01",
-      priceMinimum: "0.01",
+      quantityIncrementHundredths: 1n,
+      quantityMinimumHundredths: 1n,
+      priceIncrementCents: 1n,
+      priceMinimumCents: 1n,
     });
-    expect(contracts.every((contract) => contract.limits === null || contract.limits.priceMinimum.length > 0)).toBe(true);
+  });
+
+  it("maps an absent set of limits to null", async () => {
+    const { client } = setup(() => jsonResponse({
+      ...eventFixture,
+      contracts: [{ instrumentSymbol: "SYMBOL", marketState: "open", status: "active" }],
+    }));
+    expect(await client.getEvent("FED261211")).toMatchObject({
+      ok: true, value: { contracts: [{ limits: null }] },
+    });
   });
 
   it("maps missing price fields to null", async () => {
@@ -129,6 +138,38 @@ describe("errors", () => {
       clock,
     });
     expect(await client.getEvent("X")).toEqual({ ok: false, error: { kind: "network" } });
+  });
+
+  it.each([
+    { quantityIncrement: "0" },
+    { quantityIncrement: "-0.01" },
+    { priceIncrement: "0.00" },
+    { priceIncrement: "-0.01" },
+    { quantityIncrement: "0.0000001" },
+    { quantityMinimum: "0.001" },
+    { priceIncrement: "0.001" },
+    { priceMinimum: "-0.01" },
+    { quantityMinimum: null },
+    { priceIncrement: undefined },
+    { prices: { buy: { yes: "0.145" } } },
+  ])("rejects unsupported market data %j", async (override) => {
+    const contract = { ...eventFixture.contracts[0], ...override };
+    const { client } = setup(() => jsonResponse({ ...eventFixture, contracts: [contract] }));
+    expect(await client.getEvent("FED261211")).toEqual({ ok: false, error: { kind: "parse" } });
+  });
+
+  it("parses exactly representable decimals with trailing zeroes", async () => {
+    const contract = {
+      ...eventFixture.contracts[0], quantityIncrement: "0.03000", priceIncrement: "0.01000",
+      prices: { buy: { yes: "0.29000", no: "0.7" } },
+    };
+    const { client } = setup(() => jsonResponse({ ...eventFixture, contracts: [contract] }));
+    expect(await client.getEvent("FED261211")).toMatchObject({
+      ok: true, value: { contracts: [{
+        prices: { buyYesCents: 29, buyNoCents: 70 },
+        limits: { quantityIncrementHundredths: 3n, priceIncrementCents: 1n },
+      }] },
+    });
   });
 
   it("returns a parse error when instrumentSymbol is missing", async () => {

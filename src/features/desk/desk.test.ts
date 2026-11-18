@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createPolicy } from "@/features/guardrails";
 import type { UsdcLedger } from "@/features/ledger";
 import { createUnconfiguredLedger } from "@/features/ledger";
-import { fail, ok } from "@/features/markets";
+import { createGeminiMarketsClient, fail, ok } from "@/features/markets";
 import type { GeminiMarketsClient, MarketContract, MarketEvent } from "@/features/markets";
 import { instrumentSymbol, usdCents } from "@/shared";
 import type { LedgerView } from "@/shared";
@@ -18,7 +18,7 @@ function contract(instrument: typeof symbol, label: string, marketState = "open"
     marketState,
     status: "active",
     prices: { bestBidCents: 60, bestAskCents: 62, lastTradeCents: 62, buyYesCents: 62, buyNoCents: 40 },
-    limits: { quantityIncrement: "0.01", quantityMinimum: "0.01", priceIncrement: "0.01", priceMinimum: "0.01" },
+    limits: { quantityIncrementHundredths: 1n, quantityMinimumHundredths: 1n, priceIncrementCents: 1n, priceMinimumCents: 1n },
   };
 }
 
@@ -145,6 +145,23 @@ describe("desk", () => {
       ok: true, entry: { kind: "refuse", code: "market-closed" },
     });
     expect(markets.getEvent).toHaveBeenLastCalledWith("FED261211", { refresh: true });
+    expect(debit).not.toHaveBeenCalled();
+  });
+
+  it("refuses a live sub-cent quote without calling the ledger", async () => {
+    const { desk, debit, markets } = await readyDesk();
+    const client = createGeminiMarketsClient({
+      baseUrl: "https://example.test",
+      fetch: () => Promise.resolve(Response.json({
+        ...event(),
+        contracts: [{
+          instrumentSymbol: symbol, label: "Maintain", status: "active", marketState: "open",
+          prices: { buy: { yes: "0.625" } },
+        }],
+      })),
+    });
+    markets.getEvent.mockImplementation(client.getEvent);
+    expect(await desk.proposeTrade(propose())).toMatchObject({ kind: "refuse", code: "market-closed" });
     expect(debit).not.toHaveBeenCalled();
   });
 

@@ -48,12 +48,12 @@ describe("paper execution", () => {
   });
 
   it("applies the contract's quantity and price limits", () => {
-    const limits = { quantityIncrement: "0.5", quantityMinimum: "1", priceIncrement: "0.05", priceMinimum: "0.05" };
+    const limits = { quantityIncrementHundredths: 50n, quantityMinimumHundredths: 100n, priceIncrementCents: 5n, priceMinimumCents: 5n };
     expect(buildGeminiOrderPayload(approved, usdCents(65), { limits })).toMatchObject({
       ok: true, value: { quantity: "3.00", price: "0.65" },
     });
     expect(buildGeminiOrderPayload(approved, usdCents(67), { limits })).toEqual({ ok: false, error: { code: "invalid-limit-price" } });
-    expect(buildGeminiOrderPayload(approved, usdCents(100), { limits: { ...limits, quantityMinimum: "3" } })).toEqual({
+    expect(buildGeminiOrderPayload(approved, usdCents(100), { limits: { ...limits, quantityMinimumHundredths: 300n } })).toEqual({
       ok: false, error: { code: "quantity-below-minimum" },
     });
   });
@@ -94,7 +94,7 @@ describe("paper execution", () => {
 
   it("refuses a ticket below the quantity minimum before debiting", async () => {
     const debit = vi.fn<UsdcLedger["debit"]>();
-    const limits = { quantityIncrement: "0.01", quantityMinimum: "5", priceIncrement: "0.01", priceMinimum: "0.01" };
+    const limits = { quantityIncrementHundredths: 1n, quantityMinimumHundredths: 500n, priceIncrementCents: 1n, priceMinimumCents: 1n };
     const record = await executeApproved(approved, { ledger: { debit }, idGen: () => "paper-2", now: () => now, limitPrice: usdCents(67), limits });
     expect(record).toMatchObject({ kind: "execution-failed", error: { code: "quantity-below-minimum" } });
     expect(debit).not.toHaveBeenCalled();
