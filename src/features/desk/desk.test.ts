@@ -1,0 +1,215 @@
+import { describe, expect, it, vi } from "vitest";
+import { createPolicy } from "@/features/guardrails";
+import type { UsdcLedger } from "@/features/ledger";
+import { createUnconfiguredLedger } from "@/features/ledger";
+import { fail, ok } from "@/features/markets";
+import type { GeminiMarketsClient, MarketContract, MarketEvent } from "@/features/markets";
+import { instrumentSymbol, usdCents } from "@/shared";
+import type { LedgerView } from "@/shared";
+import { createDesk } from "./desk";
+
+const symbol = instrumentSymbol("GEMI-FED261211-MAINTAIN");
+const otherSymbol = instrumentSymbol("GEMI-FED261211-CUT25");
+
+function contract(instrument: typeof symbol, label: string, marketState = "open"): MarketContract {
+  return {
+    instrumentSymbol: instrument,
+    label,
+    marketState,
+    status: "active",
+    prices: { bestBidCents: 60, bestAskCents: 62, lastTradeCents: 62, buyYesCents: 62, buyNoCents: 40 },
+    limits: { quantityIncrement: "0.01", quantityMinimum: "0.01", priceIncrement: "0.01", priceMinimum: "0.01" },
+  };
+}
+
+function event(marketState = "open"): MarketEvent {
+  return {
+    ticker: "FED261211",
+    title: "Fed decision in December?",
+    category: "Economics",
+    status: "active",
+    expiryDate: null,
+    tags: ["fed"],
+    contracts: [contract(symbol, "Fed maintains rate", marketState), contract(otherSymbol, "Cut 25bps")],
+  };
+}
+
+function fakeMarkets(current: () => MarketEvent = event) {
+  return {
+    searchEvents: vi.fn<GeminiMarketsClient["searchEvents"]>(() => Promise.resolve(ok({ events: [current()], total: 1 }))),
+    getEvent: vi.fn<GeminiMarketsClient["getEvent"]>(() => Promise.resolve(ok(current()))),
+  };
+}
+
+const receipt = (signature: string) => ({ signature, explorerUrl: `https://explorer.test/tx/${signature}` });
+const configuredLedger: LedgerView = {
+  configured: true, cluster: "localnet", authority: "Authority1", mint: "Mint1", recipient: "Recipient1",
+};
+
+function setup(options: { ledger?: UsdcLedger; ledgerView?: LedgerView; markets?: ReturnType<typeof fakeMarkets>; killSwitch?: boolean } = {}) {
+  let counter = 0;
+  const debit = vi.fn<UsdcLedger["debit"]>(() => Promise.resolve({ ok: true, value: receipt(`sig-${String(++counter)}`) }));
+  const ledger = options.ledger ?? { debit, balance: vi.fn() };
+  const markets = options.markets ?? fakeMarkets();
+  const policy = createPolicy({
+    dailyCap: usdCents(2000), autoApproveMax: usdCents(200), perTradeMax: usdCents(1000),
+    marketAllowlist: new Set([symbol, otherSymbol]), senderAllowlist: new Set(["priscilla"]), killSwitch: options.killSwitch ?? false,
+  });
+  if (!policy.ok) throw new Error("invalid policy");
+  let ids = 0;
+  const desk = createDesk({
+    policy: policy.value, markets, ledger, ledgerView: options.ledgerView ?? configuredLedger,
+    now: () => new Date("2026-11-17T12:00:00Z"), idGen: () => `id-${String(++ids)}`,
+  });
+  return { desk, debit, markets };
+}
+
+const news = { id: "n1", text: "Fed officials signal they could hold rates steady at the December FOMC meeting, Powell says", url: "https://www.reuters.com/x", author: "Reuters", postedAt: new Date("2026-11-17T11:59:00Z") };
+const propose = (outcome: "yes" | "no" = "yes", notionalCents = 200, senderId = "priscilla") =>
+  ({ instrumentSymbol: symbol, outcome, notionalCents, source: "desk", senderId }) as const;
+
+async function readyDesk(options: Parameters<typeof setup>[0] = {}) {
+  const fixture = setup(options);
+  await fixture.desk.submitNews(news);
+  return fixture;
+}
+
+describe("desk", () => {
+  it("stores matched news with live odds in the snapshot", async () => {
+    const { desk } = await readyDesk();
+    const snapshot = await desk.getSnapshot();
+    expect(snapshot.news).toMatchObject({ sourceDomain: "reuters.com", author: "Reuters" });
+    expect(snapshot.match).toMatchObject({
+      kind: "matched",
+      market: { instrumentSymbol: symbol, yesCents: 62, noCents: 40, marketState: "open", eventTitle: "Fed decision in December?" },
+    });
+    expect(snapshot.policy).toMatchObject({ dailyCapCents: 2000, spentCents: 0, remainingCents: 2000, killSwitch: false });
+    expect(snapshot.ledger).toEqual(configuredLedger);
+  });
+
+  it("approve path debits the ledger then logs signature and paper ticket", async () => {
+    const { desk, debit } = await readyDesk();
+    const entry = await desk.proposeTrade(propose("yes", 200));
+    expect(debit).toHaveBeenCalledOnce();
+    expect(entry).toMatchObject({
+      kind: "approve", signature: "sig-1", explorerUrl: "https://explorer.test/tx/sig-1", symbol, outcome: "yes", notionalCents: 200,
+      ticket: { symbol, outcome: "yes", price: "0.62", quantity: "3.22", mode: "paper" },
+    });
+    const snapshot = await desk.getSnapshot();
+    expect(snapshot.log[0]).toEqual(entry);
+    expect(snapshot.policy).toMatchObject({ spentCents: 200, remainingCents: 1800 });
+  });
+
+  it("refuse path makes no ledger call", async () => {
+    const { desk, debit } = await readyDesk();
+    const stranger = await desk.proposeTrade(propose("yes", 200, "stranger"));
+    const tooBig = await desk.proposeTrade(propose("yes", 5000));
+    expect(stranger).toMatchObject({ kind: "refuse", code: "unauthorized-sender" });
+    expect(tooBig).toMatchObject({ kind: "refuse", code: "over-per-trade-cap" });
+    expect(debit).not.toHaveBeenCalled();
+    expect((await desk.getSnapshot()).log.map((entry) => entry.kind)).toEqual(["refuse", "refuse"]);
+  });
+
+  it("refuses a contract that was never matched without calling the ledger", async () => {
+    const { desk, debit } = await readyDesk();
+    const entry = await desk.proposeTrade({ ...propose(), instrumentSymbol: "GEMI-UNKNOWN" });
+    expect(entry).toMatchObject({ kind: "refuse", code: "market-not-allowlisted" });
+    expect(debit).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the market closes or cannot be fetched", async () => {
+    const markets = fakeMarkets(() => event("closed"));
+    const { desk, debit } = await readyDesk({ markets });
+    expect(await desk.proposeTrade(propose())).toMatchObject({ kind: "refuse", code: "market-closed" });
+    markets.getEvent.mockResolvedValue(fail({ kind: "http", status: 500 }));
+    expect(await desk.proposeTrade(propose())).toMatchObject({ kind: "refuse", code: "market-closed" });
+    expect(debit).not.toHaveBeenCalled();
+  });
+
+  it("holds a needs-approval trade as pending and executes it on confirm", async () => {
+    const { desk, debit } = await readyDesk();
+    const waiting = await desk.proposeTrade(propose("no", 500));
+    expect(waiting).toMatchObject({ kind: "needs-approval", spokenReason: "The $5 trade needs your approval." });
+    expect(debit).not.toHaveBeenCalled();
+    expect((await desk.getSnapshot()).pending).toMatchObject([{ intentId: waiting.intentId, outcome: "no", notionalCents: 500 }]);
+
+    const confirmed = await desk.confirmPending(waiting.intentId, "priscilla");
+    expect(confirmed).toMatchObject({ ok: true, entry: { kind: "approve", signature: "sig-1", ticket: { outcome: "no", price: "0.40" } } });
+    expect(debit).toHaveBeenCalledOnce();
+    const snapshot = await desk.getSnapshot();
+    expect(snapshot.pending).toEqual([]);
+    expect(snapshot.policy.spentCents).toBe(500);
+  });
+
+  it("refuses to confirm twice and for unknown intents", async () => {
+    const { desk, debit } = await readyDesk();
+    const waiting = await desk.proposeTrade(propose("yes", 500));
+    await desk.confirmPending(waiting.intentId, "priscilla");
+    expect(await desk.confirmPending(waiting.intentId, "priscilla")).toEqual({ ok: false, error: "unknown-intent" });
+    expect(await desk.confirmPending("nope", "priscilla")).toEqual({ ok: false, error: "unknown-intent" });
+    expect(debit).toHaveBeenCalledOnce();
+  });
+
+  it("re-checks the daily cap on confirm after other spend", async () => {
+    const { desk, debit } = await readyDesk();
+    const waiting = await desk.proposeTrade(propose("yes", 500));
+    for (let index = 0; index < 8; index++) await desk.proposeTrade(propose("yes", 200));
+    debit.mockClear();
+    const confirmed = await desk.confirmPending(waiting.intentId, "priscilla");
+    expect(confirmed).toMatchObject({ ok: true, entry: { kind: "refuse", code: "over-daily-cap" } });
+    expect(debit).not.toHaveBeenCalled();
+  });
+
+  it("keeps a pending trade when an unauthorized approver tries to confirm it", async () => {
+    const { desk, debit } = await readyDesk();
+    const waiting = await desk.proposeTrade(propose("yes", 500));
+    expect(await desk.confirmPending(waiting.intentId, "stranger")).toMatchObject({ ok: true, entry: { code: "unauthorized-sender" } });
+    expect((await desk.getSnapshot()).pending).toHaveLength(1);
+    expect(debit).not.toHaveBeenCalled();
+  });
+
+  it("kill switch blocks proposals and confirmations", async () => {
+    const { desk, debit } = await readyDesk();
+    const waiting = await desk.proposeTrade(propose("yes", 500));
+    desk.setKillSwitch(true);
+    expect((await desk.getSnapshot()).policy.killSwitch).toBe(true);
+    expect(await desk.proposeTrade(propose("yes", 100))).toMatchObject({ kind: "refuse", code: "kill-switch" });
+    expect(await desk.confirmPending(waiting.intentId, "priscilla")).toMatchObject({ ok: true, entry: { kind: "refuse", code: "kill-switch" } });
+    expect(debit).not.toHaveBeenCalled();
+    desk.setKillSwitch(false);
+    expect(await desk.proposeTrade(propose("yes", 100))).toMatchObject({ kind: "approve" });
+  });
+
+  it("surfaces an unconfigured ledger as an explicit failure without spending budget", async () => {
+    const { desk } = await readyDesk({
+      ledger: createUnconfiguredLedger(), ledgerView: { configured: false, missing: ["USDC_MINT"] },
+    });
+    const entry = await desk.proposeTrade(propose("yes", 200));
+    expect(entry).toMatchObject({ kind: "execution-failed", code: "ledger-not-configured" });
+    expect(entry).not.toHaveProperty("signature");
+    expect(entry).not.toHaveProperty("ticket");
+    const snapshot = await desk.getSnapshot();
+    expect(snapshot.ledger).toEqual({ configured: false, missing: ["USDC_MINT"] });
+    expect(snapshot.policy.spentCents).toBe(0);
+    expect(snapshot.policy.remainingCents).toBe(2000);
+  });
+
+  it("releases the reservation on a rejected debit but holds it when unconfirmed", async () => {
+    const debit = vi.fn<UsdcLedger["debit"]>()
+      .mockResolvedValueOnce({ ok: false, error: { code: "debit-rejected" } })
+      .mockResolvedValueOnce({ ok: false, error: { code: "debit-unconfirmed", signature: "s" } });
+    const { desk } = await readyDesk({ ledger: { debit, balance: vi.fn() } });
+    expect(await desk.proposeTrade(propose("yes", 200))).toMatchObject({ kind: "execution-failed", code: "debit-rejected" });
+    expect((await desk.getSnapshot()).policy.remainingCents).toBe(2000);
+    expect(await desk.proposeTrade(propose("yes", 200))).toMatchObject({ kind: "execution-failed", code: "debit-unconfirmed" });
+    expect((await desk.getSnapshot()).policy.remainingCents).toBe(1800);
+  });
+
+  it("returns no-match for news without a market and an empty snapshot before any news", async () => {
+    const markets = fakeMarkets();
+    markets.searchEvents.mockResolvedValue(ok({ events: [], total: 0 }));
+    const { desk } = setup({ markets });
+    expect((await desk.getSnapshot()).match).toEqual({ kind: "no-news" });
+    expect(await desk.submitNews(news)).toMatchObject({ kind: "no-match" });
+  });
+});
