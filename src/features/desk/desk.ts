@@ -1,7 +1,7 @@
 import { executeApproved } from "@/features/execution";
 import type { ExecutionError, TradeRecord } from "@/features/execution";
 import { confirm, evaluate, rollDay } from "@/features/guardrails";
-import type { ApprovedTrade, Decision, PolicyConfig, PolicyState } from "@/features/guardrails";
+import type { ApprovedTrade, Decision, Policy, PolicyState } from "@/features/guardrails";
 import type { UsdcLedger } from "@/features/ledger";
 import type { ContractLimits, GeminiMarketsClient, MarketContract } from "@/features/markets";
 import { allowOnly, matchNews } from "@/features/matcher";
@@ -28,7 +28,7 @@ const LOG_LIMIT = 200;
 type PendingTrade = Extract<Decision, { kind: "needs-approval" }>;
 
 export interface DeskDeps {
-  readonly policy: PolicyConfig;
+  readonly policy: Policy;
   readonly markets: Pick<GeminiMarketsClient, "searchEvents" | "getEvent">;
   readonly ledger: UsdcLedger;
   readonly ledgerView: LedgerView;
@@ -149,7 +149,7 @@ function failureReason(error: ExecutionError): string {
 
 export function createDesk(deps: DeskDeps): Desk {
   const { markets, ledger, now, idGen } = deps;
-  let killSwitch = deps.policy.killSwitch;
+  let policy = deps.policy;
   let state: PolicyState = {
     day: now().toISOString().slice(0, 10),
     spentToday: usdCents(0),
@@ -160,8 +160,6 @@ export function createDesk(deps: DeskDeps): Desk {
   let log: readonly DecisionLogEntry[] = [];
   const pending = new Map<string, PendingRecord>();
   const tickers = new Map<InstrumentSymbol, string>();
-
-  const policy = (): PolicyConfig => ({ ...deps.policy, killSwitch });
 
   function record(entry: Omit<DecisionLogEntry, "entryId" | "at">): DecisionLogEntry {
     const complete = { ...entry, entryId: idGen(), at: now().toISOString() };
@@ -239,7 +237,7 @@ export function createDesk(deps: DeskDeps): Desk {
 
   return {
     async submitNews(news) {
-      const match = await matchNews(news, { client: markets, allowlist: allowOnly(deps.policy.marketAllowlist) });
+      const match = await matchNews(news, { client: markets, allowlist: allowOnly(policy.marketAllowlist) });
       current = { news, match };
       if (match.kind === "matched") {
         for (const candidate of [match.best, ...match.alternatives]) {
@@ -261,7 +259,7 @@ export function createDesk(deps: DeskDeps): Desk {
         createdAt: now(),
       };
       const quote = quoteFor(await resolveMarket(symbol, true), intent.outcome);
-      const decision = evaluate(intent, quote, policy(), state, now());
+      const decision = evaluate(intent, quote, policy, state, now());
       switch (decision.kind) {
         case "refuse":
           return record({ ...tradeFields(intent), kind: "refuse", code: decision.code, spokenReason: decision.spokenReason });
@@ -282,7 +280,7 @@ export function createDesk(deps: DeskDeps): Desk {
       const waiting = pending.get(intentId);
       if (!waiting) return { ok: false, error: "unknown-intent" };
       const quote = quoteFor(await resolveMarket(waiting.intent.instrumentSymbol, true), waiting.intent.outcome);
-      const confirmed = confirm(waiting.decision, approverId, quote, policy(), state, now());
+      const confirmed = confirm(waiting.decision, approverId, quote, policy, state, now());
       if (confirmed.kind === "refuse") {
         if (confirmed.code === "duplicate-intent") pending.delete(intentId);
         return {
@@ -296,20 +294,20 @@ export function createDesk(deps: DeskDeps): Desk {
     },
 
     setKillSwitch(on) {
-      killSwitch = on;
+      policy = policy.withKillSwitch(on);
     },
 
     async getSnapshot() {
       const rolled = rollDay(state, now());
-      const config = policy();
       const best = current?.match.kind === "matched" ? await resolveMarket(current.match.best.contract.instrumentSymbol) : undefined;
+      const config = policy;
       const policyView: PolicyView = {
         dailyCapCents: config.dailyCap,
         spentCents: rolled.spentToday,
         remainingCents: Math.max(0, config.dailyCap - rolled.spentToday - rolled.reservedToday),
         autoApproveMaxCents: config.autoApproveMax,
         perTradeMaxCents: config.perTradeMax,
-        killSwitch,
+        killSwitch: config.killSwitch,
         marketAllowlist: [...config.marketAllowlist],
         senderAllowlist: [...config.senderAllowlist],
       };

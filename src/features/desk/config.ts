@@ -1,7 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
 import { z } from "zod";
 import { createPolicy } from "@/features/guardrails";
-import type { PolicyConfig } from "@/features/guardrails";
+import type { Policy } from "@/features/guardrails";
 import { isLocalLedgerRpc } from "@/features/ledger";
 import { instrumentSymbol, usdCents } from "@/shared";
 
@@ -52,7 +52,7 @@ export type LedgerSettings =
   | { readonly configured: false; readonly missing: readonly string[] };
 
 export interface DeskConfig {
-  readonly policy: PolicyConfig;
+  readonly policy: Policy;
   readonly geminiBaseUrl: string;
   readonly ledger: LedgerSettings;
 }

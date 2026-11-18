@@ -10,22 +10,45 @@ export interface PolicyConfig {
   readonly killSwitch: boolean;
 }
 
-export function createPolicy(config: PolicyConfig):
-  | { ok: true; value: PolicyConfig }
-  | { ok: false; error: "invalid-caps" } {
-  const { dailyCap, perTradeMax, autoApproveMax } = config;
-  if (![dailyCap, perTradeMax, autoApproveMax].every(Number.isSafeInteger)
-    || autoApproveMax < 0 || autoApproveMax > perTradeMax || perTradeMax > dailyCap) {
-    return { ok: false, error: "invalid-caps" };
-  }
-  return {
-    ok: true,
-    value: Object.freeze({
+class Policy {
+  readonly #config: PolicyConfig;
+
+  private constructor(config: PolicyConfig) {
+    this.#config = {
       ...config,
       marketAllowlist: new Set(config.marketAllowlist),
       senderAllowlist: new Set(config.senderAllowlist),
-    }),
-  };
+    };
+    Object.freeze(this);
+  }
+
+  static create(config: PolicyConfig): { ok: true; value: Policy } | { ok: false; error: "invalid-caps" } {
+    const { dailyCap, perTradeMax, autoApproveMax } = config;
+    if (![dailyCap, perTradeMax, autoApproveMax].every(Number.isSafeInteger)
+      || autoApproveMax < 0 || autoApproveMax > perTradeMax || perTradeMax > dailyCap) {
+      return { ok: false, error: "invalid-caps" };
+    }
+    return { ok: true, value: new Policy(config) };
+  }
+
+  get dailyCap() { return this.#config.dailyCap; }
+  get perTradeMax() { return this.#config.perTradeMax; }
+  get autoApproveMax() { return this.#config.autoApproveMax; }
+  get killSwitch() { return this.#config.killSwitch; }
+  get marketAllowlist(): ReadonlySet<InstrumentSymbol> { return new Set(this.#config.marketAllowlist); }
+  get senderAllowlist(): ReadonlySet<string> { return new Set(this.#config.senderAllowlist); }
+
+  allowsMarket(symbol: InstrumentSymbol): boolean { return this.#config.marketAllowlist.has(symbol); }
+  allowsSender(senderId: string): boolean { return this.#config.senderAllowlist.has(senderId); }
+
+  withKillSwitch(killSwitch: boolean): Policy {
+    return this.killSwitch === killSwitch ? this : new Policy({ ...this.#config, killSwitch });
+  }
+}
+
+export type { Policy };
+export function createPolicy(config: PolicyConfig) {
+  return Policy.create(config);
 }
 
 export interface PolicyState {
@@ -104,7 +127,7 @@ function dollars(cents: UsdCents): string {
     : `$${String(amount / 100n)}.${String(amount % 100n).padStart(2, "0")}`;
 }
 
-function refusalReason(code: RefusalCode, notional: UsdCents, policy: PolicyConfig, remaining: UsdCents): string {
+function refusalReason(code: RefusalCode, notional: UsdCents, policy: Policy, remaining: UsdCents): string {
   switch (code) {
     case "kill-switch": return "Trading is paused.";
     case "unauthorized-sender": return "This account isn't authorized to approve or request trades.";
@@ -124,15 +147,15 @@ function refusalReason(code: RefusalCode, notional: UsdCents, policy: PolicyConf
 function findRefusal(
   trade: Pick<TradeIntent, "intentId" | "instrumentSymbol" | "notional">,
   actorId: string,
-  policy: PolicyConfig,
+  policy: Policy,
   state: PolicyState,
   remaining: UsdCents,
   market: PolicyMarket | undefined,
 ): RefusalCode | undefined {
   if (policy.killSwitch) return "kill-switch";
-  if (!policy.senderAllowlist.has(actorId)) return "unauthorized-sender";
+  if (!policy.allowsSender(actorId)) return "unauthorized-sender";
   if (state.seenIntentIds.has(trade.intentId)) return "duplicate-intent";
-  if (!policy.marketAllowlist.has(trade.instrumentSymbol)) return "market-not-allowlisted";
+  if (!policy.allowsMarket(trade.instrumentSymbol)) return "market-not-allowlisted";
   if (!market || market.instrumentSymbol !== trade.instrumentSymbol || market.eventStatus !== "active"
     || market.status !== "active" || market.marketState !== "open"
     || !Number.isInteger(market.limitPrice) || market.limitPrice <= 0 || market.limitPrice > 100) return "market-closed";
@@ -142,15 +165,15 @@ function findRefusal(
   return undefined;
 }
 
-function remainingToday(policy: PolicyConfig, state: PolicyState): UsdCents {
+function remainingToday(policy: Policy, state: PolicyState): UsdCents {
   return usdCents(Math.max(0, policy.dailyCap - state.spentToday - state.reservedToday));
 }
 
-function refusal(trade: Pick<TradeIntent, "intentId" | "notional">, code: RefusalCode, policy: PolicyConfig, remaining: UsdCents): Refusal {
+function refusal(trade: Pick<TradeIntent, "intentId" | "notional">, code: RefusalCode, policy: Policy, remaining: UsdCents): Refusal {
   return { kind: "refuse", intentId: trade.intentId, code, spokenReason: refusalReason(code, trade.notional, policy, remaining) };
 }
 
-export function evaluate(intent: TradeIntent, market: PolicyMarket | undefined, policy: PolicyConfig, state: PolicyState, now: Date): Decision {
+export function evaluate(intent: TradeIntent, market: PolicyMarket | undefined, policy: Policy, state: PolicyState, now: Date): Decision {
   const current = rollDay(state, now);
   const remaining = remainingToday(policy, current);
   const code = findRefusal(intent, intent.senderId, policy, current, remaining, market);
@@ -158,7 +181,7 @@ export function evaluate(intent: TradeIntent, market: PolicyMarket | undefined, 
   return intent.notional > policy.autoApproveMax ? new PendingApproval(intent) : new Approval(intent);
 }
 
-export function confirm(pending: PendingApproval, approverId: string, market: PolicyMarket | undefined, policy: PolicyConfig, state: PolicyState, now: Date): ApprovedTrade | Refusal {
+export function confirm(pending: PendingApproval, approverId: string, market: PolicyMarket | undefined, policy: Policy, state: PolicyState, now: Date): ApprovedTrade | Refusal {
   const current = rollDay(state, now);
   const remaining = remainingToday(policy, current);
   const code = findRefusal(pending, approverId, policy, current, remaining, market);

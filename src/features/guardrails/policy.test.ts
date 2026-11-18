@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { instrumentSymbol, usdCents } from "@/shared";
 import type { TradeIntent } from "@/shared";
 import { applyApproved, confirm, createPolicy, evaluate, rollDay } from "./index";
@@ -19,6 +19,14 @@ const intent: TradeIntent = {
   source: "desk", senderId: "desk", createdAt: now,
 };
 
+function validated(input: PolicyConfig = config) {
+  const result = createPolicy(input);
+  if (!result.ok) throw new Error("Expected valid policy");
+  return result.value;
+}
+
+const policy = validated();
+
 describe("trade policy", () => {
   it("validates ordered, safe cent caps", () => {
     expect(createPolicy(config).ok).toBe(true);
@@ -27,15 +35,42 @@ describe("trade policy", () => {
     expect(createPolicy({ ...config, dailyCap: usdCents(2 ** 53) }).ok).toBe(false);
   });
 
+  it("requires a validated policy at both decision entry points", () => {
+    expectTypeOf<PolicyConfig>().not.toExtend<Parameters<typeof evaluate>[2]>();
+    expectTypeOf<PolicyConfig>().not.toExtend<Parameters<typeof confirm>[3]>();
+  });
+
+  it("isolates authorization from input and exported set mutations", () => {
+    const marketAllowlist = new Set([symbol]);
+    const senderAllowlist = new Set(["desk"]);
+    const isolated = validated({ ...config, marketAllowlist, senderAllowlist });
+    const otherSymbol = instrumentSymbol("OTHER");
+    marketAllowlist.delete(symbol);
+    marketAllowlist.add(otherSymbol);
+    senderAllowlist.delete("desk");
+    senderAllowlist.add("guest");
+
+    expect(isolated.marketAllowlist).toEqual(new Set([symbol]));
+    expect(isolated.senderAllowlist).toEqual(new Set(["desk"]));
+    const exportedMarkets = isolated.marketAllowlist as Set<typeof symbol>;
+    const exportedSenders = isolated.senderAllowlist as Set<string>;
+    exportedMarkets.add(otherSymbol);
+    exportedSenders.add("guest");
+    expect(evaluate(intent, market, isolated, state, now).kind).toBe("approve");
+    expect(evaluate({ ...intent, senderId: "guest" }, market, isolated, state, now)).toMatchObject({ code: "unauthorized-sender" });
+    expect(evaluate({ ...intent, instrumentSymbol: otherSymbol }, { ...market, instrumentSymbol: otherSymbol }, isolated, state, now))
+      .toMatchObject({ code: "market-not-allowlisted" });
+  });
+
   it.each([
-    ["kill-switch", evaluate({ ...intent, senderId: "guest" }, market, { ...config, killSwitch: true }, state, now)],
-    ["unauthorized-sender", evaluate({ ...intent, senderId: "guest" }, market, config, state, now)],
-    ["duplicate-intent", evaluate(intent, market, config, { ...state, seenIntentIds: new Set([intent.intentId]) }, now)],
-    ["market-not-allowlisted", evaluate(intent, market, { ...config, marketAllowlist: new Set() }, state, now)],
-    ["market-closed", evaluate(intent, { ...market, marketState: "closed" }, config, state, now)],
-    ["zero-notional", evaluate({ ...intent, notional: usdCents(0) }, market, config, state, now)],
-    ["over-per-trade-cap", evaluate({ ...intent, notional: usdCents(1001) }, market, config, state, now)],
-    ["over-daily-cap", evaluate(intent, market, config, { ...state, spentToday: usdCents(1501) }, now)],
+    ["kill-switch", evaluate({ ...intent, senderId: "guest" }, market, policy.withKillSwitch(true), state, now)],
+    ["unauthorized-sender", evaluate({ ...intent, senderId: "guest" }, market, policy, state, now)],
+    ["duplicate-intent", evaluate(intent, market, policy, { ...state, seenIntentIds: new Set([intent.intentId]) }, now)],
+    ["market-not-allowlisted", evaluate(intent, market, validated({ ...config, marketAllowlist: new Set() }), state, now)],
+    ["market-closed", evaluate(intent, { ...market, marketState: "closed" }, policy, state, now)],
+    ["zero-notional", evaluate({ ...intent, notional: usdCents(0) }, market, policy, state, now)],
+    ["over-per-trade-cap", evaluate({ ...intent, notional: usdCents(1001) }, market, policy, state, now)],
+    ["over-daily-cap", evaluate(intent, market, policy, { ...state, spentToday: usdCents(1501) }, now)],
   ])("refuses %s", (code, decision) => {
     expect(decision).toMatchObject({ kind: "refuse", code, intentId: intent.intentId });
   });
@@ -43,52 +78,52 @@ describe("trade policy", () => {
   it("accepts exact caps and counts reserved funds", () => {
     const used = { ...state, spentToday: usdCents(600), reservedToday: usdCents(400) };
     const atCap = { ...intent, notional: usdCents(1000) };
-    expect(evaluate(atCap, market, config, used, now).kind).toBe("needs-approval");
-    expect(evaluate(atCap, market, config, { ...used, reservedToday: usdCents(401) }, now)).toMatchObject({
+    expect(evaluate(atCap, market, policy, used, now).kind).toBe("needs-approval");
+    expect(evaluate(atCap, market, policy, { ...used, reservedToday: usdCents(401) }, now)).toMatchObject({
       code: "over-daily-cap", spokenReason: "A $10 trade would exceed today's $20 cap, with $9.99 left.",
     });
-    expect(evaluate(intent, market, config, state, now)).toMatchObject({
+    expect(evaluate(intent, market, policy, state, now)).toMatchObject({
       kind: "approve", spokenReason: "I approved the $5 trade.",
     });
   });
 
   it("requires an allowlisted approver one cent above the threshold", () => {
-    const pending = evaluate({ ...intent, notional: usdCents(501) }, market, config, state, now);
+    const pending = evaluate({ ...intent, notional: usdCents(501) }, market, policy, state, now);
     if (pending.kind !== "needs-approval") throw new Error("Expected pending decision");
-    expect(confirm(pending, "guest", market, config, state, now)).toMatchObject({ kind: "refuse", code: "unauthorized-sender" });
-    expect(confirm(pending, "desk", market, { ...config, killSwitch: true }, state, now)).toMatchObject({ kind: "refuse", code: "kill-switch" });
-    expect(confirm(pending, "desk", market, config, state, now)).toMatchObject({ kind: "approve", notional: 501 });
+    expect(confirm(pending, "guest", market, policy, state, now)).toMatchObject({ kind: "refuse", code: "unauthorized-sender" });
+    expect(confirm(pending, "desk", market, policy.withKillSwitch(true), state, now)).toMatchObject({ kind: "refuse", code: "kill-switch" });
+    expect(confirm(pending, "desk", market, policy, state, now)).toMatchObject({ kind: "approve", notional: 501 });
   });
 
   it("re-checks the daily cap when a pending trade is confirmed later", () => {
-    const pending = evaluate({ ...intent, notional: usdCents(501) }, market, config, state, now);
+    const pending = evaluate({ ...intent, notional: usdCents(501) }, market, policy, state, now);
     if (pending.kind !== "needs-approval") throw new Error("Expected pending decision");
     const afterOtherSpend = { ...state, spentToday: usdCents(1600) };
-    expect(confirm(pending, "desk", market, config, afterOtherSpend, now)).toMatchObject({
+    expect(confirm(pending, "desk", market, policy, afterOtherSpend, now)).toMatchObject({
       kind: "refuse", code: "over-daily-cap", intentId: intent.intentId,
     });
     const nextDay = new Date("2026-11-18T00:00:00Z");
-    expect(confirm(pending, "desk", market, config, afterOtherSpend, nextDay)).toMatchObject({ kind: "approve" });
+    expect(confirm(pending, "desk", market, policy, afterOtherSpend, nextDay)).toMatchObject({ kind: "approve" });
   });
 
   it("refuses to confirm the same intent twice", () => {
-    const pending = evaluate({ ...intent, notional: usdCents(501) }, market, config, state, now);
+    const pending = evaluate({ ...intent, notional: usdCents(501) }, market, policy, state, now);
     if (pending.kind !== "needs-approval") throw new Error("Expected pending decision");
-    const first = confirm(pending, "desk", market, config, state, now);
+    const first = confirm(pending, "desk", market, policy, state, now);
     if (first.kind !== "approve") throw new Error("Expected approval");
     const afterFirst = applyApproved(state, first);
-    expect(confirm(pending, "desk", market, config, afterFirst, now)).toMatchObject({ kind: "refuse", code: "duplicate-intent" });
+    expect(confirm(pending, "desk", market, policy, afterFirst, now)).toMatchObject({ kind: "refuse", code: "duplicate-intent" });
   });
 
   it("re-checks the per-trade cap and market allowlist on confirm", () => {
-    const pending = evaluate({ ...intent, notional: usdCents(501) }, market, config, state, now);
+    const pending = evaluate({ ...intent, notional: usdCents(501) }, market, policy, state, now);
     if (pending.kind !== "needs-approval") throw new Error("Expected pending decision");
-    expect(confirm(pending, "desk", market, { ...config, perTradeMax: usdCents(500) }, state, now)).toMatchObject({ code: "over-per-trade-cap" });
-    expect(confirm(pending, "desk", market, { ...config, marketAllowlist: new Set() }, state, now)).toMatchObject({ code: "market-not-allowlisted" });
+    expect(confirm(pending, "desk", market, validated({ ...config, perTradeMax: usdCents(500) }), state, now)).toMatchObject({ code: "over-per-trade-cap" });
+    expect(confirm(pending, "desk", market, validated({ ...config, marketAllowlist: new Set() }), state, now)).toMatchObject({ code: "market-not-allowlisted" });
   });
 
   it("rolls UTC spend and reservations over while retaining replay protection", () => {
-    const approved = evaluate(intent, market, config, state, now);
+    const approved = evaluate(intent, market, policy, state, now);
     if (approved.kind !== "approve") throw new Error("Expected approval");
     const updated = applyApproved(state, approved);
     expect(updated.spentToday).toBe(500);
@@ -98,7 +133,7 @@ describe("trade policy", () => {
     expect(rollDay({ ...updated, reservedToday: usdCents(400) }, midnight)).toEqual({
       day: "2026-11-18", spentToday: 0, reservedToday: 0, seenIntentIds: new Set([intent.intentId]),
     });
-    expect(evaluate(intent, market, config, updated, midnight)).toMatchObject({ code: "duplicate-intent" });
+    expect(evaluate(intent, market, policy, updated, midnight)).toMatchObject({ code: "duplicate-intent" });
   });
 
   it("keeps sequential approvals within the daily cap for varied intent sequences", () => {
@@ -107,8 +142,8 @@ describe("trade policy", () => {
       let current = state;
       for (let index = 0; index < 50; index++) {
         seed = (seed * 16807) % 2147483647;
-        const decision = evaluate({ ...intent, intentId: String(index), notional: usdCents(seed % 1200) }, market, config, current, now);
-        const approved = decision.kind === "needs-approval" ? confirm(decision, "desk", market, config, current, now) : decision;
+        const decision = evaluate({ ...intent, intentId: String(index), notional: usdCents(seed % 1200) }, market, policy, current, now);
+        const approved = decision.kind === "needs-approval" ? confirm(decision, "desk", market, policy, current, now) : decision;
         if (approved.kind === "approve") current = applyApproved(current, approved);
         expect(current.spentToday).toBeLessThanOrEqual(config.dailyCap);
       }
