@@ -126,6 +126,28 @@ describe("desk", () => {
     expect(debit).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["inactive event", { ...event(), status: "inactive" }],
+    ["inactive contract", { ...event(), contracts: [{ ...contract(symbol, "Maintain"), status: "inactive" }] }],
+    ["mismatched symbol", { ...event(), contracts: [contract(otherSymbol, "Cut")] }],
+  ])("refuses a quote for %s without calling the ledger", async (_, unavailable) => {
+    const { desk, debit, markets } = await readyDesk();
+    markets.getEvent.mockResolvedValue(ok(unavailable));
+    expect(await desk.proposeTrade(propose())).toMatchObject({ kind: "refuse", code: "market-closed" });
+    expect(debit).not.toHaveBeenCalled();
+  });
+
+  it("refreshes the quote on confirmation and refuses a market that closed", async () => {
+    const { desk, debit, markets } = await readyDesk();
+    const waiting = await desk.proposeTrade(propose("yes", 500));
+    markets.getEvent.mockResolvedValue(ok(event("closed")));
+    expect(await desk.confirmPending(waiting.intentId, "priscilla")).toMatchObject({
+      ok: true, entry: { kind: "refuse", code: "market-closed" },
+    });
+    expect(markets.getEvent).toHaveBeenLastCalledWith("FED261211", { refresh: true });
+    expect(debit).not.toHaveBeenCalled();
+  });
+
   it("holds a needs-approval trade as pending and executes it on confirm", async () => {
     const { desk, debit } = await readyDesk();
     const waiting = await desk.proposeTrade(propose("no", 500));

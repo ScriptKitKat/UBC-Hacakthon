@@ -6,7 +6,7 @@ import type { PolicyConfig, PolicyState } from "./index";
 
 const now = new Date("2026-11-17T23:59:59Z");
 const symbol = instrumentSymbol("RATE-DEC");
-const market = { instrumentSymbol: symbol, marketState: "open", status: "approved" };
+const market = { instrumentSymbol: symbol, marketState: "open", status: "active", eventStatus: "active", limitPrice: usdCents(50) };
 const state: PolicyState = {
   day: "2026-11-17", spentToday: usdCents(0), reservedToday: usdCents(0), seenIntentIds: new Set(),
 };
@@ -55,36 +55,36 @@ describe("trade policy", () => {
   it("requires an allowlisted approver one cent above the threshold", () => {
     const pending = evaluate({ ...intent, notional: usdCents(501) }, market, config, state, now);
     if (pending.kind !== "needs-approval") throw new Error("Expected pending decision");
-    expect(confirm(pending, "guest", config, state, now)).toMatchObject({ kind: "refuse", code: "unauthorized-sender" });
-    expect(confirm(pending, "desk", { ...config, killSwitch: true }, state, now)).toMatchObject({ kind: "refuse", code: "kill-switch" });
-    expect(confirm(pending, "desk", config, state, now)).toMatchObject({ kind: "approve", notional: 501 });
+    expect(confirm(pending, "guest", market, config, state, now)).toMatchObject({ kind: "refuse", code: "unauthorized-sender" });
+    expect(confirm(pending, "desk", market, { ...config, killSwitch: true }, state, now)).toMatchObject({ kind: "refuse", code: "kill-switch" });
+    expect(confirm(pending, "desk", market, config, state, now)).toMatchObject({ kind: "approve", notional: 501 });
   });
 
   it("re-checks the daily cap when a pending trade is confirmed later", () => {
     const pending = evaluate({ ...intent, notional: usdCents(501) }, market, config, state, now);
     if (pending.kind !== "needs-approval") throw new Error("Expected pending decision");
     const afterOtherSpend = { ...state, spentToday: usdCents(1600) };
-    expect(confirm(pending, "desk", config, afterOtherSpend, now)).toMatchObject({
+    expect(confirm(pending, "desk", market, config, afterOtherSpend, now)).toMatchObject({
       kind: "refuse", code: "over-daily-cap", intentId: intent.intentId,
     });
     const nextDay = new Date("2026-11-18T00:00:00Z");
-    expect(confirm(pending, "desk", config, afterOtherSpend, nextDay)).toMatchObject({ kind: "approve" });
+    expect(confirm(pending, "desk", market, config, afterOtherSpend, nextDay)).toMatchObject({ kind: "approve" });
   });
 
   it("refuses to confirm the same intent twice", () => {
     const pending = evaluate({ ...intent, notional: usdCents(501) }, market, config, state, now);
     if (pending.kind !== "needs-approval") throw new Error("Expected pending decision");
-    const first = confirm(pending, "desk", config, state, now);
+    const first = confirm(pending, "desk", market, config, state, now);
     if (first.kind !== "approve") throw new Error("Expected approval");
     const afterFirst = applyApproved(state, first);
-    expect(confirm(pending, "desk", config, afterFirst, now)).toMatchObject({ kind: "refuse", code: "duplicate-intent" });
+    expect(confirm(pending, "desk", market, config, afterFirst, now)).toMatchObject({ kind: "refuse", code: "duplicate-intent" });
   });
 
   it("re-checks the per-trade cap and market allowlist on confirm", () => {
     const pending = evaluate({ ...intent, notional: usdCents(501) }, market, config, state, now);
     if (pending.kind !== "needs-approval") throw new Error("Expected pending decision");
-    expect(confirm(pending, "desk", { ...config, perTradeMax: usdCents(500) }, state, now)).toMatchObject({ code: "over-per-trade-cap" });
-    expect(confirm(pending, "desk", { ...config, marketAllowlist: new Set() }, state, now)).toMatchObject({ code: "market-not-allowlisted" });
+    expect(confirm(pending, "desk", market, { ...config, perTradeMax: usdCents(500) }, state, now)).toMatchObject({ code: "over-per-trade-cap" });
+    expect(confirm(pending, "desk", market, { ...config, marketAllowlist: new Set() }, state, now)).toMatchObject({ code: "market-not-allowlisted" });
   });
 
   it("rolls UTC spend and reservations over while retaining replay protection", () => {
@@ -108,7 +108,7 @@ describe("trade policy", () => {
       for (let index = 0; index < 50; index++) {
         seed = (seed * 16807) % 2147483647;
         const decision = evaluate({ ...intent, intentId: String(index), notional: usdCents(seed % 1200) }, market, config, current, now);
-        const approved = decision.kind === "needs-approval" ? confirm(decision, "desk", config, current, now) : decision;
+        const approved = decision.kind === "needs-approval" ? confirm(decision, "desk", market, config, current, now) : decision;
         if (approved.kind === "approve") current = applyApproved(current, approved);
         expect(current.spentToday).toBeLessThanOrEqual(config.dailyCap);
       }

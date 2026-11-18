@@ -19,7 +19,7 @@ export interface SearchEventsQuery {
 
 export interface GeminiMarketsClient {
   readonly searchEvents: (query?: SearchEventsQuery) => Promise<MarketsResult<EventsPage>>;
-  readonly getEvent: (ticker: string) => Promise<MarketsResult<MarketEvent>>;
+  readonly getEvent: (ticker: string, options?: { readonly refresh?: boolean }) => Promise<MarketsResult<MarketEvent>>;
 }
 
 export interface GeminiMarketsClientOptions {
@@ -34,8 +34,8 @@ export function createGeminiMarketsClient(options: GeminiMarketsClientOptions): 
   const cache = createTtlCache<unknown>(clock, CACHE_TTL_MS);
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
 
-  async function getJson<S extends z.ZodType>(url: string, schema: S): Promise<MarketsResult<z.output<S>>> {
-    const cached = cache.get(url);
+  async function getJson<S extends z.ZodType>(url: string, schema: S, refresh = false): Promise<MarketsResult<z.output<S>>> {
+    const cached = refresh ? undefined : cache.get(url);
     if (cached !== undefined) {
       return ok(cached as z.output<S>);
     }
@@ -72,7 +72,7 @@ export function createGeminiMarketsClient(options: GeminiMarketsClientOptions): 
       }
       return getJson(`${baseUrl}/v1/prediction-markets/events?${params.toString()}`, eventsPageSchema);
     },
-    getEvent: (ticker) =>
-      getJson(`${baseUrl}/v1/prediction-markets/events/${encodeURIComponent(ticker)}`, eventSchema),
+    getEvent: (ticker, options) =>
+      getJson(`${baseUrl}/v1/prediction-markets/events/${encodeURIComponent(ticker)}`, eventSchema, options?.refresh),
   };
 }

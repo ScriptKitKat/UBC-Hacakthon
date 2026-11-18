@@ -164,6 +164,16 @@ describe("rate limiting and caching", () => {
     expect(urls).toHaveLength(2);
   });
 
+  it("refreshes event detail within the cache ttl", async () => {
+    const closed = { ...eventFixture, status: "closed" };
+    let current = eventFixture;
+    const { client, urls } = setup(() => jsonResponse(current));
+    await client.getEvent("FED261211");
+    current = closed;
+    expect(await client.getEvent("FED261211", { refresh: true })).toMatchObject({ ok: true, value: { status: "closed" } });
+    expect(urls).toHaveLength(2);
+  });
+
   it("does not cache failures", async () => {
     let calls = 0;
     const { client, clock } = setup(() => {

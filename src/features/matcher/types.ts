@@ -20,6 +20,7 @@ export function allowOnly(symbols: Iterable<InstrumentSymbol>): Allowlist {
 }
 
 export interface MatchCandidate {
+  readonly eventStatus: string;
   readonly eventTicker: string;
   readonly eventTitle: string;
   readonly contract: MarketContract;

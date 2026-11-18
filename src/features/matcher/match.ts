@@ -48,6 +48,7 @@ export async function matchNews(news: NewsItem, options: MatchOptions): Promise<
 
   const candidates = new Map<string, MatchCandidate>();
   for (const event of events.values()) {
+    if (event.status !== "active") continue;
     for (const contract of event.contracts) {
       if (contract.status === "active" && contract.marketState === "open") {
         candidates.set(contract.instrumentSymbol, scoreContract(profile, event, contract));

@@ -39,6 +39,8 @@ interface PolicyMarket {
   readonly instrumentSymbol: InstrumentSymbol;
   readonly marketState: string;
   readonly status: string;
+  readonly eventStatus: string;
+  readonly limitPrice: UsdCents;
 }
 
 export type RefusalCode = "kill-switch" | "unauthorized-sender" | "market-not-allowlisted"
@@ -131,7 +133,9 @@ function findRefusal(
   if (!policy.senderAllowlist.has(actorId)) return "unauthorized-sender";
   if (state.seenIntentIds.has(trade.intentId)) return "duplicate-intent";
   if (!policy.marketAllowlist.has(trade.instrumentSymbol)) return "market-not-allowlisted";
-  if (market && (market.instrumentSymbol !== trade.instrumentSymbol || market.marketState !== "open")) return "market-closed";
+  if (!market || market.instrumentSymbol !== trade.instrumentSymbol || market.eventStatus !== "active"
+    || market.status !== "active" || market.marketState !== "open"
+    || !Number.isInteger(market.limitPrice) || market.limitPrice <= 0 || market.limitPrice > 100) return "market-closed";
   if (trade.notional === 0) return "zero-notional";
   if (trade.notional > policy.perTradeMax) return "over-per-trade-cap";
   if (trade.notional > remaining) return "over-daily-cap";
@@ -146,7 +150,7 @@ function refusal(trade: Pick<TradeIntent, "intentId" | "notional">, code: Refusa
   return { kind: "refuse", intentId: trade.intentId, code, spokenReason: refusalReason(code, trade.notional, policy, remaining) };
 }
 
-export function evaluate(intent: TradeIntent, market: PolicyMarket, policy: PolicyConfig, state: PolicyState, now: Date): Decision {
+export function evaluate(intent: TradeIntent, market: PolicyMarket | undefined, policy: PolicyConfig, state: PolicyState, now: Date): Decision {
   const current = rollDay(state, now);
   const remaining = remainingToday(policy, current);
   const code = findRefusal(intent, intent.senderId, policy, current, remaining, market);
@@ -154,10 +158,10 @@ export function evaluate(intent: TradeIntent, market: PolicyMarket, policy: Poli
   return intent.notional > policy.autoApproveMax ? new PendingApproval(intent) : new Approval(intent);
 }
 
-export function confirm(pending: PendingApproval, approverId: string, policy: PolicyConfig, state: PolicyState, now: Date): ApprovedTrade | Refusal {
+export function confirm(pending: PendingApproval, approverId: string, market: PolicyMarket | undefined, policy: PolicyConfig, state: PolicyState, now: Date): ApprovedTrade | Refusal {
   const current = rollDay(state, now);
   const remaining = remainingToday(policy, current);
-  const code = findRefusal(pending, approverId, policy, current, remaining, undefined);
+  const code = findRefusal(pending, approverId, policy, current, remaining, market);
   return code ? refusal(pending, code, policy, remaining) : new Approval(pending);
 }
 
