@@ -331,6 +331,24 @@ describe("desk feed", () => {
     expect(await desk.buyFromFeed({ clientOrderId: "sibling-order", instrumentSymbol: otherSymbol, outcome: "yes", notionalCents: 100 })).toMatchObject({ kind: "approve", symbol: otherSymbol });
   });
 
+  it("authorizes recovered sibling contracts and retains their post context", async () => {
+    const markets = fakeMarkets();
+    markets.getEvent.mockResolvedValueOnce(fail({ kind: "http", status: 500 }));
+    const { desk } = setup({ markets, extra: { now: () => new Date("2026-11-17T12:00:00Z") } });
+    const match = await desk.matchPost(post);
+    expect(match).toMatchObject({ kind: "matched", contracts: [{ instrumentSymbol: symbol }] });
+    expect(await desk.isCardFor(post.id, symbol)).toBe(true);
+    expect(await desk.isCardFor(post.id, otherSymbol)).toBe(false);
+    expect(await desk.postContextFor(otherSymbol)).toBeUndefined();
+
+    expect(await desk.quote(symbol)).toMatchObject({ contracts: [{ instrumentSymbol: symbol }, { instrumentSymbol: otherSymbol }] });
+    expect(await desk.isCardFor(post.id, otherSymbol)).toBe(true);
+    expect(await desk.postContextFor(otherSymbol)).toMatchObject({ source: "x-feed", text: post.text });
+    expect(await desk.isCardFor(post.id, "GEMI-FED261211-UNLISTED")).toBe(false);
+    expect(await desk.isCardFor("other-post", otherSymbol)).toBe(false);
+    expect(await desk.buyFromFeed({ clientOrderId: "recovered-sibling", instrumentSymbol: otherSymbol, outcome: "yes", notionalCents: 100 })).toMatchObject({ kind: "approve", symbol: otherSymbol });
+  });
+
   it("caches matches per post id", async () => {
     const { desk, markets } = setup();
     await desk.matchPost(post);

@@ -259,6 +259,7 @@ export function createDesk(deps: DeskDeps): Desk {
   const inFlight = new Set<string>();
   const pending = new Map<string, PendingRecord>();
   const tickers = new Map<InstrumentSymbol, string>();
+  const listedContracts = new Map<string, ReadonlySet<string>>();
   const matchCache = new Map<string, { readonly at: number; readonly post: PostInput; readonly match: Promise<FeedMatch> }>();
   const feedOrders = deps.feedOrders ?? createFeedOrders();
   const buying = new Map<string, Promise<DecisionLogEntry>>();
@@ -336,6 +337,7 @@ export function createDesk(deps: DeskDeps): Desk {
     const contract = result.value.contracts.find((candidate) => candidate.instrumentSymbol === symbol);
     if (!contract) return undefined;
     for (const sibling of result.value.contracts) tickers.set(sibling.instrumentSymbol, eventTicker);
+    listedContracts.set(eventTicker, new Set(result.value.contracts.map((sibling) => sibling.instrumentSymbol)));
     const market = { event: result.value, eventTicker, eventStatus: result.value.status, eventTitle: result.value.title, category: result.value.category, contract };
     recordPrice(market);
     return market;
@@ -374,6 +376,10 @@ export function createDesk(deps: DeskDeps): Desk {
     }
     match.catch(() => matchCache.delete(post.id));
     return match;
+  }
+
+  function isFeedContract(match: FeedMatch | undefined, symbol: string): boolean {
+    return match?.kind === "matched" && (match.market.instrumentSymbol === symbol || listedContracts.get(match.market.eventTicker)?.has(symbol) === true);
   }
 
   function journalPurchase(entry: SpendEntry): StoredPurchase | undefined {
@@ -792,7 +798,7 @@ export function createDesk(deps: DeskDeps): Desk {
       const hit = matchCache.get(postId);
       if (!hit || now().getTime() - hit.at >= MATCH_CACHE_TTL_MS) return false;
       const match = await hit.match.catch(() => undefined);
-      return match?.kind === "matched" && (match.market.instrumentSymbol === symbol || match.contracts?.some((contract) => contract.instrumentSymbol === symbol) === true);
+      return isFeedContract(match, symbol);
     },
 
     async quote(symbol) {
@@ -806,7 +812,7 @@ export function createDesk(deps: DeskDeps): Desk {
       for (const { at, post, match } of [...matchCache.values()].reverse()) {
         if (nowMs - at >= MATCH_CACHE_TTL_MS) continue;
         const resolved = await match.catch(() => undefined);
-        if (resolved?.kind === "matched" && (resolved.market.instrumentSymbol === symbol || resolved.contracts?.some((contract) => contract.instrumentSymbol === symbol))) {
+        if (resolved?.kind === "matched" && isFeedContract(resolved, symbol)) {
           return { source: "x-feed", text: post.text, author: post.author ?? null, url: post.url ?? null, why: resolved.why };
         }
       }
