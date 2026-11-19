@@ -7,7 +7,7 @@ export const CARD_COLORS = {
 } as const;
 
 export const CARD_CSS = `
-:host { all: initial; display: block; margin-top: 12px; color-scheme: dark; }
+:host { all: initial; display: block; margin-top: 12px; color-scheme: dark; container-type: inline-size; }
 *, *::before, *::after { box-sizing: border-box; }
 .card {
   width: 100%; max-width: 516px; overflow: hidden; border: 1px solid ${CARD_COLORS.border}; border-radius: 20px;
@@ -55,12 +55,14 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 .foot { padding: 12px 16px; text-align: center; font-size: 12px; line-height: 18px; color: #a7b1ba; background: #101317; border-top: 1px solid ${CARD_COLORS.border}; }
 .foot a { color: ${CARD_COLORS.text}; font-weight: 700; text-underline-offset: 3px; }
 a:hover { text-decoration: underline; color: #329dff; }
-@media (max-width: 380px) {
+@container (max-width: 300px) {
   .body { padding: 16px 12px; }
-  .head { grid-template-columns: 40px minmax(0, 1fr); gap: 10px; }
-  .icon { width: 40px; height: 40px; }
-  .contract { font-size: 21px; }
-  .outcome { font-size: 19px; }
+  .head { grid-template-columns: 32px minmax(0, 1fr); gap: 8px; }
+  .icon { width: 32px; height: 32px; }
+  .icon svg { width: 22px; height: 22px; }
+  .contract { font-size: 18px; }
+  .outcome { font-size: 17px; white-space: nowrap; }
+  .chip { min-width: 40px; padding: 0 8px; }
   .payout { font-size: 13px; }
 }
 @media (prefers-reduced-motion: no-preference) {
