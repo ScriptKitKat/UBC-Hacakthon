@@ -181,6 +181,70 @@ describe("listBrowse", () => {
     expect(second.ok && second.page.markets.map((card) => card.eventTicker)).toEqual(events.slice(24).map((item) => item.ticker));
   });
 
+  it("dedupes event tickers when Gemini pages overlap across offsets", async () => {
+    const shared = event({
+      ticker: "XAU2611192200",
+      title: "Gold price today",
+      category: "Commodities",
+      volume: 900,
+      volume24h: 900,
+      contracts: [contract("Yes", "GEMI-XAU-YES", 55), contract("No", "GEMI-XAU-NO", 45)],
+    });
+    const btc = event({
+      ticker: "BTC2611192000",
+      title: "Bitcoin price today",
+      category: "Crypto",
+      volume: 800,
+      volume24h: 800,
+      contracts: [contract("Yes", "GEMI-BTC-YES", 50), contract("No", "GEMI-BTC-NO", 50)],
+    });
+    const zec = event({
+      ticker: "ZEC2611192200",
+      title: "Zcash price today",
+      category: "Crypto",
+      volume: 700,
+      volume24h: 700,
+      contracts: [contract("Yes", "GEMI-ZEC-YES", 50), contract("No", "GEMI-ZEC-NO", 50)],
+    });
+    const pad = (prefix: string, count: number, volumeBase: number) =>
+      Array.from({ length: count }, (_, index) =>
+        event({
+          ticker: `${prefix}${String(index).padStart(2, "0")}`,
+          title: `${prefix} ${String(index)}`,
+          category: "Politics",
+          volume: volumeBase - index,
+          volume24h: volumeBase - index,
+          contracts: [contract("Yes", `GEMI-${prefix}${String(index)}-YES`, 50), contract("No", `GEMI-${prefix}${String(index)}-NO`, 50)],
+        }),
+      );
+    const page0 = [...pad("AA", 22, 100), shared, btc];
+    const page1 = [shared, zec, ...pad("BB", 22, 50)];
+    const result = await listBrowse(
+      {
+        markets: {
+          searchEvents: (query: SearchEventsQuery = {}) => {
+            const offset = query.offset ?? 0;
+            const slice = offset === 0 ? page0 : page1;
+            return Promise.resolve({ ok: true as const, value: { events: slice, total: 48 } });
+          },
+          candles: () => Promise.resolve({ ok: true as const, value: [] }),
+          pubticker: () => Promise.resolve({ ok: false as const, error: { kind: "http" as const, status: 404 } }),
+        },
+        history: createMemoryHistory(),
+        now: () => new Date("2026-11-19T16:00:00.000Z"),
+      },
+      { sort: "trending", offset: 0, limit: 48 },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const tickers = result.page.markets.map((card) => card.eventTicker);
+    expect(tickers.filter((ticker) => ticker === "XAU2611192200")).toHaveLength(1);
+    expect(tickers).toContain("XAU2611192200");
+    expect(tickers).toContain("BTC2611192000");
+    expect(tickers).toContain("ZEC2611192200");
+    expect(new Set(tickers).size).toBe(tickers.length);
+  });
+
   it("reports unavailability when Gemini search fails", async () => {
     const result = await listBrowse({
       markets: {

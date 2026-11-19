@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { BrowseCard, BrowsePage, BrowseSort } from "@/shared";
+import { uniqueByKey } from "@/shared";
 import { contrastInk, formatPercent } from "@/shared";
 import { useViewMode } from "../_research/use-view-mode";
 import { usePolling } from "../_desk/use-polling";
@@ -109,19 +110,24 @@ export function BrowsePage({ initialPage }: { readonly initialPage?: BrowsePage 
   const [tick, setTick] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  const visibleCount = Math.min(Math.max(page?.markets.length ?? 24, 24), 96);
+
   usePolling(() => {
     void loadBrowse({
       sort,
       category,
       offset: 0,
-      limit: 24,
+      limit: visibleCount,
       ...(submitted ? { search: submitted } : {}),
     }).then(async (result) => {
       if (result.kind !== "ok") {
         setError(result.message);
         return;
       }
-      setPage(result.page);
+      setPage({
+        ...result.page,
+        markets: uniqueByKey(result.page.markets, (card) => card.eventTicker),
+      });
       setError(null);
       const assets = [...new Set(result.page.markets.flatMap((card) => {
         const match = /^([A-Z]+)/u.exec(card.eventTicker);
@@ -162,11 +168,12 @@ export function BrowsePage({ initialPage }: { readonly initialPage?: BrowsePage 
   const loadMore = () => {
     if (page === undefined || !page.hasMore || loadingMore) return;
     setLoadingMore(true);
+    const nextCount = Math.min(page.markets.length + 24, 96);
     void loadBrowse({
       sort,
       category,
-      offset: page.offset + page.markets.length,
-      limit: 24,
+      offset: 0,
+      limit: nextCount,
       ...(submitted ? { search: submitted } : {}),
     }).then((result) => {
       setLoadingMore(false);
@@ -176,7 +183,7 @@ export function BrowsePage({ initialPage }: { readonly initialPage?: BrowsePage 
       }
       setPage({
         ...result.page,
-        markets: [...markets, ...result.page.markets],
+        markets: uniqueByKey(result.page.markets, (card) => card.eventTicker),
         offset: 0,
       });
     }).catch(() => {
