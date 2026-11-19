@@ -81,7 +81,7 @@ describe("market card", () => {
     expect(button("outcome-yes").textContent).toBe("Yes 62%");
     expect(button("outcome-no").textContent).toBe("No 40%");
     expect(button("outcome-yes").getAttribute("aria-pressed")).toBe("true");
-    expect(text()).toContain("62% chance | $1.61 potential payout");
+    expect(text()).toContain("62% chance · 1.61 USDC potential payout");
     expect(text()).not.toContain("Implied by price");
     expect(text()).not.toContain("before fees");
     expect(text()).not.toContain("Your trade");
@@ -89,33 +89,49 @@ describe("market card", () => {
     expect(button("trade").textContent).toBe("Trade now");
     expect(root.querySelector<HTMLAnchorElement>('[data-key="gemini"]')?.href).toBe(market.geminiUrl);
     expect(amountField(root).value).toBe("1.00");
+    expect(amountField(root).getAttribute("aria-label")).toBe("Trade amount in USDC");
+    expect(root.querySelector(".amount-unit")?.textContent).toBe("USDC");
+    expect(root.querySelector(".amount-field")?.textContent).not.toContain("$");
+  });
+
+  it("keeps the card black and both outcome colors visible regardless of selection", () => {
+    const { root, button } = setup();
+    const card = root.querySelector(".card");
+    if (!card) throw new Error("missing card");
+    expect(getComputedStyle(card).backgroundColor).toBe("rgb(0, 0, 0)");
+    expect(getComputedStyle(card).backgroundImage).not.toContain("gradient");
+    for (const side of ["yes", "no"]) {
+      press(button(`outcome-${side}`));
+      expect(getComputedStyle(button("outcome-yes")).color).toBe("rgb(74, 222, 128)");
+      expect(getComputedStyle(button("outcome-no")).color).toBe("rgb(248, 113, 113)");
+    }
   });
 
   it("updates the chance and payout for the selected side, stake and live quote", () => {
     const { root, handle, button } = setup();
     press(button("outcome-no"));
-    expect(root.textContent).toContain("40% chance | $2.50 potential payout");
+    expect(root.textContent).toContain("40% chance · 2.50 USDC potential payout");
     editAmount(root, "5.00");
-    expect(root.textContent).toContain("40% chance | $12.50 potential payout");
+    expect(root.textContent).toContain("40% chance · 12.50 USDC potential payout");
     handle.update(quote);
-    expect(root.textContent).toContain("37% chance | $13.51 potential payout");
+    expect(root.textContent).toContain("37% chance · 13.51 USDC potential payout");
     expect(button("outcome-no").getAttribute("aria-pressed")).toBe("true");
     expect(amountField(root).value).toBe("5.00");
   });
 
-  it("calculates the sketched payout from a custom dollar stake and live Gemini price", async () => {
+  it("calculates the sketched payout from a custom USDC stake and live Gemini price", async () => {
     const { root, button, send, handle } = setup({ ...matched, market: { ...market, yesCents: 43 } });
     editAmount(root, "23.00");
-    expect(root.querySelector(".payout")?.textContent).toBe("43% chance | $53.48 potential payout");
+    expect(root.querySelector(".payout")?.textContent).toBe("43% chance · 53.48 USDC potential payout");
     expect(send).not.toHaveBeenCalled();
     handle.update({ ...quote, market: { ...quote.market, yesCents: 50 } });
-    expect(root.querySelector(".payout")?.textContent).toBe("50% chance | $46 potential payout");
+    expect(root.querySelector(".payout")?.textContent).toBe("50% chance · 46 USDC potential payout");
     send.mockResolvedValue({ ok: false, error: "stubbed" });
     press(button("trade"));
     await vi.waitFor(() => { expect(send).toHaveBeenCalledWith(expect.objectContaining({ amountCents: 2300, seenPriceCents: 50 })); });
   });
 
-  it.each(["", "0", "-1", "1.234", "1e3", "1000.01", "9999999999999999"])("does not submit an invalid dollar amount %j", (value) => {
+  it.each(["", "0", "-1", "1.234", "1e3", "1000.01", "9999999999999999"])("does not submit an invalid USDC amount %j", (value) => {
     const { root, button, send } = setup();
     editAmount(root, value);
     expect(button("trade").disabled).toBe(true);
@@ -132,7 +148,7 @@ describe("market card", () => {
     expect(root.textContent).toContain("Minimum 2 contracts");
     expect(button("trade").disabled).toBe(true);
     editAmount(root, "2.00");
-    expect(root.textContent).toContain("62% chance | $3 potential payout");
+    expect(root.textContent).toContain("62% chance · 3 USDC potential payout");
     expect(button("trade").disabled).toBe(false);
   });
 
@@ -157,7 +173,7 @@ describe("market card", () => {
     expect(handle.symbol).toBe(market.instrumentSymbol);
     select.dispatchEvent(trusted(new Event("change")));
     expect(handle.symbol).toBe(other.instrumentSymbol);
-    expect(root.textContent).toContain("20% chance | $5 potential payout");
+    expect(root.textContent).toContain("20% chance · 5 USDC potential payout");
     expect(root.querySelector<HTMLAnchorElement>('[data-key="research"]')?.href).toBe(`https://desk.test/markets/${other.instrumentSymbol}`);
     handle.update(quote);
     expect(handle.symbol).toBe(other.instrumentSymbol);
@@ -228,27 +244,50 @@ describe("market card", () => {
     if (!select) throw new Error("missing contract selector");
     expect(getComputedStyle(select).opacity).toBe("0");
     pending.resolve(reply(entry({ outcome: "no", notionalCents: 500 })));
-    await vi.waitFor(() => { expect(text()).toContain("Filled"); });
+    await vi.waitFor(() => { expect(text()).toContain("Simulated prediction"); });
     expect(button("trade").disabled).toBe(false);
   });
 
-  it("shows the fill with the ticket and an explorer link", async () => {
+  it("distinguishes a simulated prediction from its actual USDC payment receipt", async () => {
     const { send, button, root } = setup();
     send.mockResolvedValue(reply(entry()));
     press(button("trade"));
     await vi.waitFor(() => { expect(root.querySelector('.result[data-tone="filled"]')).not.toBeNull(); });
-    expect(root.textContent).toContain("$1 YES · 1.61 @ 0.62 · paper ticket ticket-1");
+    expect(root.querySelector(".result-title")?.textContent).toBe("Simulated prediction");
+    expect(root.querySelector(".result-detail")?.textContent).toBe("1 USDC on Yes");
+    expect(root.querySelector(".result-note")?.textContent).toBe("USDC payment on Solana");
+    expect(root.querySelector(".result")?.textContent).not.toContain("ticket-1");
     const link = root.querySelector<HTMLAnchorElement>("a.link");
-    expect(link?.textContent).toBe("View on Solana Explorer ↗");
+    expect(link?.textContent).toBe("View transaction ↗");
     expect(link?.href).toBe("https://explorer.solana.com/tx/sig?cluster=devnet");
     expect(link?.rel).toBe("noopener noreferrer");
   });
 
-  it("refuses to link non-https explorer urls", async () => {
+  it.each([
+    { explorerUrl: "javascript:alert(1)" },
+    { explorerUrl: "http://explorer.solana.com/tx/sig" },
+    { explorerUrl: undefined },
+    { signature: undefined },
+    { signature: " " },
+  ])("does not invent a transaction link without a safe signed receipt: %j", async (receipt) => {
     const { send, button, root } = setup();
-    send.mockResolvedValue(reply(entry({ explorerUrl: "javascript:alert(1)" })));
+    send.mockResolvedValue(reply(entry(receipt)));
     press(button("trade"));
-    await vi.waitFor(() => { expect(root.textContent).toContain("Filled"); });
+    await vi.waitFor(() => { expect(root.textContent).toContain("Simulated prediction"); });
+    expect(root.querySelector("a.link")).toBeNull();
+    expect(root.querySelector(".result-note")?.textContent).toBe("No transaction receipt");
+  });
+
+  it("does not expose test identifiers or pretend a simulated prediction is a fill", async () => {
+    const { send, button, root } = setup();
+    const result = entry({ signature: undefined, explorerUrl: undefined });
+    send.mockResolvedValue(reply({ ...result, ticket: { ticketId: "QA-stub", symbol: market.instrumentSymbol, outcome: "yes", quantity: "1.61", price: "0.62", mode: "paper" } }));
+    press(button("trade"));
+    await vi.waitFor(() => { expect(root.querySelector(".result-title")?.textContent).toBe("Simulated prediction"); });
+    const confirmation = root.querySelector(".result")?.textContent;
+    expect(confirmation).not.toContain("QA-stub");
+    expect(confirmation).not.toContain("Filled");
+    expect(confirmation).not.toContain("$");
     expect(root.querySelector("a.link")).toBeNull();
   });
 
@@ -328,7 +367,7 @@ describe("market card", () => {
     expect(select.options[0]).toBe(firstOption);
     expect(select.isConnected).toBe(true);
     expect(root.activeElement).toBe(select);
-    expect(root.querySelector(".payout")?.textContent).toBe("50% chance | $2 potential payout");
+    expect(root.querySelector(".payout")?.textContent).toBe("50% chance · 2 USDC potential payout");
     select.blur();
   });
 

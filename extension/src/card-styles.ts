@@ -1,9 +1,9 @@
 export const CARD_COLORS = {
-  surface: "rgb(16, 21, 18)",
+  surface: "rgb(0, 0, 0)",
   text: "rgb(237, 242, 234)",
   border: "rgba(168, 192, 143, .48)",
-  up: "rgb(186, 221, 170)",
-  down: "rgb(231, 202, 167)",
+  up: "rgb(74, 222, 128)",
+  down: "rgb(248, 113, 113)",
 } as const;
 
 export const CARD_CSS = `
@@ -11,7 +11,7 @@ export const CARD_CSS = `
 *, *::before, *::after { box-sizing: border-box; }
 .card {
   width: 100%; max-width: 516px; overflow: hidden; border: 1px solid ${CARD_COLORS.border}; border-radius: 24px;
-  background: radial-gradient(ellipse at 90% 0%, rgba(98, 132, 110, .17), transparent 60%), linear-gradient(145deg, #1b211e, ${CARD_COLORS.surface} 65%); color: ${CARD_COLORS.text};
+  background: ${CARD_COLORS.surface}; color: ${CARD_COLORS.text};
   box-shadow: 0 0 24px rgba(162, 190, 141, .08), inset 0 1px 0 rgba(235, 244, 229, .06);
   font: 500 15px/22px "NTD Manrope", ui-rounded, "Avenir Next", "Segoe UI", sans-serif;
   font-variant-numeric: tabular-nums; text-align: left; -webkit-font-smoothing: antialiased;
@@ -33,11 +33,14 @@ button, select, input, a { font: inherit; }
 .trade { display: grid; gap: 16px; }
 .outcomes { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; gap: 4px; border: 1px solid rgba(191, 210, 180, .16); border-radius: 999px; background: rgba(0, 0, 0, .2); box-shadow: inset 0 1px 6px rgba(0, 0, 0, .18); }
 .outcome { min-height: 46px; padding: 8px; border-radius: 999px; border: 1px solid transparent; background: transparent; color: #b3bdb5; font-size: 20px; line-height: 26px; font-weight: 650; cursor: pointer; }
-.outcome[data-outcome="yes"][aria-pressed="true"] { background: linear-gradient(145deg, rgba(188, 211, 181, .2), rgba(117, 152, 134, .1)); border-color: rgba(186, 221, 170, .5); color: ${CARD_COLORS.up}; box-shadow: 0 0 16px rgba(175, 210, 152, .1), inset 0 1px 0 rgba(255, 255, 255, .09); }
-.outcome[data-outcome="no"][aria-pressed="true"] { background: linear-gradient(145deg, rgba(231, 202, 167, .18), rgba(157, 132, 103, .08)); border-color: rgba(231, 202, 167, .5); color: ${CARD_COLORS.down}; box-shadow: 0 0 16px rgba(231, 202, 167, .08), inset 0 1px 0 rgba(255, 255, 255, .09); }
-.amount-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 16px; border: 1px solid rgba(191, 210, 180, .24); border-radius: 18px; background: rgba(5, 10, 7, .26); box-shadow: inset 0 1px 8px rgba(0, 0, 0, .15); cursor: text; }
+.outcome[data-outcome="yes"] { background: rgba(34, 197, 94, .08); border-color: rgba(74, 222, 128, .2); color: ${CARD_COLORS.up}; }
+.outcome[data-outcome="no"] { background: rgba(239, 68, 68, .08); border-color: rgba(248, 113, 113, .2); color: ${CARD_COLORS.down}; }
+.outcome[data-outcome="yes"][aria-pressed="true"] { background: rgba(34, 197, 94, .22); border-color: ${CARD_COLORS.up}; box-shadow: 0 0 16px rgba(34, 197, 94, .12), inset 0 1px 0 rgba(255, 255, 255, .09); }
+.outcome[data-outcome="no"][aria-pressed="true"] { background: rgba(239, 68, 68, .22); border-color: ${CARD_COLORS.down}; box-shadow: 0 0 16px rgba(239, 68, 68, .12), inset 0 1px 0 rgba(255, 255, 255, .09); }
+.amount-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 16px; border: 1px solid rgba(191, 210, 180, .24); border-radius: 18px; background: ${CARD_COLORS.surface}; cursor: text; }
 .amount-label { font-weight: 650; }
-.amount-value { display: flex; align-items: center; justify-content: flex-end; min-width: 0; max-width: 75%; font-size: 32px; line-height: 40px; font-weight: 650; letter-spacing: -1px; }
+.amount-value { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; max-width: 75%; font-size: 32px; line-height: 40px; font-weight: 650; letter-spacing: -1px; }
+.amount-unit { font-size: 13px; line-height: 20px; letter-spacing: 0; color: #b3bdb5; }
 .amount-editor { position: relative; min-width: 0; }
 .amount-mirror { visibility: hidden; white-space: pre; }
 .amount-input { position: absolute; inset: 0; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: ${CARD_COLORS.text}; font: inherit; letter-spacing: inherit; font-variant-numeric: inherit; text-align: right; }
@@ -59,6 +62,7 @@ button:focus-visible, input:focus-visible, a:focus-visible, .contract-picker:foc
 .result-title { font-weight: 700; }
 .status:empty { display: none; }
 .result-detail { color: ${CARD_COLORS.text}; }
+.result-note { color: #a7b1ba; font-size: 12px; }
 .link { color: #d0e4bf; text-decoration: none; font-weight: 650; }
 .approve { justify-self: start; min-height: 36px; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(231, 202, 167, .5); background: linear-gradient(155deg, #423b2e, #272218); color: #f2dec4; box-shadow: 0 0 16px rgba(231, 202, 167, .08), inset 0 1px 0 rgba(255, 255, 255, .1); font-weight: 650; cursor: pointer; }
 .foot { padding: 13px 16px; text-align: center; font-size: 12px; line-height: 18px; color: #a8b4aa; background: rgba(0, 0, 0, .18); border-top: 1px solid rgba(168, 192, 143, .18); }

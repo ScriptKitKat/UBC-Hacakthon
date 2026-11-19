@@ -5,7 +5,7 @@ import { ensureCardFont } from "./card-font";
 import { CARD_CSS } from "./card-styles";
 import { h, svg } from "./dom";
 import type { Child } from "./dom";
-import { formatCents, formatDollars, formatPercent } from "./format";
+import { formatCents, formatPercent, formatUsdc } from "./format";
 import type { Sender } from "./protocol";
 import type { WireEntry, WireMatched, WireQuote } from "./wire";
 
@@ -35,9 +35,7 @@ function userOnly(handler: () => void): (event: Event) => void {
 }
 
 function entrySummary(entry: WireEntry): string {
-  const ticket = entry.ticket;
-  const amount = `${formatDollars(entry.notionalCents)} ${entry.outcome.toUpperCase()}`;
-  return ticket ? `${amount} · ${ticket.quantity} @ ${ticket.price} · paper ticket ${ticket.ticketId.slice(0, 8)}` : amount;
+  return `${formatUsdc(entry.notionalCents)} on ${entry.outcome === "yes" ? "Yes" : "No"}`;
 }
 
 function isSafeLink(url: string): boolean {
@@ -109,14 +107,16 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
       case "buying":
         return h("div", { className: "result", attributes: { "data-tone": "pending" } }, h("span", { className: "result-title", text: "Placing order…" }));
       case "filled": {
-        const { explorerUrl } = status.entry;
+        const { explorerUrl, signature, ticket } = status.entry;
+        const hasReceipt = signature !== undefined && signature.trim() !== "" && explorerUrl !== undefined && isSafeLink(explorerUrl);
         return h(
           "div",
           { className: "result", attributes: { "data-tone": "filled" } },
-          h("span", { className: "result-title", text: "Filled" }),
+          h("span", { className: "result-title", text: ticket?.mode === "paper" ? "Simulated prediction" : "Order recorded" }),
           h("span", { className: "result-detail", text: entrySummary(status.entry) }),
-          explorerUrl !== undefined && isSafeLink(explorerUrl)
-            ? h("a", { className: "link", text: "View on Solana Explorer ↗", attributes: { href: explorerUrl, target: "_blank", rel: "noopener noreferrer" } })
+          h("span", { className: "result-note", text: hasReceipt ? "USDC payment on Solana" : "No transaction receipt" }),
+          hasReceipt
+            ? h("a", { className: "link", text: "View transaction ↗", attributes: { href: explorerUrl, target: "_blank", rel: "noopener noreferrer" } })
             : null,
         );
       }
@@ -159,11 +159,11 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
     const locked = isBusy(state) || state.status.phase === "needs-approval";
     const price = outcome === "yes" ? market.yesCents : market.noCents;
     const amountCents = parseDollarsToCents(state.amountText);
-    const amountError = amountCents === undefined || amountCents <= 0 ? "Enter a dollar amount above $0 with up to two decimal places."
-      : amountCents > MAX_FEED_BUY_CENTS ? `Maximum ${formatDollars(MAX_FEED_BUY_CENTS)} per order.` : null;
+    const amountError = amountCents === undefined || amountCents <= 0 ? "Enter a USDC amount above 0 with up to two decimal places."
+      : amountCents > MAX_FEED_BUY_CENTS ? `Maximum ${formatUsdc(MAX_FEED_BUY_CENTS)} per order.` : null;
     const payout = payoutFor(price, amountError === null ? amountCents ?? 0 : 0, market.quantityLimits);
     const amount = h("input", { className: "amount-input", attributes: {
-      type: "text", inputmode: "decimal", "aria-label": "Trade amount in dollars", "data-key": "amount",
+      type: "text", inputmode: "decimal", "aria-label": "Trade amount in USDC", "data-key": "amount",
       value: state.amountText, placeholder: "0.00", maxlength: "16", autocomplete: "off", spellcheck: "false",
       "aria-invalid": String(amountError !== null), ...(locked ? { disabled: "" } : {}),
     } });
@@ -185,15 +185,15 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
       "div",
       { className: "trade" },
       h("div", { className: "outcomes", attributes: { role: "group", "aria-label": "Prediction outcome" } }, outcomeButton("yes", market.yesCents), outcomeButton("no", market.noCents)),
-      h("label", { className: "amount-field" }, h("span", { className: "amount-label", text: "Dollars" }), h("span", { className: "amount-value" }, h("span", { text: "$", attributes: { "aria-hidden": "true" } }), h("span", { className: "amount-editor" }, h("span", { className: "amount-mirror", text: state.amountText || "0.00", attributes: { "aria-hidden": "true" } }), amount))),
+      h("label", { className: "amount-field" }, h("span", { className: "amount-label", text: "Amount" }), h("span", { className: "amount-value" }, h("span", { className: "amount-editor" }, h("span", { className: "amount-mirror", text: state.amountText || "0.00", attributes: { "aria-hidden": "true" } }), amount), h("span", { className: "amount-unit", text: "USDC", attributes: { "aria-hidden": "true" } }))),
       amountError === null ? null : h("div", { className: "amount-error", text: amountError, attributes: { role: "status" } }),
       h("div", { className: "estimate", attributes: { "aria-live": "polite", "data-outcome": outcome } },
-        h("div", { className: "payout", text: payout.kind === "quote" ? `${formatPercent(price)} chance | ${formatDollars(Math.floor(payout.payoutCents))} potential payout` : "Payout unavailable" }),
+        h("div", { className: "payout", text: payout.kind === "quote" ? `${formatPercent(price)} chance · ${formatUsdc(Math.floor(payout.payoutCents))} potential payout` : "Payout unavailable" }),
         payout.kind === "below-minimum" ? h("div", { className: "estimate-note", text: `Minimum ${String(payout.minimumContracts)} contracts` }) : null,
       ),
       market.tradeable ? null : h("div", { className: "blocked", text: market.tradeBlockedReason ?? "Trading is unavailable for this market." }),
       h("button", { className: "buy", text: isBusy(state) ? "Placing order…" : "Trade now", attributes: {
-        type: "button", "data-key": "trade", "aria-label": `Trade ${outcome} for ${formatDollars(amountCents ?? 0)} at ${formatCents(price)}`,
+        type: "button", "data-key": "trade", "aria-label": `Trade ${outcome} for ${formatUsdc(amountCents ?? 0)} at ${formatCents(price)}`,
         ...(enabled ? {} : { disabled: "" }),
       }, on: { click: userOnly(() => void buy()) } }),
     );
@@ -262,7 +262,7 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
           : h("strong", { text: "Gemini" }),
         researchHref === undefined
           ? null
-          : h("span", {}, " | ", h("a", { className: "research", text: "Research", attributes: { href: researchHref, target: "_blank", rel: "noopener noreferrer", "data-key": "research" } }), " to understand more"),
+          : h("span", {}, " · ", h("a", { className: "research", text: "Research", attributes: { href: researchHref, target: "_blank", rel: "noopener noreferrer", "data-key": "research" } }), " to understand more"),
     ].filter((child) => child !== null));
     if (focusKey) {
       const next = shadow.querySelector<HTMLElement>(`[data-key="${focusKey}"]`);
