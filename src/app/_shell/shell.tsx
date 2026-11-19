@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { formatBudgetCents } from "@/shared";
+import { formatBudgetCents, formatResetLabel } from "@/shared";
 import { usePolling } from "../_desk/use-polling";
 import { useViewMode } from "../_research/use-view-mode";
 import { loadRail } from "./api";
@@ -55,7 +55,7 @@ export function Shell({ children }: { readonly children: ReactNode }) {
             <div className={styles.fill} style={{ width: `${String(spent)}%` }} />
           </div>
           <div className={styles.budgetHint}>
-            {rail ? `${formatBudgetCents(rail.remainingCents)} left · ${rail.resetLabel}` : "Loading budget…"}
+            {rail ? `${formatBudgetCents(rail.remainingCents)} left · ${formatResetLabel(rail.resetAt)}` : "Loading budget…"}
           </div>
         </div>
         <Link href="/settings" className={styles.navLink} aria-current={path.startsWith("/settings") ? "page" : undefined}>

@@ -1,11 +1,11 @@
 import type { z } from "zod";
 import { systemClock, type Clock } from "./clock";
 import { createRateLimiter, RateLimiterBusyError } from "./rate-limiter";
-import { candlesSchema, eventSchema, eventsPageSchema, orderBookSchema, recentTradesSchema } from "./schema";
+import { candlesSchema, eventSchema, eventsPageSchema, orderBookSchema, pubtickerSchema, recentTradesSchema } from "./schema";
 import { fail, ok, type MarketsResult } from "./result";
 import { parseInstrumentSymbol } from "./symbol";
 import { createTtlCache } from "./ttl-cache";
-import type { Candle, CandleTimeframe, EventsPage, MarketEvent, OrderBook, RecentTrade } from "./types";
+import type { Candle, CandleTimeframe, EventsPage, MarketEvent, OrderBook, RecentTrade, SpotTicker } from "./types";
 
 const DEFAULT_MIN_REQUEST_INTERVAL_MS = 1000;
 const CACHE_TTL_MS = 5000;
@@ -29,6 +29,7 @@ export interface GeminiMarketsClient {
   readonly candles: (symbol: string, timeframe: CandleTimeframe) => Promise<MarketsResult<readonly Candle[]>>;
   readonly orderBook: (symbol: string) => Promise<MarketsResult<OrderBook>>;
   readonly recentTrades: (symbol: string, limit?: number) => Promise<MarketsResult<readonly RecentTrade[]>>;
+  readonly pubticker: (pair: string) => Promise<MarketsResult<SpotTicker>>;
 }
 
 export interface GeminiMarketsClientOptions {
@@ -116,5 +117,6 @@ export function createGeminiMarketsClient(options: GeminiMarketsClientOptions): 
     orderBook: (symbol) => withKnownContract(symbol, () => getJson(`${baseUrl}/v1/book/${encodeURIComponent(symbol)}`, orderBookSchema)),
     recentTrades: (symbol, limit = DEFAULT_TRADE_LIMIT) =>
       withKnownContract(symbol, () => getJson(`${baseUrl}/v1/trades/${encodeURIComponent(symbol)}?limit_trades=${String(limit)}`, recentTradesSchema)),
+    pubticker: (pair) => getJson(`${baseUrl}/v1/pubticker/${encodeURIComponent(pair.toLowerCase())}`, pubtickerSchema),
   };
 }

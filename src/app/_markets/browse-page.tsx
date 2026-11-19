@@ -1,61 +1,212 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
-import type { HomeView } from "@/shared";
+import type { BrowseCard, BrowsePage, BrowseSort } from "@/shared";
+import { contrastInk, formatPercent } from "@/shared";
+import { useViewMode } from "../_research/use-view-mode";
 import { usePolling } from "../_desk/use-polling";
-import { MarketCard } from "../_home/market-card";
-import styles from "../_home/home.module.css";
-import { changeWatchlist, loadHome, loadWatchlist } from "../_shell/api";
+import { loadBrowse } from "../_shell/api";
+import styles from "./markets.module.css";
 
 const POLL_MS = 30_000;
+const FALLBACK_TABS: readonly { id: string; label: string; live: boolean }[] = [
+  { id: "All", label: "All", live: false },
+  { id: "Live", label: "Live", live: true },
+  { id: "Sports", label: "Sports", live: false },
+  { id: "Crypto", label: "Crypto", live: false },
+  { id: "Economy", label: "Economy", live: false },
+  { id: "Politics", label: "Politics", live: false },
+  { id: "Tech and AI", label: "Tech and AI", live: false },
+  { id: "Weather", label: "Weather", live: false },
+  { id: "Culture", label: "Culture", live: false },
+  { id: "Commodities", label: "Commodities", live: false },
+];
+const SORTS: readonly { value: BrowseSort; label: string }[] = [
+  { value: "trending", label: "Trending" },
+  { value: "closing", label: "Closing soon" },
+  { value: "newest", label: "Newest" },
+  { value: "move", label: "Biggest move" },
+];
+
+function SearchIcon() {
+  return (
+    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20l-4-4" />
+    </svg>
+  );
+}
+
+function MarketPreview({ card, beginner }: { readonly card: BrowseCard; readonly beginner: boolean }) {
+  return (
+    <article className={styles.card} aria-label={card.displayTitle}>
+      <div className={styles.top}>
+        {card.iconLetter !== null && card.iconBackground !== null ? (
+          <div className={styles.icon} style={{ background: card.iconBackground, color: contrastInk(card.iconBackground) }} aria-hidden="true">
+            {card.iconLetter}
+          </div>
+        ) : null}
+        <div className={styles.meta}>
+          <div className={styles.metaRow}>
+            <span>{card.categoryLabel}</span>
+            {card.isLive ? <span className={styles.live}><span className={styles.liveDot} />Live</span> : <span>{card.when ?? ""}</span>}
+          </div>
+          {card.kind !== "sports" ? (
+            <Link href={card.href} className={styles.cardTitle}>{card.displayTitle}</Link>
+          ) : null}
+          {card.spotLabel !== null ? (
+            <div className={styles.spot}>Current: <span className={styles.spotValue}>{card.spotLabel}</span></div>
+          ) : null}
+        </div>
+      </div>
+      <div className={styles.rows}>
+        {card.rows.map((row) => (
+          <Link key={row.instrumentSymbol} href={row.href} className={styles.row} aria-label={`${row.label}, ${formatPercent(row.yesCents)} chance. Research and trade this contract.`}>
+            {row.short !== null && row.color !== null ? (
+              <span className={styles.avatar} style={{ background: row.color, color: contrastInk(row.color) }} aria-hidden="true">{row.short}</span>
+            ) : null}
+            <span className={styles.rowLabel}>{row.label}</span>
+            {(beginner ? row.payoutBeginner : row.payoutPro) !== null ? (
+              <span className={styles.pay}>{beginner ? row.payoutBeginner : row.payoutPro}</span>
+            ) : null}
+            <span className={styles.pct}>{formatPercent(row.yesCents)}</span>
+          </Link>
+        ))}
+      </div>
+      <div className={styles.foot}>
+        <div className={styles.footLeft}>
+          {card.moreCount > 0 ? <span className={styles.more}>+{String(card.moreCount)} more</span> : null}
+        </div>
+        {card.volumeLabel !== null ? <span className={styles.vol}>{card.volumeLabel} vol.</span> : null}
+      </div>
+    </article>
+  );
+}
 
 export function BrowsePage() {
+  const [mode] = useViewMode();
   const [search, setSearch] = useState("");
   const [submitted, setSubmitted] = useState("");
-  const [view, setView] = useState<HomeView | undefined>(undefined);
+  const [category, setCategory] = useState("All");
+  const [sort, setSort] = useState<BrowseSort>("trending");
+  const [page, setPage] = useState<BrowsePage | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  const [watched, setWatched] = useState<readonly string[]>([]);
   const [tick, setTick] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   usePolling(() => {
-    void loadHome({ sort: "default", limit: 24, ...(submitted ? { search: submitted } : {}) }).then((result) => {
+    void loadBrowse({
+      sort,
+      category,
+      offset: 0,
+      limit: 24,
+      ...(submitted ? { search: submitted } : {}),
+    }).then((result) => {
       if (result.kind === "ok") {
-        setView(result.view);
+        setPage(result.page);
         setError(null);
       } else {
         setError(result.message);
       }
     });
-    void loadWatchlist().then(setWatched);
   }, POLL_MS + tick);
 
-  const markets = view?.markets ?? [];
+  const markets = page?.markets ?? [];
+  const tabs = page?.tabs ?? FALLBACK_TABS;
+  const beginner = mode === "beginner";
+
+  const resetList = (next: Partial<{ category: string; sort: BrowseSort; search: string }>) => {
+    if (next.category !== undefined) setCategory(next.category);
+    if (next.sort !== undefined) setSort(next.sort);
+    if (next.search !== undefined) setSubmitted(next.search);
+    setPage(undefined);
+    setTick((value) => value + 1);
+  };
+
+  const loadMore = () => {
+    if (page === undefined || !page.hasMore || loadingMore) return;
+    setLoadingMore(true);
+    void loadBrowse({
+      sort,
+      category,
+      offset: page.offset + page.markets.length,
+      limit: 24,
+      ...(submitted ? { search: submitted } : {}),
+    }).then((result) => {
+      setLoadingMore(false);
+      if (result.kind !== "ok") {
+        setError(result.message);
+        return;
+      }
+      setPage({
+        ...result.page,
+        markets: [...markets, ...result.page.markets],
+        offset: 0,
+      });
+    });
+  };
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.pageTitle}>Markets</h1>
-      <p className={styles.pageLead}>Live Gemini prediction markets, not a sample list. Open a card to research and trade.</p>
-      <form className={styles.searchRow} onSubmit={(event) => { event.preventDefault(); setSubmitted(search.trim()); setTick((value) => value + 1); }}>
-        <input value={search} placeholder="Search live markets" onChange={(event) => { setSearch(event.target.value); }} aria-label="Search markets" />
-        <button type="submit">Search</button>
-      </form>
-      <div className={styles.moving}>
-        {error ? <p className={styles.error} role="alert">{error}</p> : null}
-        {error === null && view === undefined ? <p className={styles.empty}>Loading live markets…</p> : null}
-        {error === null && view !== undefined && markets.length === 0 ? <p className={styles.empty}>No live markets match that search right now.</p> : null}
+      <header className={styles.header}>
+        <h1 className={styles.title}>Markets</h1>
+        <form className={styles.search} onSubmit={(event) => { event.preventDefault(); resetList({ search: search.trim() }); }}>
+          <label htmlFor="msearch" className={styles.hidden}>Search markets</label>
+          <SearchIcon />
+          <input id="msearch" value={search} placeholder="Search markets" onChange={(event) => { setSearch(event.target.value); }} />
+        </form>
+      </header>
+
+      <div className={styles.tabsRow}>
+        <div className={styles.tabs} role="tablist" aria-label="Categories">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              className={tab.live ? [styles.tab, styles.tabLive].join(" ") : (styles.tab ?? "")}
+              aria-selected={category === tab.id}
+              onClick={() => { resetList({ category: tab.id }); }}
+            >
+              {tab.live ? <span className={styles.liveDot} /> : null}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <label className={styles.sort}>
+          <span className={styles.hidden}>Sort</span>
+          Sort:{" "}
+          <select value={sort} aria-label="Sort markets" onChange={(event) => { resetList({ sort: event.target.value as BrowseSort }); }}>
+            {SORTS.map((item) => (
+              <option key={item.value} value={item.value}>{item.label}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className={styles.body}>
+        {beginner ? (
+          <div className={styles.explainer}>
+            <span className={styles.explainerPct}>62%</span>
+            <span>means the crowd thinks it&apos;s 62% likely. Each share costs 62¢ and pays $1 if it happens. Tap a market to research and trade.</span>
+          </div>
+        ) : null}
+        {error ? <p className={styles.status} role="alert">{error}</p> : null}
+        {error === null && page === undefined ? <p className={styles.status}>Loading live markets…</p> : null}
+        {error === null && page !== undefined && markets.length === 0 ? <p className={styles.status}>No live markets match that search right now.</p> : null}
         {markets.length > 0 ? (
           <div className={styles.grid}>
             {markets.map((card) => (
-              <MarketCard
-                key={card.instrumentSymbol}
-                card={card}
-                watched={watched.includes(card.instrumentSymbol)}
-                onToggleWatch={() => {
-                  const action = watched.includes(card.instrumentSymbol) ? "remove" : "add";
-                  void changeWatchlist(card.instrumentSymbol, action).then(setWatched);
-                }}
-              />
+              <MarketPreview key={card.eventTicker} card={card} beginner={beginner} />
             ))}
+          </div>
+        ) : null}
+        {page?.hasMore === true ? (
+          <div className={styles.moreWrap}>
+            <button type="button" className={styles.moreBtn} disabled={loadingMore} onClick={loadMore}>
+              {loadingMore ? "Loading more…" : "Load more markets"}
+            </button>
           </div>
         ) : null}
       </div>

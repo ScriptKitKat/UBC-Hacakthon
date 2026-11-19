@@ -3,7 +3,7 @@ import type { Policy } from "@/features/guardrails";
 import type { HistoryStore, PriceSnapshot } from "@/features/history";
 import { parseInstrumentSymbol, type Candle, type GeminiMarketsClient, type MarketContract, type MarketEvent } from "@/features/markets";
 import type { CatalogCard, CatalogPage } from "@/shared";
-import { categoryLabel, categoryQuery, changePercent, downsample, formatEndsIn, SPARKLINE_POINTS, WINDOW_MS } from "./format";
+import { categoryLabel, categoryQuery, changePercent, downsample, formatEndsIn, smoothSeries, SPARKLINE_POINTS, WINDOW_MS } from "./format";
 
 const FETCH_LIMIT = 40;
 const CANDLE_BUDGET = 12;
@@ -73,7 +73,7 @@ export async function listCatalog(deps: CatalogDeps, query: CatalogQuery = {}): 
     let values = fromHistory.values;
     if (values.length < 2 && candleUses < CANDLE_BUDGET) {
       candleUses += 1;
-      const candles = await deps.markets.candles(contract.instrumentSymbol, "1hr");
+      const candles = await deps.markets.candles(contract.instrumentSymbol, "15m");
       if (candles.ok && candles.value.length > 0) {
         const fromCandles = candlesToValues(candles.value, cutoff);
         values = fromCandles.values;
@@ -104,7 +104,7 @@ export async function listCatalog(deps: CatalogDeps, query: CatalogQuery = {}): 
       yesCents: contract.prices.buyYesCents ?? contract.prices.lastTradeCents,
       noCents: contract.prices.buyNoCents,
       changePercent: change,
-      sparkline: downsample(values, SPARKLINE_POINTS),
+      sparkline: smoothSeries(downsample(values, SPARKLINE_POINTS)),
       tradeable: refusal === undefined,
       ...(refusal === undefined ? {} : { tradeBlockedReason: refusal }),
     });

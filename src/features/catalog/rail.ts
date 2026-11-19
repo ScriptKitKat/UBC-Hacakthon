@@ -1,6 +1,8 @@
+import { formatResetLabel, nextUtcMidnight } from "@/shared";
 import type { DeskSnapshot, HomeRail } from "@/shared";
 
-export function railFromSnapshot(snapshot: DeskSnapshot): HomeRail {
+export function railFromSnapshot(snapshot: DeskSnapshot, now = new Date(), timeZone = "America/Chicago"): HomeRail {
+  const resetAt = nextUtcMidnight(now).toISOString();
   return {
     dailyCapCents: snapshot.policy.dailyCapCents,
     spentCents: snapshot.policy.spentCents,
@@ -11,6 +13,7 @@ export function railFromSnapshot(snapshot: DeskSnapshot): HomeRail {
     pendingCount: snapshot.pending.length,
     senderAllowlist: [...snapshot.policy.senderAllowlist],
     ledgerConfigured: snapshot.ledger.configured,
-    resetLabel: "resets 12:00 am UTC",
+    resetAt,
+    resetLabel: formatResetLabel(resetAt, timeZone),
   };
 }

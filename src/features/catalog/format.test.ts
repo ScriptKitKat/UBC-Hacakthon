@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { categoryLabel, categoryQuery, changePercent, downsample, formatBudgetCents, formatChange, formatEndsIn, isXUrl } from "./format";
+import { categoryLabel, categoryQuery, changePercent, downsample, formatBudgetCents, formatChange, formatEndsIn, isXUrl, smoothSeries } from "./format";
 
 describe("catalog format", () => {
   it("maps Economics to the Economy chip and back", () => {
@@ -7,6 +7,7 @@ describe("catalog format", () => {
     expect(categoryLabel("Crypto")).toBe("Crypto");
     expect(categoryQuery("Economy")).toBe("Economics");
     expect(categoryQuery("Sports")).toBe("Sports");
+    expect(categoryQuery("Tech and AI")).toBe("Tech");
     expect(categoryQuery("All")).toBeUndefined();
   });
 
@@ -39,5 +40,6 @@ describe("catalog format", () => {
   it("downsamples a series onto a fixed number of points", () => {
     expect(downsample([1, 2, 3, 4, 5], 3)).toEqual([1, 3, 5]);
     expect(downsample([9, 8], 8)).toEqual([9, 8]);
+    expect(smoothSeries([10, 20, 10, 20])).toEqual([10, 15, 15, 20]);
   });
 });

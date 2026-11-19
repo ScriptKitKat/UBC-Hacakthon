@@ -5,8 +5,8 @@ import { requestGrokJson } from "@/features/grok";
 import { createSampler, openHistoryStore } from "@/features/history";
 import { createSolanaLedger, createUnconfiguredLedger, isExpectedGenesis } from "@/features/ledger";
 import type { UsdcLedger } from "@/features/ledger";
-import { cardsForSymbols, listCatalog, openWatchlist } from "@/features/catalog";
-import type { CatalogListResult, CatalogQuery, Watchlist } from "@/features/catalog";
+import { cardsForSymbols, listBrowse, listCatalog, openWatchlist } from "@/features/catalog";
+import type { BrowseListResult, BrowseQuery, CatalogListResult, CatalogQuery, Watchlist } from "@/features/catalog";
 import type { CatalogCard } from "@/shared";
 import { createGeminiMarketsClient } from "@/features/markets";
 import { createResearch } from "@/features/research";
@@ -36,6 +36,7 @@ export type DeskAccess =
 
 export interface HomeCatalog {
   readonly list: (query?: CatalogQuery) => Promise<CatalogListResult>;
+  readonly browse: (query?: BrowseQuery) => Promise<BrowseListResult>;
   readonly cardsFor: (symbols: readonly string[]) => Promise<readonly CatalogCard[]>;
   readonly watchlist: Watchlist;
 }
@@ -192,6 +193,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   const catalogDeps = { markets, history, now: () => new Date(), policy: config.value.policy };
   homeCatalog = {
     list: (query) => listCatalog(catalogDeps, query),
+    browse: (query) => listBrowse({ markets, history, now: () => new Date() }, query),
     cardsFor: (symbols) => cardsForSymbols(catalogDeps, symbols),
     watchlist: openWatchlist({ fs: nodeFileSystem, path: join(dataDirectory, "watchlist.json") }),
   };

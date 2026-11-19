@@ -9,6 +9,7 @@ const CATEGORY_LABELS: Readonly<Record<string, string>> = {
 
 const CATEGORY_QUERY: Readonly<Record<string, string>> = {
   economy: "Economics",
+  "tech and ai": "Tech",
 };
 
 export function categoryLabel(category: string): string {
@@ -58,6 +59,16 @@ export function downsample(values: readonly number[], limit: number): number[] {
   return out;
 }
 
-export const SPARKLINE_POINTS = 24;
+export const SPARKLINE_POINTS = 48;
 export const WINDOW_MS = DAY_MS;
 
+
+export function smoothSeries(values: readonly number[]): number[] {
+  if (values.length < 4) return [...values];
+  return values.map((value, index) => {
+    if (index === 0 || index === values.length - 1) return value;
+    const prev = values[index - 1] ?? value;
+    const next = values[index + 1] ?? value;
+    return (prev + value * 2 + next) / 4;
+  });
+}

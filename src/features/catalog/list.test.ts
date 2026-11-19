@@ -101,7 +101,7 @@ describe("listCatalog", () => {
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(candlesFn).toHaveBeenCalledWith("GEMI-FED-YES", "1hr");
+    expect(candlesFn).toHaveBeenCalledWith("GEMI-FED-YES", "15m");
     expect(result.page.markets[0]?.sparkline.length).toBeGreaterThan(1);
     expect(result.page.markets[0]?.changePercent).not.toBeNull();
   });

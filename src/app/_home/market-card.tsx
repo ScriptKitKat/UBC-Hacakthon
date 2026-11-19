@@ -40,11 +40,12 @@ export function MarketCard({
   const href = marketHref(card.instrumentSymbol);
   return (
     <article className={styles.wrap}>
-      <Link href={href} className={styles.card} aria-label={`${title}, ${formatPercent(card.yesCents)} Yes`}>
+      <Link href={href} className={styles.card} aria-label={`${title}${card.contractLabel !== "" ? ` · ${card.contractLabel}` : ""}, ${formatPercent(card.yesCents)} Yes`}>
         <div className={styles.head}>
           <div className={styles.titles}>
             <div className={styles.category}>{card.categoryLabel}</div>
             <div className={styles.title}>{title}</div>
+            {card.contractLabel !== "" ? <div className={styles.strike}>{card.contractLabel}</div> : null}
             {closes ? <div className={styles.deadline}>{closes}</div> : null}
           </div>
           {sparkline !== undefined ? (
