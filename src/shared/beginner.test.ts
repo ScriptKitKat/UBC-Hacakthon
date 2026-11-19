@@ -127,6 +127,26 @@ describe("parseResolution", () => {
     expect(parsed.rulesUrl).toBe("https://assets.gemini.com/predictions/terms_and_conditions/sol.pdf");
   });
 
+  it("reads Gemini's inverted Yes clause and index source from a live crypto contract", () => {
+    const parsed = parseResolution(
+      "If the price of Solana (SOL) is $73 or above on November 19, 2026 at 4pm ET, this market will resolve to Yes. Otherwise, it will resolve to No. If no eligible trade occurs during the contract window, this contract will resolve based on the most recent traded price prior. Outcome verified against the LS-LRRR-SOLNUSD index. View the full rules.",
+      "https://assets.gemini.com/predictions/terms_and_conditions/sol_9cceb1a1-4177-401a-82dc-097ad2676bc2.pdf",
+    );
+    expect(parsed.yesIf).toBe("the price of Solana (SOL) is $73 or above on November 19, 2026 at 4pm ET");
+    expect(parsed.priceSource).toBe("LS-LRRR-SOLNUSD index");
+    expect(parsed.caveat).toMatch(/exact time/);
+  });
+
+  it("does not treat a sports start time as a price snapshot", () => {
+    const parsed = parseResolution(
+      "This market resolves to Yes if Texas A&M wins the men's college basketball game between Texas A&M and TCU originally scheduled for November 19, 2026 at 8:00 PM ET. Otherwise, it resolves to No. The Underlying is the official result of the specified sporting event. Source Agencies, in order, are the league governing the event, ESPN, Fox Sports, and the broadcast partner of the event.",
+      "https://assets.gemini.com/predictions/terms_and_conditions/Terms_and_Conditions_NCAA_MB_Win-Lose_Classdocx_893b1bbb-20f3-490c-81bb-650735bfb0f4.pdf",
+    );
+    expect(parsed.yesIf).toBe("Texas A&M wins the men's college basketball game between Texas A&M and TCU originally scheduled for November 19, 2026 at 8:00 PM ET");
+    expect(parsed.priceSource).toBe("the official result of the specified sporting event");
+    expect(parsed.caveat).toMatch(/short reading/);
+  });
+
   it("does not invent a Yes condition or a Gemini-looking rules link", () => {
     const parsed = parseResolution("Traders may buy Yes or No contracts.", "https://evil.example/rules.pdf");
     expect(parsed.yesIf).toBeNull();
@@ -201,6 +221,18 @@ describe("marketDrivers", () => {
     const drivers = marketDrivers(parseResolution(view.market.rulesText, view.market.termsLink), view, NOW);
     expect(drivers?.up).toEqual(["The settlement price finishing above $200.00"]);
     expect(drivers?.down).toEqual(["The settlement price finishing at or below $200.00"]);
+  });
+
+  it("derives drivers from a live '$73 or above' strike", () => {
+    const view = baseView({
+      market: {
+        rulesText: "If the price of Solana (SOL) is $73 or above on November 19, 2026 at 4pm ET, this market will resolve to Yes.",
+        termsLink: null,
+      } as ResearchView["market"],
+    });
+    const drivers = marketDrivers(parseResolution(view.market.rulesText, null), view, NOW);
+    expect(drivers?.up).toEqual(["The settlement price finishing at or above $73"]);
+    expect(drivers?.down).toEqual(["The settlement price finishing at or below $73"]);
   });
 
   it("hides the section when the rules have no measurable threshold", () => {

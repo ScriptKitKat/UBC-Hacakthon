@@ -20,7 +20,6 @@ import {
   payoutFor,
   safeHttpsUrl,
   STAKE_OPTIONS_CENTS,
-  tradeCapCents,
   trustOdds,
   volumeLabel,
   yesCentsFromBrief,
@@ -418,7 +417,6 @@ function TradeCard({ view }: { readonly view: ResearchView }) {
   const payout = view.market.quantityLimits ? payoutFor(price, amountCents, view.market.quantityLimits) : payoutFor(price, amountCents);
   const over = overTradeLimitMessage(amountCents, budget);
   const approval = needsApprovalNote(amountCents, budget);
-  const cap = tradeCapCents(budget);
   const canBuy = over === null && payout.kind === "quote" && !busy && rail?.killSwitch !== true && (rail?.senderAllowlist[0] ?? "") !== "";
   const buy = async () => {
     const senderId = rail?.senderAllowlist[0];
@@ -472,7 +470,7 @@ function TradeCard({ view }: { readonly view: ResearchView }) {
       <p className={styles.budget}>
         {budget === undefined
           ? "Loading your daily budget…"
-          : `Uses ${formatBudgetCents(amountCents)} of your ${formatBudgetCents(Math.max(0, cap))} left today`}
+          : `Uses ${formatBudgetCents(amountCents)} of your ${formatBudgetCents(Math.max(0, budget.remainingCents))} left today`}
       </p>
       {result !== undefined && "error" in result ? <p className={styles.warning} role="alert">{result.error}</p> : null}
       {result !== undefined && "kind" in result ? <p className={styles.status} data-kind={result.kind} role="status">{result.spokenReason}</p> : null}

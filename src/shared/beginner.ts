@@ -205,9 +205,14 @@ export interface Resolution {
 
 const PAYOUT = "$1 per contract if you are right, $0 if you are wrong";
 
-const YES_IF_PATTERN = /(?:resolves?\s+to\s+yes\s+if|will\s+resolve\s+to\s+yes\s+if|yes\s+if)\s+(.{8,280}?)(?:\.(?:\s|$)|$)/iu;
-const SOURCE_PATTERN = /(?:settlement(?:\s+price)?(?:\s+is)?|price source|as published by|according to|using the|based on the)\s+(.{4,160}?)(?:\.|$)/iu;
-const SNAPSHOT_PATTERN = /\b(?:as of|at)\s+\d/iu;
+const YES_IF_LEAD = /(?:resolves?\s+to\s+yes\s+if|will\s+resolve\s+to\s+yes\s+if|yes\s+if)\s+(.{8,280}?)(?:\.(?:\s|$)|$)/iu;
+const YES_IF_TRAIL = /If\s+(.{8,280}?),\s+this market will resolve to Yes/iu;
+const SOURCE_PATTERNS = [
+  /(?:verified against|outcome verified against)\s+(?:the\s+)?(.{4,160}?)(?:\.|$)/iu,
+  /(?:settlement(?:\s+price)?(?:\s+is)?|price source|as published by|according to|using the|based on the)\s+(.{4,160}?)(?:\.|$)/iu,
+  /(?:the underlying is|underlying is)\s+(.{4,160}?)(?:\.|$)/iu,
+] as const;
+const SNAPSHOT_PATTERN = /\b(?:as of\s+\d|traded price prior|official (?:spot |closing )?price|price (?:of|is|at)\b.{0,200}?\bat\s+\d)/iu;
 
 function cleanClause(text: string): string {
   return text.replace(/\s+/g, " ").replace(/[[\]*_]/g, "").trim().replace(/[;:,]+$/u, "");
@@ -215,8 +220,12 @@ function cleanClause(text: string): string {
 
 export function parseResolution(rulesText: string, termsLink: string | null): Resolution {
   const rules = rulesText.replace(/\s+/g, " ").trim();
-  const yesMatch = YES_IF_PATTERN.exec(rules);
-  const sourceMatch = SOURCE_PATTERN.exec(rules);
+  const yesMatch = YES_IF_LEAD.exec(rules) ?? YES_IF_TRAIL.exec(rules);
+  let sourceMatch: RegExpExecArray | null = null;
+  for (const pattern of SOURCE_PATTERNS) {
+    sourceMatch = pattern.exec(rules);
+    if (sourceMatch !== null) break;
+  }
   const yesIf = yesMatch?.[1] === undefined ? null : cleanClause(yesMatch[1]);
   const priceSource = sourceMatch?.[1] === undefined ? null : cleanClause(sourceMatch[1]);
   const snapshot = SNAPSHOT_PATTERN.test(rules);
@@ -296,7 +305,8 @@ export function trustOdds(view: ResearchView): readonly TrustLine[] {
   return lines;
 }
 
-const STRIKE_PATTERN = /(?:above|over|greater than|below|under|less than|at least|at or above|at or below)\s+\$?\s*(\d[\d,]*(?:\.\d+)?)/iu;
+const STRIKE_AFTER = /(?:above|over|greater than|below|under|less than|at least|at or above|at or below)\s+\$?\s*(\d[\d,]*(?:\.\d+)?)/iu;
+const STRIKE_BEFORE = /\$\s*(\d[\d,]*(?:\.\d+)?)\s+or\s+(?:above|over|more|higher|greater)/iu;
 
 export interface DriverLists {
   readonly up: readonly string[];
@@ -307,9 +317,13 @@ export function marketDrivers(resolution: Resolution, view: ResearchView, nowMs:
   const up: string[] = [];
   const down: string[] = [];
   const clause = [resolution.yesIf, view.market.rulesText].filter((part) => part !== null && part !== "").join(" ");
-  const strike = STRIKE_PATTERN.exec(clause);
+  const strikeAfter = STRIKE_AFTER.exec(clause);
+  const strikeBefore = STRIKE_BEFORE.exec(clause);
+  const strike = strikeAfter ?? strikeBefore;
   if (strike?.[0] !== undefined && strike[1] !== undefined) {
-    const raw = strike[0].replace(/\s+/g, " ").trim();
+    const raw = strikeAfter !== null
+      ? strike[0].replace(/\s+/g, " ").trim()
+      : `at or above $${strike[1]}`;
     const lower = raw.toLowerCase();
     const rising = lower.includes("above") || lower.includes("over") || lower.includes("greater") || lower.includes("at least") || lower.includes("at or above");
     if (rising) {
