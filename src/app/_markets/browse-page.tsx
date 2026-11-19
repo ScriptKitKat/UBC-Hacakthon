@@ -8,6 +8,8 @@ import { contrastInk, formatPercent } from "@/shared";
 import { useViewMode } from "../_research/use-view-mode";
 import { usePolling } from "../_desk/use-polling";
 import { loadBrowse, loadSpots } from "../_shell/api";
+import { StarButton } from "../_watchlist/star-button";
+import { useWatchlist } from "../_watchlist/use-watchlist";
 import styles from "./markets.module.css";
 
 const POLL_MS = 30_000;
@@ -39,7 +41,17 @@ function SearchIcon() {
   );
 }
 
-function MarketPreview({ card, beginner }: { readonly card: BrowseCard; readonly beginner: boolean }) {
+function MarketPreview({
+  card,
+  beginner,
+  watched,
+  onToggleWatch,
+}: {
+  readonly card: BrowseCard;
+  readonly beginner: boolean;
+  readonly watched: boolean;
+  readonly onToggleWatch: () => void;
+}) {
   return (
     <article className={styles.card} aria-label={card.displayTitle}>
       <div className={styles.top}>
@@ -51,7 +63,10 @@ function MarketPreview({ card, beginner }: { readonly card: BrowseCard; readonly
         <div className={styles.meta}>
           <div className={styles.metaRow}>
             <span>{card.categoryLabel}</span>
-            {card.isLive ? <span className={styles.live}><span className={styles.liveDot} />Live</span> : <span>{card.when ?? ""}</span>}
+            <div className={styles.metaRight}>
+              {card.isLive ? <span className={styles.live}><span className={styles.liveDot} />Live</span> : <span>{card.when ?? ""}</span>}
+              <StarButton pressed={watched} onToggle={onToggleWatch} />
+            </div>
           </div>
           {card.kind !== "sports" ? (
             <Link href={card.href} className={styles.cardTitle}>{card.displayTitle}</Link>
@@ -156,6 +171,7 @@ export function BrowsePage({ initialPage }: { readonly initialPage?: BrowsePage 
   const markets = page?.markets ?? [];
   const tabs = page?.tabs ?? FALLBACK_TABS;
   const beginner = mode === "beginner";
+  const watchlist = useWatchlist();
 
   const resetList = (next: Partial<{ category: string; sort: BrowseSort; search: string }>) => {
     if (next.category !== undefined) setCategory(next.category);
@@ -248,9 +264,20 @@ export function BrowsePage({ initialPage }: { readonly initialPage?: BrowsePage 
         {error === null && page !== undefined && markets.length === 0 ? <p className={styles.status}>No live markets match that search right now.</p> : null}
         {markets.length > 0 ? (
           <div className={styles.grid}>
-            {markets.map((card) => (
-              <MarketPreview key={card.eventTicker} card={card} beginner={beginner} />
-            ))}
+            {markets.map((card) => {
+              const lead = card.rows.find((row) => row.instrumentSymbol === card.instrumentSymbol) ?? card.rows[0];
+              return (
+                <MarketPreview
+                  key={card.eventTicker}
+                  card={card}
+                  beginner={beginner}
+                  watched={watchlist.starred(card.eventTicker, card.instrumentSymbol)}
+                  onToggleWatch={() => {
+                    void watchlist.toggle({ eventTicker: card.eventTicker, instrumentSymbol: card.instrumentSymbol, yesCents: lead?.yesCents ?? null });
+                  }}
+                />
+              );
+            })}
           </div>
         ) : null}
         {page?.hasMore === true ? (
