@@ -135,13 +135,16 @@ export function createResearch(deps: ResearchDeps): Research {
     const parsed = parseInstrumentSymbol(symbol);
     if (!parsed) return { kind: "unknown-symbol" };
     const plan = TIMEFRAME_PLANS[timeframe];
-    const [eventResult, chartCandles, hourlyCandles, book, trades, postContext] = await Promise.all([
-      markets.getEvent(parsed.eventTicker, { refresh: true }),
+    const eventRequest = markets.getEvent(parsed.eventTicker, { refresh: true });
+    const sameCategoryRequest = eventRequest.then((result) => (result.ok ? sameCategoryMarkets(result.value) : []));
+    const [eventResult, chartCandles, hourlyCandles, book, trades, postContext, sameCategory] = await Promise.all([
+      eventRequest,
       markets.candles(symbol, plan.candle),
       markets.candles(symbol, INDICATOR_CANDLE),
       markets.orderBook(symbol),
       markets.recentTrades(symbol, TRADE_LIMIT),
       deps.postContextFor(symbol),
+      sameCategoryRequest,
     ]);
     const now = nowMs();
     let info: MarketInfo;
@@ -149,7 +152,7 @@ export function createResearch(deps: ResearchDeps): Research {
     if (eventResult.ok) {
       const contract = eventResult.value.contracts.find((candidate) => candidate.instrumentSymbol === symbol);
       if (!contract) return { kind: "unknown-symbol" };
-      info = marketInfo({ event: eventResult.value, contract }, await sameCategoryMarkets(eventResult.value));
+      info = marketInfo({ event: eventResult.value, contract }, sameCategory);
       remember(symbol, info);
       history.watch(symbol);
       if (contract.prices.buyYesCents !== null) {
