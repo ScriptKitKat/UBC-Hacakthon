@@ -43,12 +43,21 @@ export function createGeminiMarketsClient(options: GeminiMarketsClientOptions): 
   const limit = createRateLimiter(clock, options.minRequestIntervalMs ?? DEFAULT_MIN_REQUEST_INTERVAL_MS, MAX_QUEUED_REQUESTS);
   const cache = createTtlCache<unknown>(clock, CACHE_TTL_MS, MAX_CACHED_RESPONSES);
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
+  const inFlight = new Map<string, Promise<MarketsResult<unknown>>>();
 
-  async function getJson<S extends z.ZodType>(url: string, schema: S, refresh = false): Promise<MarketsResult<z.output<S>>> {
+  function getJson<S extends z.ZodType>(url: string, schema: S, refresh = false): Promise<MarketsResult<z.output<S>>> {
     const cached = refresh ? undefined : cache.get(url);
     if (cached !== undefined) {
-      return ok(cached as z.output<S>);
+      return Promise.resolve(ok(cached as z.output<S>));
     }
+    const pending = inFlight.get(url);
+    if (pending) return pending as Promise<MarketsResult<z.output<S>>>;
+    const request = fetchJson(url, schema).finally(() => inFlight.delete(url));
+    inFlight.set(url, request);
+    return request;
+  }
+
+  async function fetchJson<S extends z.ZodType>(url: string, schema: S): Promise<MarketsResult<z.output<S>>> {
     let response: Response;
     try {
       const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
