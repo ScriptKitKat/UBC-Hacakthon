@@ -4,4 +4,17 @@ export type { Clock } from "./clock";
 export { formatCents } from "./format";
 export { fail, ok } from "./result";
 export type { MarketsError, MarketsResult, Result } from "./result";
-export type { ContractLimits, ContractPrices, EventsPage, MarketContract, MarketEvent } from "./types";
+export { parseInstrumentSymbol } from "./symbol";
+export type { ParsedSymbol } from "./symbol";
+export type {
+  BookLevel,
+  Candle,
+  CandleTimeframe,
+  ContractLimits,
+  ContractPrices,
+  EventsPage,
+  MarketContract,
+  MarketEvent,
+  OrderBook,
+  RecentTrade,
+} from "./types";

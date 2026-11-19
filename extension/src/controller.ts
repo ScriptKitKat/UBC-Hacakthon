@@ -2,6 +2,7 @@ import { CARD_HOST_ATTRIBUTE, createCard } from "./card-view";
 import type { CardHandle } from "./card-view";
 import { MIN_TEXT_LENGTH, TWEET_SELECTOR, extractPost, isTopLevelTweet, ownElements } from "./post-extraction";
 import type { Sender } from "./protocol";
+import { researchUrl } from "./settings";
 
 const DEFAULT_DWELL_MS = 350;
 const DEFAULT_REFRESH_MS = 20_000;
@@ -17,6 +18,7 @@ export interface VisibilityWatcher {
 export interface ControllerDeps {
   readonly document: Document;
   readonly send: Sender;
+  readonly loadDeskUrl?: () => Promise<string>;
   readonly watchVisibility: (onChange: (element: Element, visible: boolean) => void) => VisibilityWatcher;
   readonly dwellMs?: number;
   readonly refreshMs?: number;
@@ -132,7 +134,9 @@ export function createFeedController(deps: ControllerDeps): FeedController {
       return;
     }
     entry.matchState = "matched";
-    entry.card = createCard(reply.value, send);
+    const deskUrl = await deps.loadDeskUrl?.();
+    const researchHref = deskUrl === undefined ? undefined : researchUrl(deskUrl, reply.value.market.instrumentSymbol);
+    entry.card = createCard(reply.value, send, researchHref === undefined ? {} : { researchHref });
     const target = articleOf.get(post.id) ?? article;
     if (target.isConnected && postIdOf.get(target) === post.id && visibleArticles.has(target)) showCard(target, post.id, entry);
   }

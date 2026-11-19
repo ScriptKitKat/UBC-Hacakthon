@@ -132,7 +132,7 @@ export type Decision = ApprovedTrade | PendingApproval | Refusal;
 export function rollDay(state: PolicyState, now: Date): PolicyState {
   const day = now.toISOString().slice(0, 10);
   if (day === state.day) return state;
-  return { ...state, day, spentToday: usdCents(0), reservedToday: usdCents(0) };
+  return { ...state, day, spentToday: usdCents(0) };
 }
 
 function dollars(cents: UsdCents): string {
@@ -230,6 +230,10 @@ export function evaluate(intent: TradeIntent, market: PolicyMarket | undefined, 
   return intent.notional > policy.autoApproveMax ? new PendingApproval(intent) : new Approval(intent);
 }
 
+export function restorePendingApproval(intent: TradeIntent): PendingApproval {
+  return new PendingApproval(intent);
+}
+
 export function confirm(pending: PendingApproval, approverId: string, market: PolicyMarket | undefined, policy: Policy, state: PolicyState, now: Date): ApprovedTrade | Refusal {
   const current = rollDay(state, now);
   const remaining = remainingToday(policy, current);
@@ -237,11 +241,97 @@ export function confirm(pending: PendingApproval, approverId: string, market: Po
   return code ? refusal(pending, code, policy, remaining, market) : new Approval(pending);
 }
 
-export function applyApproved(state: PolicyState, approved: ApprovedTrade): PolicyState {
+export function applyApproved(state: PolicyState, approved: Pick<ApprovedTrade, "intentId" | "notional">): PolicyState {
   if (state.seenIntentIds.has(approved.intentId)) return state;
   return {
     ...state,
     spentToday: usdCents(state.spentToday + approved.notional),
     seenIntentIds: new Set([...state.seenIntentIds, approved.intentId]),
+  };
+}
+
+export type ResearchRefusalCode = "kill-switch" | "zero-notional" | "over-per-trade-cap" | "over-auto-approve-max" | "over-daily-cap" | "duplicate-intent";
+
+export interface ResearchSpend {
+  readonly spendId: string;
+  readonly notional: UsdCents;
+}
+
+export type ResearchRefusal = {
+  readonly kind: "refuse";
+  readonly spendId: string;
+  readonly code: ResearchRefusalCode;
+  readonly spokenReason: string;
+};
+
+class ApprovedResearch {
+  readonly kind = "approve";
+  readonly intentId: string;
+  readonly notional: UsdCents;
+  readonly spokenReason: string;
+
+  constructor(spend: ResearchSpend) {
+    this.intentId = spend.spendId;
+    this.notional = spend.notional;
+    this.spokenReason = `I approved the ${dollars(spend.notional)} research purchase.`;
+    Object.freeze(this);
+  }
+}
+
+export type { ApprovedResearch };
+export type ResearchDecision = ApprovedResearch | ResearchRefusal;
+
+function researchRefusalReason(code: ResearchRefusalCode, policy: Policy, notional: UsdCents, remaining: UsdCents): string {
+  switch (code) {
+    case "kill-switch": return "Trading is paused, so I did not buy research.";
+    case "duplicate-intent": return "I've already approved this research purchase.";
+    case "zero-notional": return "The research price must be greater than $0.";
+    case "over-per-trade-cap": return `A ${dollars(notional)} research purchase exceeds the ${dollars(policy.perTradeMax)} limit per trade.`;
+    case "over-auto-approve-max": return `A ${dollars(notional)} research purchase is above the ${dollars(policy.autoApproveMax)} I can approve on my own.`;
+    case "over-daily-cap": return `A ${dollars(notional)} research purchase would exceed today's ${dollars(policy.dailyCap)} budget, with ${dollars(remaining)} left.`;
+    default: {
+      const exhaustive: never = code;
+      return exhaustive;
+    }
+  }
+}
+
+function findResearchRefusal(spend: ResearchSpend, policy: Policy, state: PolicyState, remaining: UsdCents): ResearchRefusalCode | undefined {
+  if (policy.killSwitch) return "kill-switch";
+  if (state.seenIntentIds.has(spend.spendId)) return "duplicate-intent";
+  if (spend.notional === 0) return "zero-notional";
+  if (spend.notional > policy.perTradeMax) return "over-per-trade-cap";
+  if (spend.notional > policy.autoApproveMax) return "over-auto-approve-max";
+  if (spend.notional > remaining) return "over-daily-cap";
+  return undefined;
+}
+
+export function evaluateResearch(spend: ResearchSpend, policy: Policy, state: PolicyState, now: Date): ResearchDecision {
+  const current = rollDay(state, now);
+  const remaining = remainingToday(policy, current);
+  const code = findResearchRefusal(spend, policy, current, remaining);
+  if (!code) return new ApprovedResearch(spend);
+  return { kind: "refuse", spendId: spend.spendId, code, spokenReason: researchRefusalReason(code, policy, spend.notional, remaining) };
+}
+
+export function remainingBudget(policy: Policy, state: PolicyState, now: Date): UsdCents {
+  return remainingToday(policy, rollDay(state, now));
+}
+
+export interface SpendRecord {
+  readonly operationId: string;
+  readonly status: "reserved" | "settled" | "failed";
+  readonly notionalCents: number;
+  readonly resolvedAt?: string | undefined;
+}
+
+export function policyStateFromSpends(spends: readonly SpendRecord[], now: Date): PolicyState {
+  const day = now.toISOString().slice(0, 10);
+  const total = (matches: (spend: SpendRecord) => boolean) => spends.filter(matches).reduce((sum, spend) => sum + spend.notionalCents, 0);
+  return {
+    day,
+    spentToday: usdCents(total((spend) => spend.status === "settled" && spend.resolvedAt?.slice(0, 10) === day)),
+    reservedToday: usdCents(total((spend) => spend.status === "reserved")),
+    seenIntentIds: new Set(spends.map((spend) => spend.operationId)),
   };
 }

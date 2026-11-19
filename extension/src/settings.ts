@@ -19,6 +19,13 @@ export function parseDeskUrl(text: string): string | undefined {
   return url.protocol === "http:" && isLocalHost(url.origin) ? url.origin : undefined;
 }
 
+const SYMBOL_PATTERN = /^GEMI-[A-Z0-9]+(?:-[A-Z0-9]+)+$/u;
+
+export function researchUrl(deskUrl: string, symbol: string): string | undefined {
+  const origin = parseDeskUrl(deskUrl);
+  return origin !== undefined && SYMBOL_PATTERN.test(symbol) ? `${origin}/markets/${symbol}` : undefined;
+}
+
 export function resolveDeskToken(stored: unknown, bakedIn: string): string {
   return typeof stored === "string" && stored.trim() !== "" ? stored.trim() : bakedIn;
 }

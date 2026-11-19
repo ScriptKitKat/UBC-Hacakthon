@@ -10,7 +10,7 @@ const fixture = readFileSync(resolve(process.cwd(), "extension/fixtures/x-timeli
 const FED_ID = "2122621916934500390";
 const FOOD_ID = "2122900000000000005";
 
-function setup(respond: (request: BackgroundRequest) => BackgroundReply<unknown> = defaultReply) {
+function setup(respond: (request: BackgroundRequest) => BackgroundReply<unknown> = defaultReply, extra: { readonly loadDeskUrl?: () => Promise<string> } = {}) {
   document.body.innerHTML = /<body>([\s\S]*)<\/body>/u.exec(fixture)?.[1] ?? "";
   const requests: BackgroundRequest[] = [];
   const send = ((request: BackgroundRequest) => {
@@ -29,6 +29,7 @@ function setup(respond: (request: BackgroundRequest) => BackgroundReply<unknown>
     dwellMs: 300,
     refreshMs: 20_000,
     scanDebounceMs: 50,
+    ...extra,
   });
   const articles = () => [...document.querySelectorAll(TWEET_SELECTOR)];
   return { controller, requests, observed, articles, show: (index: number) => { notify(articles()[index] as Element, true); }, hide: (index: number) => { notify(articles()[index] as Element, false); } };
@@ -89,6 +90,23 @@ describe("feed controller", () => {
     expect(requests.filter((request) => request.type === "quote")).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(20_000);
     expect(requests.filter((request) => request.type === "quote")).toHaveLength(2);
+  });
+
+  it("gives the card a research link on the configured desk", async () => {
+    const { controller, articles, show } = setup(defaultReply, { loadDeskUrl: () => Promise.resolve("http://localhost:3000") });
+    controller.start();
+    show(0);
+    await vi.advanceTimersByTimeAsync(400);
+    const link = articles()[0]?.querySelector("[data-ntd-card]")?.shadowRoot?.querySelector('[data-key="research"]');
+    expect(link?.getAttribute("href")).toBe("http://localhost:3000/markets/GEMI-FED261211-MAINTAIN");
+  });
+
+  it("omits the research link when the desk url is not a trusted origin", async () => {
+    const { controller, articles, show } = setup(defaultReply, { loadDeskUrl: () => Promise.resolve("http://evil.example.com") });
+    controller.start();
+    show(0);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(articles()[0]?.querySelector("[data-ntd-card]")?.shadowRoot?.querySelector('[data-key="research"]')).toBeNull();
   });
 
   it("pauses quote refresh while the post is off screen", async () => {

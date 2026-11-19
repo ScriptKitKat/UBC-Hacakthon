@@ -1,11 +1,14 @@
+import { feedPositionsSchema } from "@/shared";
 import type { BackgroundReply, BackgroundRequest, ReplyValues } from "./protocol";
 import { entryResponseSchema, feedMatchSchema, feedQuoteSchema } from "./wire";
 import type { WireEntry } from "./wire";
+import { parseDeskUrl } from "./settings";
 
 interface CallInit {
   readonly method: "GET" | "POST";
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: string;
+  readonly cache?: RequestCache;
 }
 
 interface Call {
@@ -39,6 +42,15 @@ function callFor(request: BackgroundRequest): Call {
         const parsed = feedMatchSchema.safeParse(body);
         return parsed.success ? parsed.data : undefined;
       });
+    case "positions":
+      return {
+        path: "/api/feed/positions",
+        init: { method: "GET", cache: "no-store" },
+        parse: (body) => {
+          const parsed = feedPositionsSchema.safeParse(body);
+          return parsed.success ? parsed.data : undefined;
+        },
+      };
     case "quote":
       return {
         path: `/api/feed/quote?symbol=${encodeURIComponent(request.symbol)}`,
@@ -84,11 +96,14 @@ export async function callDesk<K extends BackgroundRequest["type"]>(
   request: Extract<BackgroundRequest, { type: K }>,
   fetchImpl: typeof fetch,
 ): Promise<BackgroundReply<ReplyValues[K]>> {
+  if (request.type === "positions" && desk.token === "") return { ok: false, error: "Set a desk token in the extension options." };
+  const url = parseDeskUrl(desk.url);
+  if (url === undefined) return { ok: false, error: "Set a valid desk URL in the extension options." };
   const base = callFor(request);
-  const call = request.type === "buy" || request.type === "confirm" ? authorized(base, desk.token) : base;
+  const call = request.type === "buy" || request.type === "confirm" || request.type === "positions" ? authorized(base, desk.token) : base;
   let response: Response;
   try {
-    response = await fetchImpl(`${desk.url.replace(/\/+$/u, "")}${call.path}`, { ...call.init, redirect: "error" });
+    response = await fetchImpl(`${url}${call.path}`, { ...call.init, redirect: "error" });
   } catch {
     return { ok: false, error: "Can't reach the desk. Is it running?" };
   }

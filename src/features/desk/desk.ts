@@ -1,19 +1,35 @@
 import { executeApproved } from "@/features/execution";
-import type { ExecutionError, TradeRecord } from "@/features/execution";
+import type { ExecutionError, PaperOrderTicket } from "@/features/execution";
 import { CARD_CATEGORIES, createPostMatcher } from "@/features/grok";
 import type { PostCandidate, PostInput } from "@/features/grok";
-import { confirm, evaluate, marketPolicyRefusal, rollDay } from "@/features/guardrails";
+import { confirm, evaluate, evaluateResearch, marketPolicyRefusal, policyStateFromSpends, remainingBudget, restorePendingApproval } from "@/features/guardrails";
 import type { ApprovedTrade, Decision, Policy, PolicyState } from "@/features/guardrails";
+import { createMemoryHistory } from "@/features/history";
+import type { HistoryStore } from "@/features/history";
+import { createMemoryJournal, reconcileJournal } from "@/features/journal";
+import type { Reconciliation, SpendEntry, SpendJournal } from "@/features/journal";
 import type { UsdcLedger } from "@/features/ledger";
+import { parseInstrumentSymbol } from "@/features/markets";
 import type { ContractLimits, GeminiMarketsClient, MarketContract } from "@/features/markets";
 import { allowAll, matchNews } from "@/features/matcher";
 import type { MatchCandidate, MatchResult, NewsItem } from "@/features/matcher";
+import { aggregatePositions, fillsFromJournal, markFromContract, summarizeResearchSpend, todaysResearchSpendCents } from "@/features/positions";
+import type { MarketMark } from "@/features/positions";
 import { instrumentSymbol, usdCents } from "@/shared";
 import type { FeedSettings } from "./config";
+import { buyDeepDive } from "./deep-dive";
+import type { DeepDiveSettings } from "./deep-dive";
+import { awaitingPaymentResult, createFeedOrders } from "./feed-orders";
+import type { FeedOrder, FeedOrders } from "./feed-orders";
+import { singleReconciliation } from "./reconciliation";
+import { UNDELIVERED_RECOVERY_MS } from "./purchase-store";
+import type { StoredPurchase } from "./purchase-store";
 import type {
   DecisionLogEntry,
+  DeepDiveResult,
   DeskSnapshot,
   FeedMarketView,
+  FeedPositions,
   FeedMatch,
   FeedQuote,
   InstrumentSymbol,
@@ -24,17 +40,23 @@ import type {
   Outcome,
   PendingView,
   PolicyView,
+  PositionsView,
+  PositionStatus,
   PricePoint,
+  ResearchPostContext,
   TradeIntent,
   TradeSource,
+  ResearchBrief,
   UsdCents,
 } from "@/shared";
 
-const LOG_LIMIT = 200;
+const LOG_LIMIT = 1000;
+const LOG_VIEW_LIMIT = 200;
 const HISTORY_LIMIT = 90;
 const MATCH_CACHE_LIMIT = 300;
 const MATCH_CACHE_TTL_MS = 10 * 60 * 1000;
-const ORDER_MEMORY_LIMIT = 500;
+const PURCHASE_REUSE_MS = 15 * 60 * 1000;
+const PURCHASE_LIMIT = 50;
 
 type PendingTrade = Extract<Decision, { kind: "needs-approval" }>;
 
@@ -47,6 +69,15 @@ export interface DeskDeps {
   readonly fetch?: typeof fetch;
   readonly now: () => Date;
   readonly idGen: () => string;
+  readonly history?: HistoryStore;
+  readonly initialLog?: readonly DecisionLogEntry[];
+  readonly saveLog?: (log: readonly DecisionLogEntry[]) => Promise<void>;
+  readonly journal?: SpendJournal;
+  readonly feedOrders?: FeedOrders;
+  readonly paymentInFlight?: (signature: string) => boolean;
+  readonly research?: DeepDiveSettings;
+  readonly initialPurchases?: readonly StoredPurchase[];
+  readonly savePurchases?: (purchases: readonly StoredPurchase[]) => Promise<void>;
 }
 
 export interface FeedBuyRequest {
@@ -75,6 +106,12 @@ export interface Desk {
   readonly matchPost: (post: PostInput) => Promise<FeedMatch>;
   readonly isCardFor: (postId: string, symbol: string) => Promise<boolean>;
   readonly quote: (symbol: string) => Promise<FeedQuote | undefined>;
+  readonly postContextFor: (symbol: string) => Promise<ResearchPostContext | undefined>;
+  readonly getFeedPositions: () => Promise<FeedPositions>;
+  readonly getPositions: () => Promise<PositionsView>;
+  readonly buyDeepDive: (symbol: string) => Promise<DeepDiveResult>;
+  readonly reconcile: () => Promise<Reconciliation>;
+  readonly feedOrder: (clientOrderId: string) => Promise<DecisionLogEntry> | undefined;
   readonly buyFromFeed: (request: FeedBuyRequest) => Promise<DecisionLogEntry>;
   readonly confirmFromFeed: (intentId: string) => Promise<ConfirmResult>;
   readonly proposeTrade: (request: ProposeRequest) => Promise<DecisionLogEntry>;
@@ -179,10 +216,14 @@ function failureReason(error: ExecutionError): string {
     case "invalid-limit-price": return "I couldn't get a valid price for this market, so I did not place the trade.";
     case "quantity-below-minimum": return "That amount is below the market's minimum order size, so I did not place the trade.";
     case "debit-unconfirmed": return "The payment could not be confirmed, so those funds stay reserved until it is checked.";
+    case "journal-unavailable":
+    case "pre-broadcast-failed": return "I couldn't record the payment safely, so I did not place the trade.";
+    case "destination-invalid": return "The vault recipient's USDC account isn't valid, so I did not place the trade.";
     case "unsafe-ledger-network": return "The ledger network is not approved for test payments.";
     case "recipient-ata-missing": return "The vault recipient has no USDC account yet, so I did not place the trade.";
     case "notional-overflow": return "The trade amount exceeds the ledger limit.";
     case "invalid-notional":
+    case "invalid-recipient":
     case "debit-preparation-failed":
     case "debit-rejected":
     case "balance-failed": return "The ledger payment failed, so I did not place the trade.";
@@ -203,26 +244,34 @@ export function createDesk(deps: DeskDeps): Desk {
     now,
   });
   let policy = deps.policy;
-  let state: PolicyState = {
-    day: now().toISOString().slice(0, 10),
-    spentToday: usdCents(0),
-    reservedToday: usdCents(0),
-    seenIntentIds: new Set(),
-  };
+  const initialLog = (deps.initialLog ?? []).slice(0, LOG_LIMIT);
+  const journal = deps.journal ?? createMemoryJournal(() => now().toISOString());
+  const currentState = (): PolicyState => policyStateFromSpends(journal.entries(), now());
   let current: { readonly news: NewsItem; readonly match: MatchResult } | undefined;
-  let log: readonly DecisionLogEntry[] = [];
+  const history = deps.history ?? createMemoryHistory();
+  const saveLog = deps.saveLog ?? (() => Promise.resolve());
+  const lastMarks = new Map<string, MarketMark>();
+  let log: readonly DecisionLogEntry[] = initialLog;
+  let purchases: readonly StoredPurchase[] = (deps.initialPurchases ?? []).slice(0, PURCHASE_LIMIT);
+  const savePurchases = deps.savePurchases ?? (() => Promise.resolve());
+  const deepDives = new Map<string, Promise<DeepDiveResult>>();
+  const inFlight = new Set<string>();
   const pending = new Map<string, PendingRecord>();
   const tickers = new Map<InstrumentSymbol, string>();
-  const priceHistory = new Map<InstrumentSymbol, PricePoint[]>();
-  const matchCache = new Map<string, { readonly at: number; readonly match: Promise<FeedMatch> }>();
-  const feedOrders = new Map<string, Promise<DecisionLogEntry>>();
+  const matchCache = new Map<string, { readonly at: number; readonly post: PostInput; readonly match: Promise<FeedMatch> }>();
+  const feedOrders = deps.feedOrders ?? createFeedOrders();
+  const buying = new Map<string, Promise<DecisionLogEntry>>();
+  const confirming = new Map<string, Promise<ConfirmResult>>();
 
   function recordPrice(market: LiveMarket): void {
-    const yesCents = market.contract.prices.buyYesCents;
-    if (yesCents === null) return;
-    const points = priceHistory.get(market.contract.instrumentSymbol) ?? [];
-    points.push({ at: now().toISOString(), yesCents });
-    priceHistory.set(market.contract.instrumentSymbol, points.slice(-HISTORY_LIMIT));
+    const { instrumentSymbol: symbol, prices } = market.contract;
+    history.watch(symbol);
+    if (prices.buyYesCents === null) return;
+    history.record(symbol, { atMs: now().getTime(), yesCents: prices.buyYesCents, bidCents: prices.bestBidCents, askCents: prices.bestAskCents });
+  }
+
+  function priceHistory(symbol: InstrumentSymbol): PricePoint[] {
+    return history.series(symbol).slice(-HISTORY_LIMIT).map((point) => ({ at: new Date(point.atMs).toISOString(), yesCents: point.yesCents }));
   }
 
   function tradeBlockedReason(market: LiveMarket): string | undefined {
@@ -252,6 +301,7 @@ export function createDesk(deps: DeskDeps): Desk {
   function record(entry: Omit<DecisionLogEntry, "entryId" | "at">): DecisionLogEntry {
     const complete = { ...entry, entryId: idGen(), at: now().toISOString() };
     log = [complete, ...log].slice(0, LOG_LIMIT);
+    saveLog(log).catch(() => undefined);
     return complete;
   }
 
@@ -303,7 +353,7 @@ export function createDesk(deps: DeskDeps): Desk {
       return hit.match;
     }
     const match = computeFeedMatch(post);
-    matchCache.set(post.id, { at: nowMs, match });
+    matchCache.set(post.id, { at: nowMs, post, match });
     for (const oldest of matchCache.keys()) {
       if (matchCache.size <= MATCH_CACHE_LIMIT) break;
       matchCache.delete(oldest);
@@ -312,29 +362,186 @@ export function createDesk(deps: DeskDeps): Desk {
     return match;
   }
 
-  function reserve(approved: ApprovedTrade): void {
-    const rolled = rollDay(state, now());
-    state = {
-      ...rolled,
-      reservedToday: usdCents(rolled.reservedToday + approved.notional),
-      seenIntentIds: new Set([...rolled.seenIntentIds, approved.intentId]),
+  function journalPurchase(entry: SpendEntry): StoredPurchase | undefined {
+    const { signature, explorerUrl } = entry;
+    if (entry.kind !== "research" || entry.status !== "settled" || signature === undefined || explorerUrl === undefined) return undefined;
+    return {
+      symbol: entry.symbol,
+      atMs: Date.parse(entry.resolvedAt ?? entry.reservedAt),
+      brief: null,
+      receipt: { signature, explorerUrl, costCents: entry.notionalCents },
     };
   }
 
-  function settle(trade: TradeRecord): void {
-    const rolled = rollDay(state, now());
-    const released = usdCents(Math.max(0, rolled.reservedToday - trade.notional));
-    if (trade.kind === "paper-order") {
-      state = { ...rolled, reservedToday: released, spentToday: usdCents(rolled.spentToday + trade.notional) };
-    } else if (trade.error.code !== "debit-unconfirmed") {
-      state = { ...rolled, reservedToday: released };
+  function purchaseFor(symbol: string): StoredPurchase | undefined {
+    const nowMs = now().getTime();
+    const known = new Set(purchases.map((purchase) => purchase.receipt.signature));
+    const recent = (purchase: StoredPurchase) =>
+      nowMs - purchase.atMs < (purchase.brief ? PURCHASE_REUSE_MS : UNDELIVERED_RECOVERY_MS);
+    const candidates = purchases.filter((purchase) => purchase.symbol === symbol && recent(purchase));
+    for (const entry of journal.entries()) {
+      if (entry.symbol !== symbol) continue;
+      const purchase = journalPurchase(entry);
+      if (purchase && !known.has(purchase.receipt.signature) && recent(purchase)) candidates.push(purchase);
     }
+    return candidates.sort((a, b) => b.atMs - a.atMs)[0];
+  }
+
+  function storePurchases(next: readonly StoredPurchase[]): void {
+    purchases = next.slice(0, PURCHASE_LIMIT);
+    savePurchases(purchases).catch(() => undefined);
+  }
+
+  function rememberPurchase(result: DeepDiveResult, symbol: string): void {
+    if (!result.purchase) return;
+    const { signature, explorerUrl, costCents, at } = result.purchase;
+    storePurchases([
+      { symbol, atMs: Date.parse(at), brief: result.brief, receipt: { signature, explorerUrl, costCents } },
+      ...purchases.filter((purchase) => purchase.receipt.signature !== signature),
+    ]);
+  }
+
+  function deliveredFrom(purchase: StoredPurchase, brief: ResearchBrief, note: string): DeepDiveResult {
+    return {
+      status: "delivered",
+      alreadyPurchased: true,
+      trace: [{ step: "brief", detail: note }],
+      failureReason: null,
+      brief,
+      purchase: { at: new Date(purchase.atMs).toISOString(), ...purchase.receipt },
+    };
+  }
+
+  function unfinishedResult(reason: string, purchase: StoredPurchase | undefined): DeepDiveResult {
+    return {
+      status: "failed",
+      alreadyPurchased: purchase !== undefined,
+      trace: [],
+      failureReason: reason,
+      brief: null,
+      purchase: purchase ? { at: new Date(purchase.atMs).toISOString(), ...purchase.receipt } : null,
+    };
+  }
+
+  async function recoverPurchase(purchase: StoredPurchase): Promise<DeepDiveResult> {
+    const brief = await deps.research?.resource.recover(purchase.symbol, purchase.receipt.signature);
+    if (!brief) return unfinishedResult("You already paid for this brief, but I couldn't fetch it yet. I won't charge you again, so try again in a moment.", purchase);
+    storePurchases([{ ...purchase, brief }, ...purchases.filter(({ receipt }) => receipt.signature !== purchase.receipt.signature)]);
+    return deliveredFrom(purchase, brief, "I had already paid for this brief, so I fetched it again without paying.");
+  }
+
+  function paymentStillInFlight(symbol: string): boolean {
+    return journal.entries().some((entry) => entry.kind === "research" && entry.symbol === symbol && entry.status === "reserved");
+  }
+
+  function deepDive(symbol: string): Promise<DeepDiveResult> {
+    const reusable = purchaseFor(symbol);
+    if (reusable?.brief) return Promise.resolve(deliveredFrom(reusable, reusable.brief, "You already bought this brief in the last 15 minutes, so I did not pay again."));
+    const running = deepDives.get(symbol);
+    if (running) return running;
+    let operationId: string | undefined;
+    const work = reusable
+      ? recoverPurchase(reusable)
+      : paymentStillInFlight(symbol)
+        ? Promise.resolve(unfinishedResult("A payment for this brief is still being confirmed, so I won't pay a second time. Try again later.", undefined))
+        : buyDeepDive(
+            {
+              ledger,
+              ledgerView: deps.ledgerView,
+              settings: deps.research,
+              account: {
+                decide: (spend) => evaluateResearch(spend, policy, currentState(), now()),
+                async begin(approved, researchSymbol) {
+                  operationId = approved.intentId;
+                  inFlight.add(operationId);
+                  const written = await journal.begin({
+                    operationId: approved.intentId,
+                    kind: "research",
+                    notionalCents: approved.notional,
+                    symbol: researchSymbol,
+                    outcome: null,
+                    senderId: "research-agent",
+                    source: "research",
+                  });
+                  if (!written.ok) inFlight.delete(operationId);
+                  return written.ok;
+                },
+                async signed(approved, payment) {
+                  return (await journal.attachPayment(approved.intentId, payment)).ok;
+                },
+                async resolve(approved, outcome) {
+                  if (!inFlight.has(approved.intentId)) return;
+                  await (outcome === "settled" ? journal.settle(approved.intentId) : journal.fail(approved.intentId));
+                },
+                remaining: () => remainingBudget(policy, currentState(), now()),
+                record,
+              },
+            },
+            symbol,
+          ).then((result) => {
+            rememberPurchase(result, symbol);
+            return result;
+          });
+    deepDives.set(symbol, work);
+    const forget = () => {
+      if (operationId !== undefined) inFlight.delete(operationId);
+      deepDives.delete(symbol);
+    };
+    work.then(forget, forget);
+    return work;
+  }
+
+  function ticketRecord(ticket: PaperOrderTicket) {
+    return {
+      ticketId: ticket.ticketId,
+      symbol: ticket.payload.symbol,
+      outcome: ticket.payload.outcome,
+      quantity: ticket.payload.quantity,
+      price: ticket.payload.price,
+      mode: ticket.mode,
+    };
   }
 
   async function execute(approved: ApprovedTrade, intent: TradeIntent, quote: Quote): Promise<DecisionLogEntry> {
-    reserve(approved);
-    const trade = await executeApproved(approved, { ledger, now, idGen, limitPrice: quote.limitPrice, limits: quote.limits });
-    settle(trade);
+    inFlight.add(approved.intentId);
+    try {
+      return await executeTrade(approved, intent, quote);
+    } finally {
+      inFlight.delete(approved.intentId);
+    }
+  }
+
+  async function executeTrade(approved: ApprovedTrade, intent: TradeIntent, quote: Quote): Promise<DecisionLogEntry> {
+    const operationId = approved.intentId;
+    const reservation = { opened: false };
+    const trade = await executeApproved(approved, {
+      ledger,
+      now,
+      idGen,
+      limitPrice: quote.limitPrice,
+      limits: quote.limits,
+      async reserve(ticket) {
+        const written = await journal.begin({
+          operationId,
+          kind: "trade",
+          notionalCents: approved.notional,
+          symbol: intent.instrumentSymbol,
+          outcome: intent.outcome,
+          senderId: intent.senderId,
+          source: intent.source,
+          ticket: ticketRecord(ticket),
+        });
+        reservation.opened = written.ok;
+        return written.ok;
+      },
+      async beforeBroadcast(payment) {
+        return (await journal.attachPayment(operationId, payment)).ok;
+      },
+    });
+    if (reservation.opened) {
+      if (trade.kind === "paper-order") await journal.settle(operationId);
+      else if (trade.error.code !== "debit-unconfirmed") await journal.fail(operationId);
+    }
     if (trade.kind === "execution-failed") {
       return record({
         ...tradeFields(intent),
@@ -361,11 +568,10 @@ export function createDesk(deps: DeskDeps): Desk {
     });
   }
 
-  async function proposeTrade(request: ProposeRequest): Promise<DecisionLogEntry> {
-    const symbol = instrumentSymbol(request.instrumentSymbol);
-    const intent: TradeIntent = {
+  function tradeIntent(request: ProposeRequest): TradeIntent {
+    return {
       intentId: idGen(),
-      instrumentSymbol: symbol,
+      instrumentSymbol: instrumentSymbol(request.instrumentSymbol),
       outcome: request.outcome,
       notional: usdCents(request.notionalCents),
       source: request.source,
@@ -373,13 +579,20 @@ export function createDesk(deps: DeskDeps): Desk {
       createdAt: now(),
       ...(request.seenPriceCents === undefined ? {} : { seenPriceCents: request.seenPriceCents }),
     };
-    const quote = quoteFor(await resolveMarket(symbol, true), intent.outcome);
-    const decision = evaluate(intent, quote, policy, state, now());
+  }
+
+  async function proposeTrade(request: ProposeRequest): Promise<DecisionLogEntry> {
+    return proposeIntent(tradeIntent(request));
+  }
+
+  async function proposeIntent(intent: TradeIntent, persistApproval = false): Promise<DecisionLogEntry> {
+    const quote = quoteFor(await resolveMarket(intent.instrumentSymbol, true), intent.outcome);
+    const decision = evaluate(intent, quote, policy, currentState(), now());
     switch (decision.kind) {
       case "refuse":
         return record({ ...tradeFields(intent), kind: "refuse", code: decision.code, spokenReason: decision.spokenReason });
       case "needs-approval":
-        pending.set(intent.intentId, { decision, intent });
+        if (!persistApproval) pending.set(intent.intentId, { decision, intent });
         return record({ ...tradeFields(intent), kind: "needs-approval", spokenReason: decision.spokenReason });
       case "approve":
         if (!quote) throw new Error("Approval requires a quote");
@@ -391,11 +604,122 @@ export function createDesk(deps: DeskDeps): Desk {
     }
   }
 
+  function existingFeedResult({ entry }: FeedOrder): FeedOrder["entry"] {
+    if (!awaitingPaymentResult(entry)) return entry;
+    const spend = journal.find(entry.intentId);
+    if (spend?.status === "settled") {
+      const result: FeedOrder["entry"] = {
+        ...entry,
+        kind: "approve",
+        at: spend.resolvedAt ?? entry.at,
+        spokenReason: "The payment landed and the paper trade was recorded.",
+        ...(spend.signature === undefined ? {} : { signature: spend.signature }),
+        ...(spend.explorerUrl === undefined ? {} : { explorerUrl: spend.explorerUrl }),
+        ...(spend.ticket === undefined ? {} : { ticket: spend.ticket }),
+      };
+      delete result.code;
+      return result;
+    }
+    if (spend?.status === "failed") {
+      return { ...entry, at: spend.resolvedAt ?? entry.at, code: "debit-rejected", spokenReason: "The payment failed or expired and the reservation was released." };
+    }
+    return entry;
+  }
+
+  function feedOrder(clientOrderId: string): Promise<DecisionLogEntry> | undefined {
+    const active = buying.get(clientOrderId);
+    if (active) return active;
+    const order = feedOrders.find(clientOrderId);
+    if (order) return Promise.resolve(existingFeedResult(order));
+    return undefined;
+  }
+
+  async function saveFeedResult(order: FeedOrder, result: DecisionLogEntry): Promise<DecisionLogEntry> {
+    const entry = { ...result, source: "feed" as const, outcome: order.entry.outcome };
+    await feedOrders.update(order, { ...order, entry });
+    return entry;
+  }
+
+  function buyFromFeed({ clientOrderId, ...request }: FeedBuyRequest): Promise<DecisionLogEntry> {
+    const previous = feedOrder(clientOrderId);
+    if (previous) return previous;
+    const intent = tradeIntent({ ...request, source: "feed", senderId: deps.feed.operatorId });
+    const trade = recordPendingOrder(clientOrderId, intent);
+    buying.set(clientOrderId, trade);
+    const forget = () => buying.delete(clientOrderId);
+    void trade.then(forget, forget);
+    return trade;
+  }
+
+  function pendingFeedEntry(entry: Omit<FeedOrder["entry"], "kind" | "spokenReason">): FeedOrder["entry"] {
+    return { ...entry, kind: "execution-failed", code: "order-in-progress", spokenReason: "This order is pending. Check again for its result." };
+  }
+
+  async function recordPendingOrder(clientOrderId: string, intent: TradeIntent): Promise<DecisionLogEntry> {
+    const eventTicker = tickers.get(intent.instrumentSymbol);
+    const order: FeedOrder = {
+      clientOrderId,
+      seenPriceCents: intent.seenPriceCents,
+      eventTicker,
+      entry: pendingFeedEntry({
+        ...tradeFields(intent),
+        source: "feed",
+        entryId: idGen(),
+        at: intent.createdAt.toISOString(),
+      }),
+    };
+    const existing = await feedOrders.claim(order);
+    if (existing) return existingFeedResult(existing);
+    return saveFeedResult(order, await proposeIntent(intent, true));
+  }
+
+  function confirmFeedOrder(order: FeedOrder, approverId: string): Promise<ConfirmResult> {
+    const { entry } = order;
+    const active = confirming.get(entry.intentId);
+    if (active) return active;
+    if (entry.kind !== "needs-approval") return Promise.resolve({ ok: true, entry: existingFeedResult(order) });
+    const work = completeFeedApproval(order, approverId);
+    confirming.set(entry.intentId, work);
+    const forget = () => confirming.delete(entry.intentId);
+    void work.then(forget, forget);
+    return work;
+  }
+
+  async function completeFeedApproval(order: FeedOrder, approverId: string): Promise<ConfirmResult> {
+    const { entry, seenPriceCents, eventTicker } = order;
+    const intent: TradeIntent = {
+      intentId: entry.intentId,
+      instrumentSymbol: instrumentSymbol(entry.symbol),
+      outcome: entry.outcome,
+      notional: usdCents(entry.notionalCents),
+      source: entry.source,
+      senderId: entry.senderId,
+      createdAt: new Date(entry.at),
+      ...(seenPriceCents === undefined ? {} : { seenPriceCents }),
+    };
+    if (eventTicker !== undefined) tickers.set(intent.instrumentSymbol, eventTicker);
+    const quote = quoteFor(await resolveMarket(intent.instrumentSymbol, true), intent.outcome);
+    const confirmed = confirm(restorePendingApproval(intent), approverId, quote, policy, currentState(), now());
+    if (confirmed.kind === "refuse") {
+      return { ok: true, entry: record({ ...tradeFields(intent), kind: "refuse", code: confirmed.code, spokenReason: confirmed.spokenReason }) };
+    }
+    if (!quote) throw new Error("Approval requires a quote");
+    const executing = { ...order, entry: pendingFeedEntry({ ...entry, at: now().toISOString() }) };
+    if (!await feedOrders.update(order, executing)) return { ok: false, error: "unknown-intent" };
+    const fresh = confirm(restorePendingApproval(intent), approverId, quote, policy, currentState(), now());
+    const result = fresh.kind === "refuse"
+      ? record({ ...tradeFields(intent), kind: "refuse", code: fresh.code, spokenReason: fresh.spokenReason })
+      : await execute(fresh, intent, quote);
+    return { ok: true, entry: await saveFeedResult(executing, result) };
+  }
+
   async function confirmPending(intentId: string, approverId: string): Promise<ConfirmResult> {
+    const feed = feedOrders.findIntent(intentId);
+    if (feed) return confirmFeedOrder(feed, approverId);
     const waiting = pending.get(intentId);
     if (!waiting) return { ok: false, error: "unknown-intent" };
     const quote = quoteFor(await resolveMarket(waiting.intent.instrumentSymbol, true), waiting.intent.outcome);
-    const confirmed = confirm(waiting.decision, approverId, quote, policy, state, now());
+    const confirmed = confirm(waiting.decision, approverId, quote, policy, currentState(), now());
     if (confirmed.kind === "refuse") {
       if (confirmed.code === "duplicate-intent") pending.delete(intentId);
       return {
@@ -406,6 +730,34 @@ export function createDesk(deps: DeskDeps): Desk {
     if (!pending.delete(intentId)) return { ok: false, error: "unknown-intent" };
     if (!quote) throw new Error("Approval requires a quote");
     return { ok: true, entry: await execute(confirmed, waiting.intent, quote) };
+  }
+
+  function budgetView(rolled: PolicyState, config: Policy): FeedPositions["budget"] {
+    return {
+      dailyCapCents: config.dailyCap,
+      spentCents: rolled.spentToday,
+      researchSpentCents: todaysResearchSpendCents(journal.entries(), rolled.day),
+      remainingCents: Math.max(0, config.dailyCap - rolled.spentToday - rolled.reservedToday),
+    };
+  }
+
+  async function readPositions(status?: PositionStatus) {
+    const fills = fillsFromJournal(journal.entries());
+    const byEvent = new Map<string, Set<string>>();
+    for (const { symbol } of fills) {
+      const parsed = parseInstrumentSymbol(symbol);
+      if (parsed) byEvent.set(parsed.eventTicker, (byEvent.get(parsed.eventTicker) ?? new Set()).add(symbol));
+    }
+    await Promise.all(
+      [...byEvent].map(async ([eventTicker, symbols]) => {
+        const result = await markets.getEvent(eventTicker);
+        if (!result.ok) return;
+        for (const contract of result.value.contracts) {
+          if (symbols.has(contract.instrumentSymbol)) lastMarks.set(contract.instrumentSymbol, markFromContract(result.value, contract, now().getTime()));
+        }
+      }),
+    );
+    return aggregatePositions(fills, lastMarks, now().toISOString(), status);
   }
 
   return {
@@ -432,25 +784,65 @@ export function createDesk(deps: DeskDeps): Desk {
     async quote(symbol) {
       const market = await resolveMarket(instrumentSymbol(symbol));
       if (!market) return undefined;
-      return { market: feedMarketView(market), history: [...(priceHistory.get(market.contract.instrumentSymbol) ?? [])] };
+      return { market: feedMarketView(market), history: priceHistory(market.contract.instrumentSymbol) };
     },
 
-    buyFromFeed({ clientOrderId, ...request }) {
-      const previous = feedOrders.get(clientOrderId);
-      if (previous) return previous;
-      const order = proposeTrade({ ...request, source: "feed", senderId: deps.feed.operatorId });
-      feedOrders.set(clientOrderId, order);
-      for (const oldest of feedOrders.keys()) {
-        if (feedOrders.size <= ORDER_MEMORY_LIMIT) break;
-        feedOrders.delete(oldest);
+    async postContextFor(symbol) {
+      const nowMs = now().getTime();
+      for (const { at, post, match } of [...matchCache.values()].reverse()) {
+        if (nowMs - at >= MATCH_CACHE_TTL_MS) continue;
+        const resolved = await match.catch(() => undefined);
+        if (resolved?.kind === "matched" && resolved.market.instrumentSymbol === symbol) {
+          return { source: "x-feed", text: post.text, author: post.author ?? null, url: post.url ?? null, why: resolved.why };
+        }
       }
-      order.catch(() => feedOrders.delete(clientOrderId));
-      return order;
+      if (current?.match.kind === "matched" && current.match.best.contract.instrumentSymbol === symbol) {
+        const { news } = current;
+        return { source: "news", text: news.text, author: news.author ?? null, url: news.url ?? null, why: current.match.reasons.join(" ") || null };
+      }
+      return undefined;
     },
+
+    async getPositions() {
+      return { ...await readPositions(), researchSpend: summarizeResearchSpend(journal.entries(), now().toISOString()) };
+    },
+
+    async getFeedPositions() {
+      const { positions, totals } = await readPositions("open");
+      return {
+        positions: positions.map(({ symbol, outcome, eventTitle, contractLabel, contracts, averageEntryCents, currentCents, pnlCents, pnlPercent, fills }) => ({
+          symbol, outcome, eventTitle, contractLabel, contracts, averageEntryCents, currentCents, pnlCents, pnlPercent,
+          explorerUrl: fills.findLast((fill) => fill.explorerUrl !== null)?.explorerUrl ?? null,
+          researchPath: `/markets/${encodeURIComponent(symbol)}`,
+        })),
+        totals,
+        budget: budgetView(currentState(), policy),
+      };
+    },
+
+    buyDeepDive: deepDive,
+
+    reconcile: singleReconciliation(async () => {
+      const result = await reconcileJournal(journal, (payment) => ledger.checkSignature(payment), inFlight, deps.paymentInFlight);
+      for (const order of feedOrders.all()) {
+        if (buying.has(order.clientOrderId) || confirming.has(order.entry.intentId)) continue;
+        if (!awaitingPaymentResult(order.entry)) continue;
+        const entry = journal.find(order.entry.intentId) === undefined
+          ? { ...order.entry, code: "order-interrupted", spokenReason: "The order stopped before a payment was recorded." }
+          : existingFeedResult(order);
+        if (entry !== order.entry) await feedOrders.update(order, { ...order, entry }).catch(() => undefined);
+      }
+      return result;
+    }),
+
+    feedOrder,
+    buyFromFeed,
 
     confirmFromFeed(intentId) {
-      if (pending.get(intentId)?.intent.source !== "feed") return Promise.resolve({ ok: false, error: "unknown-intent" });
-      return confirmPending(intentId, deps.feed.operatorId);
+      const order = feedOrders.findIntent(intentId);
+      if (order) return confirmFeedOrder(order, deps.feed.operatorId);
+      if (pending.get(intentId)?.intent.source === "feed") return confirmPending(intentId, deps.feed.operatorId);
+      return Promise.resolve({ ok: false, error: "unknown-intent" });
     },
 
     proposeTrade,
@@ -462,13 +854,11 @@ export function createDesk(deps: DeskDeps): Desk {
     },
 
     async getSnapshot() {
-      const rolled = rollDay(state, now());
+      const rolled = currentState();
       const best = current?.match.kind === "matched" ? await resolveMarket(current.match.best.contract.instrumentSymbol) : undefined;
       const config = policy;
       const policyView: PolicyView = {
-        dailyCapCents: config.dailyCap,
-        spentCents: rolled.spentToday,
-        remainingCents: Math.max(0, config.dailyCap - rolled.spentToday - rolled.reservedToday),
+        ...budgetView(rolled, config),
         autoApproveMaxCents: config.autoApproveMax,
         perTradeMaxCents: config.perTradeMax,
         killSwitch: config.killSwitch,
@@ -484,12 +874,23 @@ export function createDesk(deps: DeskDeps): Desk {
         senderId: intent.senderId,
         createdAt: intent.createdAt.toISOString(),
       }));
+      for (const { entry } of feedOrders.all()) {
+        if (entry.kind !== "needs-approval") continue;
+        pendingViews.push({
+          intentId: entry.intentId,
+          symbol: entry.symbol,
+          outcome: entry.outcome,
+          notionalCents: entry.notionalCents,
+          senderId: entry.senderId,
+          createdAt: entry.at,
+        });
+      }
       return {
         news: current ? newsView(current.news) : null,
         match: matchView(current?.match, best),
         policy: policyView,
         pending: pendingViews,
-        log,
+        log: log.slice(0, LOG_VIEW_LIMIT),
         ledger: deps.ledgerView,
       };
     },

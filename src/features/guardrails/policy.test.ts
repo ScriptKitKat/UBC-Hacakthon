@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { instrumentSymbol, usdCents } from "@/shared";
 import type { TradeIntent } from "@/shared";
-import { DEFAULT_MARKET_CATEGORIES, applyApproved, confirm, createPolicy, evaluate, marketPolicyRefusal, rollDay } from "./index";
+import { DEFAULT_MARKET_CATEGORIES, applyApproved, confirm, createPolicy, evaluate, evaluateResearch, marketPolicyRefusal, policyStateFromSpends, remainingBudget, rollDay } from "./index";
 import type { PolicyConfig, PolicyState } from "./index";
 
 const now = new Date("2026-11-17T23:59:59Z");
@@ -163,7 +163,7 @@ describe("trade policy", () => {
     expect(confirm(pending, "desk", market, validated({ ...config, marketCategories: new Set() }), state, now)).toMatchObject({ code: "market-category-not-allowed" });
   });
 
-  it("rolls UTC spend and reservations over while retaining replay protection", () => {
+  it("resets UTC spend while retaining reservations and replay protection", () => {
     const approved = evaluate(intent, market, policy, state, now);
     if (approved.kind !== "approve") throw new Error("Expected approval");
     const updated = applyApproved(state, approved);
@@ -172,9 +172,17 @@ describe("trade policy", () => {
     expect(applyApproved(updated, approved)).toBe(updated);
     const midnight = new Date("2026-11-18T00:00:00Z");
     expect(rollDay({ ...updated, reservedToday: usdCents(400) }, midnight)).toEqual({
-      day: "2026-11-18", spentToday: 0, reservedToday: 0, seenIntentIds: new Set([intent.intentId]),
+      day: "2026-11-18", spentToday: 0, reservedToday: 400, seenIntentIds: new Set([intent.intentId]),
     });
     expect(evaluate(intent, market, policy, updated, midnight)).toMatchObject({ code: "duplicate-intent" });
+  });
+
+  it("still refuses confirmations over the remaining budget when the UTC day rolls over", () => {
+    const pending = evaluate({ ...intent, notional: usdCents(501) }, market, policy, state, now);
+    if (pending.kind !== "needs-approval") throw new Error("Expected pending decision");
+    const reserved = { ...state, reservedToday: usdCents(config.dailyCap) };
+    const midnight = new Date("2026-11-18T00:00:00Z");
+    expect(confirm(pending, "desk", market, policy, reserved, midnight)).toMatchObject({ code: "over-daily-cap" });
   });
 
   it("keeps sequential approvals within the daily cap for varied intent sequences", () => {
@@ -189,5 +197,55 @@ describe("trade policy", () => {
         expect(current.spentToday).toBeLessThanOrEqual(config.dailyCap);
       }
     }
+  });
+});
+
+describe("research spend", () => {
+  const research = validated({ ...config, autoApproveMax: usdCents(200) });
+  const spend = { spendId: "research:n1", notional: usdCents(5) };
+
+  it("approves a spend under every limit", () => {
+    expect(evaluateResearch(spend, research, state, now)).toMatchObject({ kind: "approve", intentId: "research:n1", notional: 5 });
+  });
+
+  it.each([
+    ["kill switch", research.withKillSwitch(true), spend, state, "kill-switch", "Trading is paused, so I did not buy research."],
+    ["zero price", research, { ...spend, notional: usdCents(0) }, state, "zero-notional", "The research price must be greater than $0."],
+    ["per-trade cap", validated({ ...config, perTradeMax: usdCents(300), autoApproveMax: usdCents(2) }), { ...spend, notional: usdCents(400) }, state, "over-per-trade-cap", "A $4 research purchase exceeds the $3 limit per trade."],
+    ["auto-approve limit", research, { ...spend, notional: usdCents(300) }, state, "over-auto-approve-max", "A $3 research purchase is above the $2 I can approve on my own."],
+    ["daily cap", research, spend, { ...state, spentToday: usdCents(1998) }, "over-daily-cap", "A $0.05 research purchase would exceed today's $20 budget, with $0.02 left."],
+    ["reserved budget", research, spend, { ...state, spentToday: usdCents(1990), reservedToday: usdCents(8) }, "over-daily-cap", "A $0.05 research purchase would exceed today's $20 budget, with $0.02 left."],
+    ["duplicate", research, spend, { ...state, seenIntentIds: new Set(["research:n1"]) }, "duplicate-intent", "I've already approved this research purchase."],
+  ] as const)("refuses on %s with a spoken reason", (_name, testPolicy, testSpend, testState, code, spokenReason) => {
+    expect(evaluateResearch(testSpend, testPolicy, testState, now)).toEqual({ kind: "refuse", spendId: testSpend.spendId, code, spokenReason });
+  });
+
+  it("shares the daily budget with bets: a research spend lowers what a trade can use", () => {
+    const approved = evaluateResearch(spend, research, state, now);
+    if (approved.kind !== "approve") throw new Error("expected approval");
+    const spent = applyApproved(state, approved);
+    expect(spent.spentToday).toBe(5);
+    expect(remainingBudget(research, spent, now)).toBe(1995);
+  });
+});
+
+describe("deriving the daily budget from the spend journal", () => {
+  const spends = [
+    { operationId: "a", status: "settled", notionalCents: 200, resolvedAt: "2026-11-17T10:00:00.000Z" },
+    { operationId: "b", status: "settled", notionalCents: 5, resolvedAt: "2026-11-17T11:00:00.000Z" },
+    { operationId: "c", status: "failed", notionalCents: 900, resolvedAt: "2026-11-17T11:30:00.000Z" },
+    { operationId: "d", status: "reserved", notionalCents: 600 },
+    { operationId: "e", status: "settled", notionalCents: 1000, resolvedAt: "2026-11-16T23:59:59.000Z" },
+  ] as const;
+
+  it("sums today's settled spend and every unresolved reservation, and remembers every operation id", () => {
+    const state = policyStateFromSpends(spends, now);
+    expect(state).toMatchObject({ day: "2026-11-17", spentToday: 205, reservedToday: 600 });
+    expect([...state.seenIntentIds].sort()).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  it("keeps an unresolved reservation counted across the UTC midnight rollover while yesterday's settled spend drops out", () => {
+    const state = policyStateFromSpends(spends, new Date("2026-11-18T00:00:00Z"));
+    expect(state).toMatchObject({ day: "2026-11-18", spentToday: 0, reservedToday: 600 });
   });
 });

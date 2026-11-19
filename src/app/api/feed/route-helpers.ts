@@ -4,11 +4,12 @@ import { withBody, withDesk } from "../desk/route-helpers";
 import type { Desk } from "@/features/desk";
 import { corsHeaders, isAllowedOrigin } from "./cors";
 
+const READ_METHODS = "GET, OPTIONS";
 const FORBIDDEN_ORIGIN = { error: "forbidden-origin" } as const;
 
-function withCors(response: Response, origin: string | null): Response {
+function withCors(response: Response, origin: string | null, methods?: string): Response {
   if (origin !== null) {
-    for (const [name, value] of Object.entries(corsHeaders(origin))) response.headers.set(name, value);
+    for (const [name, value] of Object.entries(corsHeaders(origin, methods))) response.headers.set(name, value);
   }
   return response;
 }
@@ -17,20 +18,28 @@ function isJson(request: Request): boolean {
   return request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() === "application/json";
 }
 
-async function guarded(request: Request, run: () => Promise<Response>): Promise<Response> {
+async function guarded(request: Request, run: () => Promise<Response>, methods?: string): Promise<Response> {
   const origin = request.headers.get("origin");
   if (origin !== null && !isAllowedOrigin(origin, process.env)) return Response.json(FORBIDDEN_ORIGIN, { status: 403 });
   try {
-    return withCors(await run(), origin);
+    return withCors(await run(), origin, methods);
   } catch {
-    return withCors(Response.json({ error: "feed-failed" }, { status: 500 }), origin);
+    return withCors(Response.json({ error: "feed-failed" }, { status: 500 }), origin, methods);
   }
 }
 
-export function feedPreflight(request: Request): Response {
+function preflight(request: Request, methods?: string): Response {
   const origin = request.headers.get("origin");
   if (origin === null || !isAllowedOrigin(origin, process.env)) return Response.json(FORBIDDEN_ORIGIN, { status: 403 });
-  return new Response(null, { status: 204, headers: corsHeaders(origin) });
+  return new Response(null, { status: 204, headers: corsHeaders(origin, methods) });
+}
+
+export function feedPreflight(request: Request): Response {
+  return preflight(request);
+}
+
+export function feedReadPreflight(request: Request): Response {
+  return preflight(request, READ_METHODS);
 }
 
 export function feedGet(request: Request, handler: (desk: Desk) => Promise<Response>): Promise<Response> {
@@ -60,11 +69,17 @@ export function feedTradingPost<S extends z.ZodType>(
   schema: S,
   handler: (body: z.output<S>, desk: Desk) => Promise<Response>,
 ): Promise<Response> {
-  return guarded(request, async () => {
-    const token = configuredToken("FEED_API_TOKEN");
-    if (token === undefined) return Response.json({ error: "feed-trading-disabled" }, { status: 503 });
-    return isBearer(request, token) ? jsonPost(request, schema, handler) : unauthorized();
-  });
+  return guarded(request, () => withApiToken(request, "feed-trading-disabled", () => jsonPost(request, schema, handler)));
+}
+
+export function feedPrivateGet(request: Request, handler: (desk: Desk) => Promise<Response>): Promise<Response> {
+  return guarded(request, () => withApiToken(request, "feed-positions-disabled", () => withDesk(handler)), READ_METHODS);
+}
+
+function withApiToken(request: Request, disabled: string, run: () => Promise<Response>): Promise<Response> {
+  const token = configuredToken("FEED_API_TOKEN");
+  if (token === undefined) return Promise.resolve(Response.json({ error: disabled }, { status: 503 }));
+  return isBearer(request, token) ? run() : Promise.resolve(unauthorized());
 }
 
 function unauthorized(): Response {

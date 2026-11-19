@@ -5,8 +5,10 @@ import { POST as news } from "./news/route";
 import { POST as propose } from "./propose/route";
 import { GET as snapshot } from "./route";
 
+const SAME_ORIGIN = { "sec-fetch-site": "same-origin" };
+
 const post = (body: unknown) =>
-  new Request("http://desk.test", { method: "POST", body: typeof body === "string" ? body : JSON.stringify(body) });
+  new Request("http://desk.test", { method: "POST", headers: SAME_ORIGIN, body: typeof body === "string" ? body : JSON.stringify(body) });
 
 describe("desk api validation", () => {
   it.each([
@@ -24,18 +26,35 @@ describe("desk api validation", () => {
     expect(await response.json()).toMatchObject({ error: "invalid-request" });
   });
 
-  it.each([
+  const dashboardPosts = [
     ["propose", propose, { instrumentSymbol: "A", outcome: "yes", notionalCents: 100, senderId: "priscilla" }],
     ["confirm", confirm, { intentId: "i", approverId: "priscilla" }],
     ["kill switch", killSwitch, { on: false }],
-  ])("refuses cross-origin browser posts to %s", async (_name, handler, body) => {
-    const response = await handler(new Request("http://localhost:3000/api/desk", {
-      method: "POST", headers: { origin: "https://evil.example", "content-type": "text/plain" }, body: JSON.stringify(body),
-    }));
+  ] as const;
+
+  it.each(dashboardPosts)("refuses %s posts that carry no browser provenance", async (_name, handler, body) => {
+    const response = await handler(new Request("http://localhost:3000/api/desk", { method: "POST", body: JSON.stringify(body) }));
     expect(response.status).toBe(403);
   });
 
-  it("accepts same-origin dashboard posts past the origin check", async () => {
+  it.each(dashboardPosts)("refuses %s posts from another origin, scheme or site", async (_name, handler, body) => {
+    const attempts: Record<string, string>[] = [
+      { origin: "https://evil.example" },
+      { origin: "https://localhost:3000" },
+      { origin: "http://localhost:3001" },
+      { origin: "null" },
+      { "sec-fetch-site": "cross-site" },
+      { "sec-fetch-site": "same-site" },
+    ];
+    for (const headers of attempts) {
+      const response = await handler(new Request("http://localhost:3000/api/desk", {
+        method: "POST", headers: { ...headers, "content-type": "text/plain" }, body: JSON.stringify(body),
+      }));
+      expect(response.status).toBe(403);
+    }
+  });
+
+  it("accepts a same-origin dashboard post past the origin check", async () => {
     const response = await killSwitch(new Request("http://localhost:3000/api/desk/kill-switch", {
       method: "POST", headers: { origin: "http://localhost:3000", "content-type": "application/json" }, body: JSON.stringify({ on: "bad" }),
     }));

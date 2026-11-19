@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { MatchView } from "@/shared";
 import { formatCents, formatChance, yesSharePercent } from "./format";
 import styles from "./desk.module.css";
@@ -44,6 +45,9 @@ export function MarketPanel({ match }: { readonly match: MatchView }) {
           </div>
           <p className={styles.contractLabel}>{match.market.contractLabel}</p>
           <p className={styles.symbol}>{match.market.instrumentSymbol}</p>
+          <p>
+            <Link className={styles.researchLink} href={`/markets/${match.market.instrumentSymbol}`}>Research this market →</Link>
+          </p>
           <div className={styles.oddsRow}>
             <Odds label="Yes" cents={match.market.yesCents} tone="yes" />
             <Odds label="No" cents={match.market.noCents} tone="no" />

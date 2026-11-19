@@ -4,6 +4,7 @@ export interface PostInput {
   readonly id: string;
   readonly text: string;
   readonly author?: string;
+  readonly url?: string;
 }
 
 export interface PostCandidate {

@@ -16,6 +16,10 @@ function originOf(url: string | undefined): string | undefined {
   }
 }
 
+export function isExtensionPage(sender: MessageSender, extensionId: string): boolean {
+  return sender.id === extensionId && originOf(sender.url) === `chrome-extension://${extensionId}`;
+}
+
 export function isTrustedSender(sender: MessageSender, extensionId: string): boolean {
   if (sender.id !== extensionId) return false;
   const ownOrigin = `chrome-extension://${extensionId}`;

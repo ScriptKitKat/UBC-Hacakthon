@@ -1,5 +1,6 @@
 export type MarketsError =
   | { readonly kind: "network" }
+  | { readonly kind: "busy" }
   | { readonly kind: "http"; readonly status: number }
   | { readonly kind: "parse" };
 

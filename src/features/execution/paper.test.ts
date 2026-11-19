@@ -4,7 +4,7 @@ import type { ApprovedTrade, Decision } from "@/features/guardrails";
 import type { UsdcLedger } from "@/features/ledger";
 import { instrumentSymbol, usdCents } from "@/shared";
 import { buildGeminiOrderPayload, executeApproved } from "./index";
-import type { TRADING_MODE } from "./index";
+import type { PaperOrderTicket, TRADING_MODE } from "./index";
 
 const now = new Date("2026-11-18T00:00:00Z");
 const symbol = instrumentSymbol("RATE-DEC");
@@ -58,15 +58,19 @@ describe("paper execution", () => {
     });
   });
 
-  it("awaits the debit before creating the ticket", async () => {
+  const reserve = () => vi.fn<(ticket: PaperOrderTicket) => Promise<boolean>>().mockResolvedValue(true);
+  const beforeBroadcast = () => Promise.resolve(true);
+
+  it("reserves the order durably before debiting and only reports an order once the debit succeeded", async () => {
     const debit = vi.fn<UsdcLedger["debit"]>().mockResolvedValue({ ok: true, value: receipt });
-    const idGen = vi.fn(() => "paper-2");
-    const clock = vi.fn(() => now);
-    const execution = executeApproved(approved, { ledger: { debit }, idGen, now: clock, limitPrice: usdCents(67) });
-    expect(debit).toHaveBeenCalledExactlyOnceWith("trade-2", 200, "trade-2|RATE-DEC|no|200");
-    expect(idGen).not.toHaveBeenCalled();
-    expect(clock).not.toHaveBeenCalled();
-    expect(await execution).toEqual({
+    const reserveOrder = reserve();
+    const execution = executeApproved(approved, { ledger: { debit }, idGen: () => "paper-2", now: () => now, limitPrice: usdCents(67), reserve: reserveOrder, beforeBroadcast });
+    expect(reserveOrder).toHaveBeenCalledOnce();
+    expect(debit).not.toHaveBeenCalled();
+    const record = await execution;
+    expect(reserveOrder).toHaveBeenCalledBefore(debit);
+    expect(debit).toHaveBeenCalledExactlyOnceWith("trade-2", 200, "trade-2|RATE-DEC|no|200", beforeBroadcast);
+    expect(record).toEqual({
       kind: "paper-order",
       intentId: "trade-2",
       instrumentSymbol: symbol,
@@ -80,29 +84,37 @@ describe("paper execution", () => {
         },
       },
     });
+    expect(reserveOrder.mock.calls[0]?.[0]).toBe(record.kind === "paper-order" ? record.ticket : undefined);
   });
 
-  it("records a ledger failure without creating a ticket", async () => {
+  it("never debits when the reservation could not be recorded", async () => {
+    const debit = vi.fn<UsdcLedger["debit"]>();
+    const record = await executeApproved(approved, {
+      ledger: { debit }, idGen: () => "paper-2", now: () => now, limitPrice: usdCents(67), reserve: () => Promise.resolve(false), beforeBroadcast,
+    });
+    expect(record).toMatchObject({ kind: "execution-failed", error: { code: "journal-unavailable" } });
+    expect(debit).not.toHaveBeenCalled();
+  });
+
+  it("records a ledger failure without returning a ticket", async () => {
     const error = { code: "debit-unconfirmed", signature: "signature" } as const;
     const debit = vi.fn<UsdcLedger["debit"]>().mockResolvedValue({ ok: false, error });
-    const idGen = vi.fn();
-    const record = await executeApproved(approved, { ledger: { debit }, idGen, now: () => now, limitPrice: usdCents(67) });
+    const record = await executeApproved(approved, { ledger: { debit }, idGen: () => "paper-2", now: () => now, limitPrice: usdCents(67), reserve: reserve(), beforeBroadcast });
     expect(record).toMatchObject({ kind: "execution-failed", intentId: "trade-2", error });
     expect(record).not.toHaveProperty("ticket");
-    expect(idGen).not.toHaveBeenCalled();
   });
 
   it("refuses a ticket below the quantity minimum before debiting", async () => {
     const debit = vi.fn<UsdcLedger["debit"]>();
     const limits = { quantityIncrementHundredths: 1n, quantityMinimumHundredths: 500n, priceIncrementCents: 1n, priceMinimumCents: 1n };
-    const record = await executeApproved(approved, { ledger: { debit }, idGen: () => "paper-2", now: () => now, limitPrice: usdCents(67), limits });
+    const record = await executeApproved(approved, { ledger: { debit }, idGen: () => "paper-2", now: () => now, limitPrice: usdCents(67), limits, reserve: reserve(), beforeBroadcast });
     expect(record).toMatchObject({ kind: "execution-failed", error: { code: "quantity-below-minimum" } });
     expect(debit).not.toHaveBeenCalled();
   });
 
   it.each([0, 101])("rejects a %d-cent limit price before debiting", async (price) => {
     const debit = vi.fn<UsdcLedger["debit"]>();
-    const record = await executeApproved(approved, { ledger: { debit }, idGen: () => "paper-2", now: () => now, limitPrice: usdCents(price) });
+    const record = await executeApproved(approved, { ledger: { debit }, idGen: () => "paper-2", now: () => now, limitPrice: usdCents(price), reserve: reserve(), beforeBroadcast });
     expect(record).toMatchObject({ kind: "execution-failed", error: { code: "invalid-limit-price" } });
     expect(debit).not.toHaveBeenCalled();
   });

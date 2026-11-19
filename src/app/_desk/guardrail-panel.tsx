@@ -23,6 +23,11 @@ export function GuardrailPanel({ policy, ledger, busy, onKillSwitch }: Guardrail
       <p className={styles.budgetLine}>
         <span className={styles.budgetSpent}>{formatDollars(policy.spentCents)}</span> of {formatDollars(policy.dailyCapCents)} spent today
       </p>
+      {policy.researchSpentCents > 0 ? (
+        <p className={styles.researchLine}>
+          <span className={styles.badgeResearch}>Research</span> {formatDollars(policy.researchSpentCents)} of that bought deep dives
+        </p>
+      ) : null}
       <div
         className={styles.meter}
         role="meter"

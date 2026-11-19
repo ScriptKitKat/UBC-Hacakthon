@@ -4,3 +4,5 @@ export type { PostMatcherOptions } from "./matcher";
 export { DEFAULT_GROK_MODEL, loadGrokSettings } from "./env";
 export type { GrokSettings } from "./env";
 export type { PostCandidate, PostInput, PostMatchedBy, PostMatcher, PostMatchResult } from "./types";
+export { requestGrokJson } from "./chat";
+export type { GrokJsonRequest } from "./chat";

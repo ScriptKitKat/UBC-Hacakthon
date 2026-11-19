@@ -1,0 +1,47 @@
+[
+ {
+  "timestamp": 1794996008,
+  "timestampms": 1794996008205,
+  "tid": 1893456013571898,
+  "price": "0.06",
+  "amount": "156.33",
+  "exchange": "gemini",
+  "type": "buy"
+ },
+ {
+  "timestamp": 1794968850,
+  "timestampms": 1794968850242,
+  "tid": 1893456013568504,
+  "price": "0.05",
+  "amount": "200",
+  "exchange": "gemini",
+  "type": "sell"
+ },
+ {
+  "timestamp": 1794968850,
+  "timestampms": 1794968850242,
+  "tid": 1893456013568503,
+  "price": "0.05",
+  "amount": "478.6",
+  "exchange": "gemini",
+  "type": "sell"
+ },
+ {
+  "timestamp": 1794879206,
+  "timestampms": 1794879206583,
+  "tid": 1893456013533334,
+  "price": "0.08",
+  "amount": "23.37",
+  "exchange": "gemini",
+  "type": "buy"
+ },
+ {
+  "timestamp": 1794857854,
+  "timestampms": 1794857854690,
+  "tid": 1893456013523275,
+  "price": "0.05",
+  "amount": "38",
+  "exchange": "gemini",
+  "type": "sell"
+ }
+]

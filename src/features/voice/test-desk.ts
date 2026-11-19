@@ -17,9 +17,11 @@ function contract(symbol: typeof maintain, label: string): MarketContract {
   return {
     instrumentSymbol: symbol,
     label,
+    description: "",
+    expiryDate: null,
     marketState: "open",
     status: "active",
-    prices: { bestBidCents: 60, bestAskCents: 62, lastTradeCents: 62, buyYesCents: 62, buyNoCents: 40 },
+    prices: { bestBidCents: 60, bestAskCents: 62, lastTradeCents: 62, buyYesCents: 62, buyNoCents: 40, sellYesCents: null, sellNoCents: null },
     limits: { quantityIncrementHundredths: 1n, quantityMinimumHundredths: 1n, priceIncrementCents: 1n, priceMinimumCents: 1n },
   };
 }
@@ -30,6 +32,10 @@ const fedEvent: MarketEvent = {
   category: "Economics",
   status: "active",
   expiryDate: null,
+  description: "",
+  subcategory: null,
+  volume: null,
+  volume24h: null,
   tags: ["fed"],
   contracts: [contract(maintain, "Fed maintains rate"), contract(cut, "Cut 25bps")],
 };
@@ -60,7 +66,7 @@ export function voiceFixture(options: { readonly senders?: readonly string[] } =
     policy: policy.value,
     markets,
     feed: { operatorId: "priscilla", grok: { apiKey: undefined, model: "grok-test" } },
-    ledger: { debit, balance: vi.fn() },
+    ledger: { debit, signPayment: vi.fn(), checkSignature: vi.fn(), balance: vi.fn() },
     ledgerView: { configured: true, cluster: "localnet", authority: "Authority1", mint: "Mint1", recipient: "Recipient1" },
     now: () => new Date("2026-11-17T12:00:00Z"),
     idGen: () => `id-${String(++ids)}`,
