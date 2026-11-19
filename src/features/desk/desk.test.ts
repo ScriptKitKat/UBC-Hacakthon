@@ -10,7 +10,7 @@ import { instrumentSymbol, usdCents } from "@/shared";
 import type { LedgerView } from "@/shared";
 import { createDesk } from "./desk";
 import type { DeskDeps } from "./desk";
-import { openDecisionLog } from "./log-store";
+import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
 import { createMemoryFileSystem } from "@/features/storage";
 
 const symbol = instrumentSymbol("GEMI-FED261211-MAINTAIN");
@@ -413,6 +413,33 @@ describe("desk persistence, positions and research context", () => {
     expect(positions.positions[0]).toMatchObject({ symbol, outcome: "yes", costCents: 200, status: "open" });
   });
 
+  it("adopts legacy paid decisions once and restores spend and positions before trading", async () => {
+    const fs = createMemoryFileSystem();
+    const { desk } = await readyDesk();
+    const filled = await desk.proposeTrade(propose("yes", 200));
+    const logOptions = { fs, path: "/d/log.json" };
+    const log = await openDecisionLog(logOptions);
+    await log.saveLog([
+      filled,
+      { ...filled, entryId: "duplicate-intent", signature: "different-signature" },
+      { ...filled, entryId: "duplicate-signature", intentId: "different-intent" },
+      { ...filled, kind: "execution-failed", entryId: "failed", intentId: "failed", signature: "failed-signature" },
+    ]);
+    const { initialLog } = await openDecisionLog(logOptions);
+    const options = { fs, path: "/d/journal.json", nowIso: () => filled.at };
+
+    const migrated = await openMigratedSpendJournal(options, initialLog);
+    const writesAfterMigration = fs.writes.length;
+    const reopened = await openMigratedSpendJournal(options, initialLog);
+    expect(fs.writes).toHaveLength(writesAfterMigration);
+    expect(reopened.entries()).toEqual(migrated.entries());
+    expect(reopened.entries()).toMatchObject([{ operationId: filled.intentId, status: "settled", signature: filled.signature, resolvedAt: filled.at }]);
+
+    const { desk: restarted } = setup({ extra: { initialLog, journal: reopened } });
+    expect((await restarted.getSnapshot()).policy).toMatchObject({ spentCents: 200, remainingCents: 1800 });
+    expect((await restarted.getPositions()).positions).toHaveLength(1);
+  });
+
   it("refuses to start empty when the decision log is corrupt", async () => {
     const fs = createMemoryFileSystem({ "/d/log.json": "}{" });
     await expect(openDecisionLog({ fs, path: "/d/log.json" })).rejects.toMatchObject({ name: "StoreUnavailableError" });
@@ -447,13 +474,13 @@ describe("desk persistence, positions and research context", () => {
     const journal = await openSpendJournal({ fs, path: "/d/journal.json", nowIso: () => "2026-11-17T12:00:00.000Z" });
     let onDiskAtBroadcast: unknown;
     const debit = vi.fn<UsdcLedger["debit"]>(async (_intent, _notional, _memo, beforeBroadcast) => {
-      await beforeBroadcast({ signature: "sig-9", blockhash: "hash-9", explorerUrl: "https://explorer.test/tx/sig-9" });
+      await beforeBroadcast({ signature: "sig-9", blockhash: "hash-9", lastValidBlockHeight: 123, explorerUrl: "https://explorer.test/tx/sig-9" });
       onDiskAtBroadcast = JSON.parse(fs.files.get("/d/journal.json") ?? "{}");
       return { ok: true, value: receipt("sig-9") };
     });
     const { desk } = await readyDesk({ ledger: { debit, signPayment: vi.fn(), checkSignature: vi.fn(), balance: vi.fn() }, extra: { journal } });
     await desk.proposeTrade(propose("yes", 200));
-    expect(onDiskAtBroadcast).toMatchObject({ entries: [{ kind: "trade", status: "reserved", signature: "sig-9", blockhash: "hash-9", ticket: { quantity: expect.any(String) as unknown } }] });
+    expect(onDiskAtBroadcast).toMatchObject({ entries: [{ kind: "trade", status: "reserved", signature: "sig-9", blockhash: "hash-9", lastValidBlockHeight: 123, ticket: { quantity: expect.any(String) as unknown } }] });
     expect(journal.entries()).toMatchObject([{ status: "settled", signature: "sig-9" }]);
   });
 
@@ -473,7 +500,7 @@ describe("desk persistence, positions and research context", () => {
     const fs = createMemoryFileSystem();
     const journal = await openSpendJournal({ fs, path: "/d/journal.json", nowIso: () => "2026-11-17T12:00:00.000Z" });
     const debit = vi.fn<UsdcLedger["debit"]>(async (_intent, _notional, _memo, beforeBroadcast) => {
-      await beforeBroadcast({ signature: "sig-u", blockhash: "hash-u", explorerUrl: "https://explorer.test/tx/sig-u" });
+      await beforeBroadcast({ signature: "sig-u", blockhash: "hash-u", lastValidBlockHeight: 123, explorerUrl: "https://explorer.test/tx/sig-u" });
       return { ok: false, error: { code: "debit-unconfirmed", signature: "sig-u" } };
     });
     const { desk } = await readyDesk({ ledger: { debit, signPayment: vi.fn(), checkSignature: vi.fn(), balance: vi.fn() }, extra: { journal } });
@@ -486,7 +513,7 @@ describe("desk persistence, positions and research context", () => {
     expect((await restarted.getPositions()).positions).toEqual([]);
     checkSignature.mockResolvedValue("landed");
     expect(await restarted.reconcile()).toEqual({ settled: 1, failed: 0, stillReserved: 0 });
-    expect(checkSignature).toHaveBeenCalledWith({ signature: "sig-u", blockhash: "hash-u", explorerUrl: "https://explorer.test/tx/sig-u" });
+    expect(checkSignature).toHaveBeenCalledWith({ signature: "sig-u", lastValidBlockHeight: 123 });
     const view = await restarted.getPositions();
     expect(view.positions).toHaveLength(1);
     expect(view.positions[0]).toMatchObject({ symbol, outcome: "yes", costCents: 200 });
@@ -507,7 +534,7 @@ describe("desk persistence, positions and research context", () => {
     const fs = createMemoryFileSystem();
     const journal = await openSpendJournal({ fs, path: "/d/journal.json", nowIso: () => "2026-11-17T23:59:00.000Z" });
     await journal.begin({ operationId: "older", kind: "research", notionalCents: 5, symbol, outcome: null, senderId: "research-agent", source: "research" });
-    await journal.attachPayment("older", { signature: "s", blockhash: "h", explorerUrl: "e" });
+    await journal.attachPayment("older", { signature: "s", blockhash: "h", lastValidBlockHeight: 123, explorerUrl: "e" });
     const debit = vi.fn<UsdcLedger["debit"]>(() => Promise.resolve({ ok: false, error: { code: "debit-rejected" } }));
     const { desk } = await readyDesk({ ledger: { debit, signPayment: vi.fn(), checkSignature: vi.fn(), balance: vi.fn() }, extra: { journal } });
     await desk.proposeTrade(propose("yes", 200));

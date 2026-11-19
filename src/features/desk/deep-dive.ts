@@ -194,7 +194,7 @@ export async function buyDeepDive(deps: DeepDiveDeps, symbol: string): Promise<D
 
   const signed = await ledger.signPayment({ recipient: requirement.payTo, notional, memo: requirement.extra.memo });
   if (!signed.ok) return stop("released", "I couldn't sign the payment, so nothing was spent.", signed.error.code);
-  const recorded = await account.signed(decision, { signature: signed.value.signature, blockhash: signed.value.blockhash, explorerUrl: signed.value.explorerUrl });
+  const recorded = await account.signed(decision, { signature: signed.value.signature, blockhash: signed.value.blockhash, lastValidBlockHeight: signed.value.lastValidBlockHeight, explorerUrl: signed.value.explorerUrl });
   if (!recorded) return stop("released", "I couldn't record the signed payment safely, so I did not send it.", "journal-unavailable");
   trace.push({ step: "signed", detail: "Signed a USDC transfer with the desk's own wallet.", signature: signed.value.signature });
 

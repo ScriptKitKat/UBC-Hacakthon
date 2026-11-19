@@ -49,17 +49,23 @@ function fakeRpc(hash: string, mint: PublicKey = config.mint) {
     blockhash: Keypair.generate().publicKey.toBase58(), lastValidBlockHeight: 123,
   });
   const send = vi.spyOn(Connection.prototype, "sendRawTransaction").mockResolvedValue("signature");
-  vi.spyOn(Connection.prototype, "confirmTransaction").mockResolvedValue({ context: { slot: 1 }, value: { err: null } });
+  const confirm = vi.spyOn(Connection.prototype, "confirmTransaction").mockResolvedValue({ context: { slot: 1 }, value: { err: null } });
   const owners = new Map<string, PublicKey>([[getAssociatedTokenAddressSync(mint, config.recipient).toBase58(), config.recipient]]);
   const account = vi.spyOn(Connection.prototype, "getAccountInfo").mockImplementation((address) => {
     const owner = owners.get(address.toBase58());
     return Promise.resolve(owner ? tokenAccountInfo({ mint, owner }) : null);
   });
-  return { genesis, block, send, account, owners };
+  return { genesis, block, send, confirm, account, owners };
 }
 
-beforeEach(() => vi.mocked(loadKeypair).mockResolvedValue(authority));
-afterEach(() => vi.restoreAllMocks());
+beforeEach(() => {
+  vi.mocked(loadKeypair).mockResolvedValue(authority);
+  vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("Unexpected RPC request"))));
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 it.each([devnet, localnet])("rejects mainnet behind a $cluster endpoint before preparing a transaction", async (network) => {
   const rpc = fakeRpc(mainnetGenesis);
@@ -220,7 +226,7 @@ it("hands the signature and blockhash to the caller before anything is broadcast
   const seen = vi.fn<BeforeBroadcast>(allowBroadcast);
   expect(await ledger.debit("trade", usdCents(200), "trade|SYMBOL|yes|200", seen)).toMatchObject({ ok: true });
   expect(seen).toHaveBeenCalledOnce();
-  expect(seen.mock.calls[0]?.[0]).toMatchObject({ signature: expect.any(String) as unknown, blockhash: expect.any(String) as unknown, explorerUrl: expect.stringContaining("explorer.solana.com") as unknown });
+  expect(seen.mock.calls[0]?.[0]).toMatchObject({ signature: expect.any(String) as unknown, blockhash: expect.any(String) as unknown, lastValidBlockHeight: 123, explorerUrl: expect.stringContaining("explorer.solana.com") as unknown });
   expect(seen).toHaveBeenCalledBefore(rpc.send);
 });
 
@@ -239,6 +245,18 @@ it("returns the blockhash it signed with so an unresolved payment can be checked
   const signed = await ledger.signPayment({ recipient: payee.toBase58(), notional: usdCents(5), memo: "m" });
   if (!signed.ok) throw new Error("expected a signed payment");
   expect(signed.value.blockhash).toBe(Transaction.from(Buffer.from(signed.value.transaction, "base64")).recentBlockhash);
+});
+
+it("keeps a debit reserved when confirmation returns an unfinalized error", async () => {
+  const rpc = fakeRpc(devnetGenesis);
+  rpc.confirm.mockResolvedValue({
+    context: { slot: 1 },
+    value: { err: { InstructionError: [0, "Custom"] } },
+  });
+  const ledger = await createSolanaLedger(config);
+  const record = vi.fn<BeforeBroadcast>(() => Promise.resolve(true));
+  const debit = await ledger.debit("trade", usdCents(200), "trade|SYMBOL|yes|200", record);
+  expect(debit).toEqual({ ok: false, error: { code: "debit-unconfirmed", signature: record.mock.calls[0]?.[0].signature } });
 });
 
 const destination = Keypair.generate().publicKey;
@@ -274,22 +292,28 @@ it.each([devnet, localnet])("refuses to debit or sign when the payee's token acc
 it.each([
   ["landed", { value: [{ slot: 1, confirmations: 1, err: null, confirmationStatus: "confirmed" }], context: { slot: 1 } }, true, "landed"],
   ["landed", { value: [{ slot: 1, confirmations: null, err: null, confirmationStatus: "finalized" }], context: { slot: 1 } }, true, "landed"],
-  ["failed on chain", { value: [{ slot: 1, confirmations: 1, err: { InstructionError: [0, "Custom"] }, confirmationStatus: "confirmed" }], context: { slot: 1 } }, true, "failed"],
+  ["failed on chain", { value: [{ slot: 1, confirmations: 1, err: { InstructionError: [0, "Custom"] }, confirmationStatus: "finalized" }], context: { slot: 1 } }, true, "failed"],
   ["pending while the blockhash is still valid", { value: [null], context: { slot: 1 } }, true, "pending"],
   ["failed once the signed blockhash expired without landing", { value: [null], context: { slot: 1 } }, false, "failed"],
   ["pending when only processed", { value: [{ slot: 1, confirmations: 0, err: null, confirmationStatus: "processed" }], context: { slot: 1 } }, true, "pending"],
 ] as const)("checks a signature: %s", async (_name, statuses, blockhashValid, expected) => {
   fakeRpc(devnetGenesis);
   vi.spyOn(Connection.prototype, "getSignatureStatuses").mockResolvedValue(statuses as never);
-  const validity = vi.spyOn(Connection.prototype, "isBlockhashValid").mockResolvedValue({ context: { slot: 1 }, value: blockhashValid });
+  const height = vi.fn<typeof fetch>((_url, init) => {
+    if (typeof init?.body !== "string") throw new Error("Expected a JSON-RPC request body");
+    const request = JSON.parse(init.body) as { id: string };
+    expect(request).toMatchObject({ method: "getBlockHeight", params: [{ commitment: "finalized" }] });
+    return Promise.resolve(Response.json({ jsonrpc: "2.0", id: request.id, result: blockhashValid ? 123 : 124 }));
+  });
+  vi.stubGlobal("fetch", height);
   const ledger = await createSolanaLedger(config);
-  expect(await ledger.checkSignature({ signature: "sig", blockhash: "hash" })).toBe(expected);
-  expect(validity).toHaveBeenCalledWith("hash", { commitment: "finalized" });
+  expect(await ledger.checkSignature({ signature: "sig", lastValidBlockHeight: 123 })).toBe(expected);
+  expect(height).toHaveBeenCalledOnce();
 });
 
 it("treats an unreachable RPC as still pending rather than guessing", async () => {
   fakeRpc(devnetGenesis);
-  vi.spyOn(Connection.prototype, "isBlockhashValid").mockRejectedValue(new Error("down"));
+  vi.spyOn(Connection.prototype, "getSignatureStatuses").mockRejectedValue(new Error("down"));
   const ledger = await createSolanaLedger(config);
-  expect(await ledger.checkSignature({ signature: "sig", blockhash: "hash" })).toBe("pending");
+  expect(await ledger.checkSignature({ signature: "sig", lastValidBlockHeight: 123 })).toBe("pending");
 });

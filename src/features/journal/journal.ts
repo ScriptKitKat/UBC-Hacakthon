@@ -26,6 +26,7 @@ const entrySchema = z.object({
   resolvedAt: z.exactOptional(z.string()),
   signature: z.exactOptional(z.string()),
   blockhash: z.exactOptional(z.string()),
+  lastValidBlockHeight: z.exactOptional(z.number().int()),
   explorerUrl: z.exactOptional(z.string()),
   ticket: z.exactOptional(ticketSchema),
 });
@@ -34,7 +35,7 @@ const fileSchema = z.object({ version: z.literal(1), entries: z.array(entrySchem
 
 export type SpendEntry = z.output<typeof entrySchema>;
 export type SpendOpening = Pick<SpendEntry, "operationId" | "kind" | "notionalCents" | "symbol" | "outcome" | "senderId" | "source" | "ticket">;
-export type SignedPaymentRef = Required<Pick<SpendEntry, "signature" | "blockhash" | "explorerUrl">>;
+export type SignedPaymentRef = Required<Pick<SpendEntry, "signature" | "blockhash" | "lastValidBlockHeight" | "explorerUrl">>;
 
 export type JournalWriteError = "journal-unavailable" | "duplicate-operation" | "unknown-operation";
 
@@ -46,6 +47,7 @@ export interface SpendJournal {
   readonly settle: (operationId: string) => Promise<JournalWrite>;
   readonly fail: (operationId: string) => Promise<JournalWrite>;
   readonly entries: () => readonly SpendEntry[];
+  readonly adoptSettled: (entries: readonly SpendEntry[]) => Promise<JournalWrite>;
 }
 
 export interface OpenJournalOptions {
@@ -91,6 +93,21 @@ function createJournal(initial: readonly SpendEntry[], store: Pick<JsonStore<Jou
     settle: (operationId) => update(operationId, { status: "settled", resolvedAt: nowIso() }),
     fail: (operationId) => update(operationId, { status: "failed", resolvedAt: nowIso() }),
     entries: () => [...byId.values()],
+    async adoptSettled(adopted) {
+      const knownSignatures = new Set([...byId.values()].flatMap(({ signature }) => (signature === undefined ? [] : [signature])));
+      const addedIds: string[] = [];
+      for (const entry of adopted) {
+        const { operationId, signature } = entry;
+        if (byId.has(operationId) || signature === undefined || knownSignatures.has(signature)) continue;
+        byId.set(operationId, { ...entry, status: "settled" });
+        knownSignatures.add(signature);
+        addedIds.push(operationId);
+      }
+      if (addedIds.length === 0) return OK;
+      const written = await persist();
+      if (!written.ok) for (const operationId of addedIds) byId.delete(operationId);
+      return written;
+    },
   };
 }
 
@@ -112,18 +129,21 @@ export interface Reconciliation {
   readonly stillReserved: number;
 }
 
+export interface PaymentToCheck {
+  readonly signature: string;
+  readonly lastValidBlockHeight: number | undefined;
+}
+
 export async function reconcileJournal(
   journal: SpendJournal,
-  check: (payment: SignedPaymentRef) => Promise<SignatureOutcome>,
+  check: (payment: PaymentToCheck) => Promise<SignatureOutcome>,
 ): Promise<Reconciliation> {
   let settled = 0;
   let failed = 0;
   let stillReserved = 0;
   for (const entry of journal.entries().filter(({ status }) => status === "reserved")) {
-    const { signature, blockhash, explorerUrl } = entry;
-    const outcomeOnChain: SignatureOutcome = signature === undefined || blockhash === undefined || explorerUrl === undefined
-      ? "failed"
-      : await check({ signature, blockhash, explorerUrl });
+    const { signature, lastValidBlockHeight } = entry;
+    const outcomeOnChain: SignatureOutcome = signature === undefined ? "failed" : await check({ signature, lastValidBlockHeight });
     if (outcomeOnChain === "landed") {
       await journal.settle(entry.operationId);
       settled += 1;

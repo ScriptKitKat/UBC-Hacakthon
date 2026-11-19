@@ -5,7 +5,6 @@ import { requestGrokJson } from "@/features/grok";
 import { createSampler, openHistoryStore } from "@/features/history";
 import { createSolanaLedger, createUnconfiguredLedger } from "@/features/ledger";
 import type { UsdcLedger } from "@/features/ledger";
-import { openSpendJournal } from "@/features/journal";
 import { createGeminiMarketsClient } from "@/features/markets";
 import { createResearch } from "@/features/research";
 import type { JsonCompleter, Research } from "@/features/research";
@@ -17,7 +16,7 @@ import { createDeepDiveResource, createDeferredDeepDive, deepDiveUrl } from "./d
 import type { DeepDiveResource } from "./deep-dive-resource";
 import { createDesk } from "./desk";
 import type { Desk } from "./desk";
-import { openDecisionLog } from "./log-store";
+import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
 import { openPurchaseStore } from "./purchase-store";
 
 const GEMINI_MIN_REQUEST_INTERVAL_MS = 500;
@@ -72,12 +71,20 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   const markets = createGeminiMarketsClient({ baseUrl: config.value.geminiBaseUrl, fetch, minRequestIntervalMs: GEMINI_MIN_REQUEST_INTERVAL_MS });
   const dataDirectory = resolveDataDirectory(env, process.cwd());
   const history = await openHistoryStore({ fs: nodeFileSystem, path: join(dataDirectory, "price-history.json") });
-  const stores = await openOrExplain(async () => ({
-    decisionLog: await openDecisionLog({ fs: nodeFileSystem, path: join(dataDirectory, "decision-log.json") }),
-    purchaseStore: await openPurchaseStore({ fs: nodeFileSystem, path: join(dataDirectory, "research-purchases.json") }),
-    journal: await openSpendJournal({ fs: nodeFileSystem, path: join(dataDirectory, "spend-journal.json"), nowIso: () => new Date().toISOString() }),
-    usedPayments: await openUsedPayments({ fs: nodeFileSystem, path: join(dataDirectory, "x402-payments.json") }),
-  }));
+  const stores = await openOrExplain(async () => {
+    const decisionLog = await openDecisionLog({ fs: nodeFileSystem, path: join(dataDirectory, "decision-log.json") });
+    const journal = await openMigratedSpendJournal({
+      fs: nodeFileSystem,
+      path: join(dataDirectory, "spend-journal.json"),
+      nowIso: () => new Date().toISOString(),
+    }, decisionLog.initialLog);
+    return {
+      decisionLog,
+      journal,
+      purchaseStore: await openPurchaseStore({ fs: nodeFileSystem, path: join(dataDirectory, "research-purchases.json") }),
+      usedPayments: await openUsedPayments({ fs: nodeFileSystem, path: join(dataDirectory, "x402-payments.json") }),
+    };
+  });
   if (!stores.ok) return { ok: false, issues: [stores.issue] };
   const { decisionLog, purchaseStore, journal, usedPayments } = stores.value;
   const publicOrigin = config.value.research.publicOrigin;

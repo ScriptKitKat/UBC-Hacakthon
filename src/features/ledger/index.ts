@@ -50,6 +50,7 @@ export interface PaymentRequest {
 export interface SignedPayment {
   readonly signature: string;
   readonly blockhash: string;
+  readonly lastValidBlockHeight: number;
   readonly transaction: string;
   readonly payer: string;
   readonly explorerUrl: string;
@@ -58,6 +59,7 @@ export interface SignedPayment {
 export interface PreparedPayment {
   readonly signature: string;
   readonly blockhash: string;
+  readonly lastValidBlockHeight: number;
   readonly explorerUrl: string;
 }
 
@@ -65,10 +67,34 @@ export type BeforeBroadcast = (payment: PreparedPayment) => Promise<boolean>;
 
 export type SignatureOutcome = "landed" | "failed" | "pending";
 
+export interface PaymentToCheck {
+  readonly signature: string;
+  readonly lastValidBlockHeight: number | undefined;
+}
+
+export interface ObservedSignatureStatus {
+  readonly err: unknown;
+  readonly confirmationStatus?: string | undefined;
+}
+
+export function classifySignature(observation: {
+  readonly status: ObservedSignatureStatus | null | undefined;
+  readonly finalizedBlockHeight: number | undefined;
+  readonly lastValidBlockHeight: number | undefined;
+}): SignatureOutcome {
+  const { status, finalizedBlockHeight, lastValidBlockHeight } = observation;
+  if (status) {
+    if (status.err !== null) return status.confirmationStatus === "finalized" ? "failed" : "pending";
+    return status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized" ? "landed" : "pending";
+  }
+  return status === null && lastValidBlockHeight !== undefined && finalizedBlockHeight !== undefined
+    && finalizedBlockHeight > lastValidBlockHeight ? "failed" : "pending";
+}
+
 export interface UsdcLedger {
   debit(intentId: string, notional: UsdCents, memo: string, beforeBroadcast: BeforeBroadcast): Promise<Result<DebitReceipt, LedgerError>>;
   signPayment(payment: PaymentRequest): Promise<Result<SignedPayment, LedgerError>>;
-  checkSignature(payment: Pick<PreparedPayment, "signature" | "blockhash">): Promise<SignatureOutcome>;
+  checkSignature(payment: PaymentToCheck): Promise<SignatureOutcome>;
   balance(): Promise<Result<{ baseUnits: bigint }, LedgerError>>;
 }
 
@@ -223,22 +249,20 @@ export async function createSolanaLedger(config: LedgerConfig): Promise<Configur
         value: {
           signature: prepared.value.signature,
           blockhash: prepared.value.blockhash,
+          lastValidBlockHeight: prepared.value.lastValidBlockHeight,
           transaction: prepared.value.bytes.toString("base64"),
           payer: authority.publicKey.toBase58(),
           explorerUrl: explorerUrl(prepared.value.signature, network),
         },
       };
     },
-    async checkSignature({ signature, blockhash }) {
+    async checkSignature({ signature, lastValidBlockHeight }) {
       try {
-        const validity = await connection.isBlockhashValid(blockhash, { commitment: "finalized" });
+        const finalizedBlockHeight = lastValidBlockHeight === undefined
+          ? undefined
+          : await connection.getBlockHeight("finalized").catch(() => undefined);
         const { value } = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
-        const status = value[0];
-        if (status) {
-          if (status.err !== null) return "failed";
-          return status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized" ? "landed" : "pending";
-        }
-        return validity.value ? "pending" : "failed";
+        return classifySignature({ status: value[0], finalizedBlockHeight, lastValidBlockHeight });
       } catch {
         return "pending";
       }
@@ -256,13 +280,14 @@ export async function createSolanaLedger(config: LedgerConfig): Promise<Configur
       const recorded = await beforeBroadcast({
         signature: confirmation.signature,
         blockhash: confirmation.blockhash,
+        lastValidBlockHeight: confirmation.lastValidBlockHeight,
         explorerUrl: explorerUrl(confirmation.signature, network),
       }).catch(() => false);
       if (!recorded) return { ok: false, error: { code: "pre-broadcast-failed" } };
       try {
         await connection.sendRawTransaction(bytes, { preflightCommitment: commitment });
         const { value } = await connection.confirmTransaction(confirmation, commitment);
-        if (value.err) return { ok: false, error: { code: "debit-rejected" } };
+        if (value.err !== null) return { ok: false, error: { code: "debit-unconfirmed", signature: confirmation.signature } };
         return {
           ok: true,
           value: { signature: confirmation.signature, explorerUrl: explorerUrl(confirmation.signature, network) },

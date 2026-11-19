@@ -58,7 +58,7 @@ function fixture(options: { noResearch?: boolean; dailyCap?: number; killSwitch?
   const dailyCap = options.dailyCap ?? 2000;
   const signature = script.signature ?? "sig-1";
   const signPayment = vi.fn<UsdcLedger["signPayment"]>(() =>
-    Promise.resolve({ ok: true, value: { signature, blockhash: "hash-1", transaction: "dHg=", payer: AUTHORITY, explorerUrl: `https://explorer.test/tx/${signature}` } }),
+    Promise.resolve({ ok: true, value: { signature, blockhash: "hash-1", lastValidBlockHeight: 123, transaction: "dHg=", payer: AUTHORITY, explorerUrl: `https://explorer.test/tx/${signature}` } }),
   );
   const checkSignature = vi.fn<UsdcLedger["checkSignature"]>(() => Promise.resolve("pending"));
   const handle = vi.fn<DeepDiveResource["handle"]>((request, requestedSymbol) => {
@@ -256,7 +256,7 @@ describe("buyDeepDive", () => {
       });
       await desk.buyDeepDive(SYMBOL);
       expect(seenBeforePayment).toMatchObject({
-        entries: [{ kind: "research", status: "reserved", notionalCents: 5, symbol: SYMBOL, signature: "sig-1", blockhash: "hash-1" }],
+        entries: [{ kind: "research", status: "reserved", notionalCents: 5, symbol: SYMBOL, signature: "sig-1", blockhash: "hash-1", lastValidBlockHeight: 123 }],
       });
       expect(journal.entries()).toMatchObject([{ status: "settled", signature: "sig-1" }]);
     });
@@ -302,7 +302,7 @@ describe("buyDeepDive", () => {
       const landed = fixture({ dailyCap: 20, extra: { journal: await journalOn(fs, () => START) } });
       landed.checkSignature.mockResolvedValue("landed");
       expect(await landed.desk.reconcile()).toEqual({ settled: 1, failed: 0, stillReserved: 0 });
-      expect(landed.checkSignature).toHaveBeenCalledWith({ signature: "sig-held", blockhash: "hash-1", explorerUrl: "https://explorer.test/tx/sig-held" });
+      expect(landed.checkSignature).toHaveBeenCalledWith({ signature: "sig-held", lastValidBlockHeight: 123 });
       expect((await landed.desk.getSnapshot()).policy).toMatchObject({ spentCents: 5, remainingCents: 15 });
       expect((await landed.desk.getPositions()).researchSpend.purchases).toMatchObject([{ symbol: "GEMI-B-TWO", signature: "sig-held" }]);
     });

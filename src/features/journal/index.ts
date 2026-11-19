@@ -2,6 +2,7 @@ export { createMemoryJournal, openSpendJournal, reconcileJournal } from "./journ
 export type {
   JournalWrite,
   JournalWriteError,
+  PaymentToCheck,
   Reconciliation,
   SignatureOutcome,
   SignedPaymentRef,

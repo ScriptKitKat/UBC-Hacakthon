@@ -11,12 +11,13 @@ const recordSchema = z.object({
   atMs: z.number(),
   symbol: z.string().default(""),
   payer: z.string().default(""),
+  lastValidBlockHeight: z.number().int().optional(),
   status: z.enum(["claimed", "settled"]).default("claimed"),
 });
 const fileSchema = z.object({ version: z.literal(1), records: z.array(recordSchema) });
 
 export type UsedPayment = z.output<typeof recordSchema>;
-export type NewUsedPayment = Pick<UsedPayment, "nonce" | "signature" | "atMs" | "symbol" | "payer">;
+export type NewUsedPayment = Pick<UsedPayment, "nonce" | "signature" | "atMs" | "symbol" | "payer"> & { readonly lastValidBlockHeight: number };
 
 export type ReuseError = Extract<PaymentErrorCode, "nonce_reused" | "signature_reused" | "store_unavailable">;
 

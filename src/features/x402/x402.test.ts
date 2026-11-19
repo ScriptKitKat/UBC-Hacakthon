@@ -96,12 +96,13 @@ function fixture(options: { simulateError?: unknown; landing?: Landing; paid?: b
     simulateTransaction: vi.fn(() => Promise.resolve({ context: { slot: 1 }, value: { err: options.simulateError ?? null, logs: [], accounts: null, unitsConsumed: 0, returnData: null } })),
     sendRawTransaction: vi.fn((raw: Buffer) => Promise.resolve(paymentSignature(raw.toString("base64")))),
     getAccountInfo: vi.fn(() => Promise.resolve(tokenAccount(options.destinationOwner ?? payTo))),
-    isBlockhashValid: vi.fn(() => Promise.resolve({ context: { slot: 1 }, value: options.landing !== "expired" })),
+    getLatestBlockhash: vi.fn(() => Promise.resolve({ blockhash, lastValidBlockHeight: 150 })),
+    getBlockHeight: vi.fn(() => Promise.resolve(options.landing === "expired" ? 151 : 150)),
     getSignatureStatuses: vi.fn(() => {
       const landing = options.landing ?? "landed";
       const status = landing === "landed"
         ? { slot: 2, confirmations: 1, err: null, confirmationStatus: "confirmed" }
-        : landing === "failed" ? { slot: 2, confirmations: 1, err: { InstructionError: [1, "Custom"] }, confirmationStatus: "confirmed" } : null;
+        : landing === "failed" ? { slot: 2, confirmations: 1, err: { InstructionError: [1, "Custom"] }, confirmationStatus: "finalized" } : null;
       return Promise.resolve({ context: { slot: 2 }, value: [status] });
     }),
     getParsedTransaction: vi.fn(() =>
@@ -170,7 +171,8 @@ describe("verify and settle", () => {
     expect(result).toEqual({ ok: true, value: { signature: paymentSignature(transaction), payer: payer.publicKey.toBase58(), network: "solana-localnet" } });
     expect(f.connection.simulateTransaction).toHaveBeenCalledOnce();
     expect(f.connection.sendRawTransaction).toHaveBeenCalledOnce();
-    expect(f.connection.isBlockhashValid).toHaveBeenCalledWith(blockhash, { commitment: "confirmed" });
+    expect(f.connection.getLatestBlockhash).toHaveBeenCalledWith({ commitment: "confirmed", minContextSlot: 1 });
+    expect(f.connection.getBlockHeight).toHaveBeenCalledWith("finalized");
     expect(f.persist).toHaveBeenCalledTimes(2);
   });
 
@@ -297,7 +299,7 @@ describe("verify and settle", () => {
   it("reports settlement_failed only once the signed blockhash has actually expired without the payment landing", async () => {
     const f = fixture({ landing: "expired" });
     expect(await pay(f, buildPayment(f.nonce()))).toEqual({ ok: false, error: "settlement_failed" });
-    expect(f.connection.isBlockhashValid).toHaveBeenCalledWith(blockhash, expect.anything());
+    expect(f.connection.getBlockHeight).toHaveBeenCalledWith("finalized");
   });
 
   it("reports settlement_unconfirmed, not failure, while the payment may still land", async () => {
@@ -389,6 +391,13 @@ describe("recovering a paid brief without paying again", () => {
     expect(await f.server.recover(symbol, signature)).toEqual({ ok: false, error: "settlement_unconfirmed" });
   });
 
+  it("reports a claimed payment as failed after the finalized height passes its stored limit", async () => {
+    const f = fixture({ landing: "pending" });
+    const { signature } = await paid(f);
+    f.connection.getBlockHeight.mockResolvedValue(151);
+    expect(await f.server.recover(symbol, signature)).toEqual({ ok: false, error: "settlement_failed" });
+  });
+
   it("knows nothing about signatures it never claimed or ones claimed for another symbol", async () => {
     const f = fixture();
     const { signature } = await paid(f);
@@ -398,7 +407,7 @@ describe("recovering a paid brief without paying again", () => {
 });
 
 describe("used payment store", () => {
-  const claim = (nonce: string, signature: string, atMs = startMs) => ({ nonce, signature, atMs, symbol, payer: "payer" });
+  const claim = (nonce: string, signature: string, atMs = startMs) => ({ nonce, signature, atMs, symbol, payer: "payer", lastValidBlockHeight: 150 });
 
   it("flags a signature that was already used under any nonce", () => {
     const store = createUsedPayments([{ ...claim("old", "sig"), status: "claimed" }], () => Promise.resolve());
@@ -412,6 +421,7 @@ describe("used payment store", () => {
     const first = await openUsedPayments({ fs, path: "used.json" });
     expect(await first.claim(claim("nonce-1", "sig-1"))).toBeUndefined();
     const restarted = await openUsedPayments({ fs, path: "used.json" });
+    expect(restarted.find("sig-1")?.lastValidBlockHeight).toBe(150);
     expect(restarted.reuse("nonce-1", "other")).toBe("nonce_reused");
     expect(await restarted.claim(claim("nonce-2", "sig-1"))).toBe("signature_reused");
   });

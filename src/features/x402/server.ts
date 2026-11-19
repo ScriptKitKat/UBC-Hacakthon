@@ -1,7 +1,8 @@
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { Transaction, VersionedTransaction } from "@solana/web3.js";
+import { VersionedTransaction } from "@solana/web3.js";
 import type { Connection, PublicKey } from "@solana/web3.js";
-import { inspectTokenDestination, isExpectedGenesis } from "@/features/ledger";
+import { classifySignature, inspectTokenDestination, isExpectedGenesis } from "@/features/ledger";
+import type { SignatureOutcome } from "@/features/ledger";
 import { inspectPayment } from "./inspect";
 import type { InspectedPayment } from "./inspect";
 import { paymentMemo, parsePaymentMemo } from "./nonce";
@@ -11,6 +12,7 @@ import type { PaymentErrorCode, PaymentRequired, X402Network } from "./schema";
 import type { UsedPayments } from "./store";
 
 const CONFIRM_COMMITMENT = "confirmed";
+const FINALIZED_COMMITMENT = "finalized";
 const LANDING_POLL_ATTEMPTS = 80;
 const LANDING_POLL_MS = 500;
 const PARSED_TRANSACTION_ATTEMPTS = 5;
@@ -18,7 +20,7 @@ const PARSED_TRANSACTION_RETRY_MS = 300;
 
 export type SettlementConnection = Pick<
   Connection,
-  "getAccountInfo" | "getGenesisHash" | "getParsedTransaction" | "getSignatureStatuses" | "isBlockhashValid" | "sendRawTransaction" | "simulateTransaction"
+  "getAccountInfo" | "getGenesisHash" | "getBlockHeight" | "getLatestBlockhash" | "getParsedTransaction" | "getSignatureStatuses" | "sendRawTransaction" | "simulateTransaction"
 >;
 
 export interface X402ServerConfig {
@@ -46,6 +48,7 @@ export interface VerifiedPayment {
   readonly symbol: string;
   readonly nonce: string;
   readonly payment: InspectedPayment;
+  readonly simulationSlot: number;
 }
 
 export interface Settlement {
@@ -60,8 +63,6 @@ export interface X402Server {
   readonly settle: (verified: VerifiedPayment) => Promise<Result<Settlement>>;
   readonly recover: (symbol: string, signature: string) => Promise<Result<Settlement>>;
 }
-
-type Landing = "landed" | "failed" | "expired" | "unconfirmed";
 
 const fail = (error: PaymentErrorCode): { readonly ok: false; readonly error: PaymentErrorCode } => ({ ok: false, error });
 
@@ -101,20 +102,21 @@ export function createX402Server(deps: X402ServerDeps): X402Server {
     }
   }
 
-  async function awaitLanding(signature: string, blockhash: string): Promise<Landing> {
+  async function checkLanding(signature: string, lastValidBlockHeight: number | undefined): Promise<SignatureOutcome> {
+    const finalizedBlockHeight = lastValidBlockHeight === undefined
+      ? undefined
+      : await connection.getBlockHeight(FINALIZED_COMMITMENT).catch(() => undefined);
+    const { value } = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
+    return classifySignature({ status: value[0], finalizedBlockHeight, lastValidBlockHeight });
+  }
+
+  async function awaitLanding(signature: string, lastValidBlockHeight: number): Promise<SignatureOutcome> {
     for (let attempt = 0; attempt < LANDING_POLL_ATTEMPTS; attempt += 1) {
-      const validity = await connection.isBlockhashValid(blockhash, { commitment: CONFIRM_COMMITMENT });
-      const { value } = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
-      const status = value[0];
-      if (status) {
-        if (status.err !== null) return "failed";
-        if (status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized") return "landed";
-      } else if (!validity.value) {
-        return "expired";
-      }
+      const outcome = await checkLanding(signature, lastValidBlockHeight);
+      if (outcome !== "pending") return outcome;
       await sleep(LANDING_POLL_MS);
     }
-    return "unconfirmed";
+    return "pending";
   }
 
   async function paidAmountMatches(signature: string): Promise<boolean> {
@@ -173,26 +175,25 @@ export function createX402Server(deps: X402ServerDeps): X402Server {
       try {
         const simulation = await connection.simulateTransaction(VersionedTransaction.deserialize(inspected.value.rawTransaction), { sigVerify: true, commitment: CONFIRM_COMMITMENT });
         if (simulation.value.err !== null) return fail("simulation_failed");
+        return { ok: true, value: { symbol, nonce: memo.nonce, payment: inspected.value, simulationSlot: simulation.context.slot } };
       } catch {
         return fail("simulation_failed");
       }
-      return { ok: true, value: { symbol, nonce: memo.nonce, payment: inspected.value } };
     },
 
-    async settle({ symbol, nonce, payment }) {
+    async settle({ symbol, nonce, payment, simulationSlot }) {
       const expiry = nonces.check(nonce, termsFor(symbol), nowMs());
       if (expiry !== "ok") return fail(expiry);
       if (!await destinationIsPayee()) return fail("wrong_recipient");
-      const claimError = await used.claim({ nonce, signature: payment.signature, atMs: nowMs(), symbol, payer: payment.payer });
-      if (claimError) return fail(claimError);
       try {
+        const { lastValidBlockHeight } = await connection.getLatestBlockhash({ commitment: CONFIRM_COMMITMENT, minContextSlot: simulationSlot });
+        const claimError = await used.claim({ nonce, signature: payment.signature, atMs: nowMs(), symbol, payer: payment.payer, lastValidBlockHeight });
+        if (claimError) return fail(claimError);
         const signature = await connection.sendRawTransaction(payment.rawTransaction, { preflightCommitment: CONFIRM_COMMITMENT });
         if (signature !== payment.signature) return fail("settlement_unconfirmed");
-        const blockhash = Transaction.from(payment.rawTransaction).recentBlockhash;
-        if (!blockhash) return fail("settlement_unconfirmed");
-        const landing = await awaitLanding(signature, blockhash);
-        if (landing === "failed" || landing === "expired") return fail("settlement_failed");
-        if (landing === "unconfirmed") return fail("settlement_unconfirmed");
+        const landing = await awaitLanding(signature, lastValidBlockHeight);
+        if (landing === "failed") return fail("settlement_failed");
+        if (landing === "pending") return fail("settlement_unconfirmed");
         if (!await paidAmountMatches(signature)) return fail("settlement_mismatch");
         await used.markSettled(signature);
         return { ok: true, value: { signature, payer: payment.payer, network: config.network } };
@@ -207,11 +208,9 @@ export function createX402Server(deps: X402ServerDeps): X402Server {
       const settlement = { signature, payer: record.payer, network: config.network };
       if (record.status === "settled") return { ok: true, value: settlement };
       try {
-        const { value } = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
-        const status = value[0];
-        const landed = status !== null && status !== undefined && status.err === null
-          && (status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized");
-        if (!landed || !await paidAmountMatches(signature)) return fail("settlement_unconfirmed");
+        const landing = await checkLanding(signature, record.lastValidBlockHeight);
+        if (landing === "failed") return fail("settlement_failed");
+        if (landing === "pending" || !await paidAmountMatches(signature)) return fail("settlement_unconfirmed");
         await used.markSettled(signature);
         return { ok: true, value: settlement };
       } catch {

@@ -15,7 +15,7 @@ const trade: SpendOpening = {
   senderId: "me",
   source: "desk",
 };
-const payment = { signature: "sig-1", blockhash: "hash-1", explorerUrl: "https://x/sig-1" };
+const payment = { signature: "sig-1", blockhash: "hash-1", lastValidBlockHeight: 123, explorerUrl: "https://x/sig-1" };
 
 describe("spend journal", () => {
   it("persists a reservation before begin resolves and survives a reopen", async () => {

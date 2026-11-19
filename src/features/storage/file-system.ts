@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 
 export interface FileSystem {
@@ -12,6 +12,16 @@ function isMissing(error: unknown): boolean {
 }
 
 let tempCounter = 0;
+
+async function syncPath(path: string, flags: "w" | "r", contents?: string): Promise<void> {
+  const handle = await open(path, flags);
+  try {
+    if (contents !== undefined) await handle.writeFile(contents, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
 
 export const nodeFileSystem: FileSystem = {
   async readText(path) {
@@ -27,11 +37,17 @@ export const nodeFileSystem: FileSystem = {
     tempCounter += 1;
     const temporary = `${path}.${String(process.pid)}.${String(tempCounter)}.tmp`;
     try {
-      await writeFile(temporary, contents, "utf8");
+      await syncPath(temporary, "w", contents);
       await rename(temporary, path);
     } catch (error) {
       await rm(temporary, { force: true });
       throw error;
+    }
+    try {
+      await syncPath(dirname(path), "r");
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | null)?.code;
+      if (code !== "EISDIR" && code !== "EINVAL" && code !== "ENOTSUP" && code !== "EOPNOTSUPP" && code !== "ENOSYS") throw error;
     }
   },
   async preserveCopy(path, preservedPath) {

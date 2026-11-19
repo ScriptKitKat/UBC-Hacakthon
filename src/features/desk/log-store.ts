@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { createJsonStore } from "@/features/storage";
+import { openSpendJournal } from "@/features/journal";
+import type { SpendEntry } from "@/features/journal";
+import { StoreUnavailableError, createJsonStore } from "@/features/storage";
 import type { FileSystem } from "@/features/storage";
 import type { DecisionLogEntry } from "@/shared";
 
@@ -38,4 +40,31 @@ export async function openDecisionLog(options: { readonly fs: FileSystem; readon
     initialLog: loaded.entries,
     saveLog: (log) => file.save({ version: 1, entries: [...log] }),
   };
+}
+
+export async function openMigratedSpendJournal(
+  options: Parameters<typeof openSpendJournal>[0],
+  log: readonly DecisionLogEntry[],
+): ReturnType<typeof openSpendJournal> {
+  const journal = await openSpendJournal(options);
+  const settled = log.flatMap((entry): SpendEntry[] => {
+    if (entry.kind !== "approve" || !entry.signature) return [];
+    return [{
+      operationId: entry.intentId,
+      kind: entry.source === "research" ? "research" : "trade",
+      status: "settled",
+      notionalCents: entry.notionalCents,
+      symbol: entry.symbol,
+      outcome: entry.outcome,
+      senderId: entry.senderId,
+      source: entry.source,
+      reservedAt: entry.at,
+      resolvedAt: entry.at,
+      signature: entry.signature,
+      ...(entry.explorerUrl === undefined ? {} : { explorerUrl: entry.explorerUrl }),
+      ...(entry.ticket === undefined ? {} : { ticket: entry.ticket }),
+    }];
+  });
+  if (!(await journal.adoptSettled(settled)).ok) throw new StoreUnavailableError("unreadable", options.path);
+  return journal;
 }
