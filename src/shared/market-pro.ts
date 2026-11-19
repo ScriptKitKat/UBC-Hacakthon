@@ -180,6 +180,7 @@ export const proChartSchema = z.object({
   bbUpper: cents,
   rsiLast: cents,
   source: z.enum(["live", "unavailable"]),
+  note: z.string().nullable(),
   overlay: z
     .object({
       asset: z.string(),

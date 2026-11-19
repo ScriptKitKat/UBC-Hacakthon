@@ -62,6 +62,7 @@ const sample = {
     bbUpper: null,
     rsiLast: null,
     source: "live",
+    note: null,
     overlay: null,
   },
   ladder: [],

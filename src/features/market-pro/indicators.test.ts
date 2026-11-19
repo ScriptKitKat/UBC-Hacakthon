@@ -30,6 +30,13 @@ describe("rsiSeries", () => {
     expect(rsi[0]).toBeNull();
     expect(rsi[13]).toBeNull();
   });
+
+  it("does not report 0 after a drop followed by a long flat fill", () => {
+    const dropThenFlat = [80, 60, ...Array.from({ length: 40 }, () => 60)];
+    const rsi = rsiSeries(dropThenFlat);
+    expect(rsi.some((value) => value === 0)).toBe(false);
+    expect(rsi.at(-1)).toBeNull();
+  });
 });
 
 describe("onBalanceVolume and indicatorRows", () => {

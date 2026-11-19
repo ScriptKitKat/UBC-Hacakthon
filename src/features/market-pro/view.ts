@@ -21,7 +21,7 @@ import { strikeLadder } from "./ladder";
 import { positionFor } from "./position";
 import { buildSpot, iconBackground, spotPair, tickerAsset } from "./spot";
 import { buildStats } from "./stats";
-import { INDICATOR_CANDLE, STATS_CANDLE, TIMEFRAME_PLANS, defaultProTimeframe, planCandles } from "./timeframes";
+import { INDICATOR_CANDLE, MIN_TRADED_CANDLES, STATS_CANDLE, TIMEFRAME_PLANS, defaultProTimeframe, pickReadableTimeframe, planChartCandles, tradedCount } from "./timeframes";
 
 export type MarketProMarkets = Pick<GeminiMarketsClient, "getEvent" | "candles" | "orderBook" | "recentTrades" | "pubticker">;
 
@@ -108,20 +108,33 @@ function budgetFrom(snapshot: DeskSnapshot, nowMs: number): ProBudget {
   };
 }
 
+function chartNote(traded: number, available: boolean): string | null {
+  if (!available) return null;
+  if (traded === 0) return "Almost no trading on this contract yet.";
+  if (traded < MIN_TRADED_CANDLES) return "Not enough trading for Bollinger bands or RSI.";
+  return null;
+}
+
 function toChart(candles: readonly Candle[], timeframe: ProTimeframe, nowMs: number, live: boolean): ProChart {
-  const windowed = planCandles(candles, timeframe, nowMs);
-  const bands = chartBands(windowed);
+  const windowed = planChartCandles(candles, timeframe, nowMs);
+  const traded = tradedCount(windowed);
+  const overlays = traded >= MIN_TRADED_CANDLES;
+  const computed = chartBands(windowed);
+  const bands = overlays
+    ? computed
+    : computed.map((band) => ({ ...band, ma7: null, ma20: null, upper: null, lower: null, rsi: null }));
   const last = bands[bands.length - 1];
   return {
     timeframe,
     candles: windowed.map((candle) => ({ ...candle })),
     bands: [...bands],
-    ma7Last: last?.ma7 ?? null,
-    ma20Last: last?.ma20 ?? null,
-    bbLower: last?.lower ?? null,
-    bbUpper: last?.upper ?? null,
-    rsiLast: last?.rsi ?? null,
+    ma7Last: overlays ? last?.ma7 ?? null : null,
+    ma20Last: overlays ? last?.ma20 ?? null : null,
+    bbLower: overlays ? last?.lower ?? null : null,
+    bbUpper: overlays ? last?.upper ?? null : null,
+    rsiLast: overlays ? last?.rsi ?? null : null,
     source: live ? "live" : "unavailable",
+    note: chartNote(traded, live || windowed.length > 0),
     overlay: null,
   };
 }
@@ -162,9 +175,11 @@ export function createMarketPro(deps: MarketProDeps): MarketPro {
       const parsed = parseInstrumentSymbol(symbol);
       if (!parsed) return { kind: "unknown-symbol" };
       const guessedAsset = tickerAsset(parsed.eventTicker);
-      const [loaded, hourly, ticker, snapshot, positions, watched] = await Promise.all([
+      const wantFiveMinute = timeframe === undefined || timeframe === "5m";
+      const [loaded, hourly, fiveMinute, ticker, snapshot, positions, watched] = await Promise.all([
         loadEvent(symbol),
         markets.candles(symbol, STATS_CANDLE),
+        wantFiveMinute ? loadChartCandles(symbol, "5m") : Promise.resolve(null),
         guessedAsset === undefined ? Promise.resolve(null) : markets.pubticker(spotPair(guessedAsset)),
         deps.desk.getSnapshot(),
         deps.desk.getPositions(),
@@ -173,11 +188,19 @@ export function createMarketPro(deps: MarketProDeps): MarketPro {
       if (loaded.kind !== "ok") return loaded;
       const now = nowMs();
       const { event, contract } = loaded;
-      const selected = timeframe ?? defaultProTimeframe(contract.expiryDate ?? event.expiryDate, now);
       const hourlyValue = valueOr(hourly, []);
-      const chartCandles = selected === "1h" && hourly.ok && hourly.value.length > 0
-        ? { candles: hourly.value, live: true }
-        : await loadChartCandles(symbol, selected);
+      const fiveMinuteValue = fiveMinute === null ? [] : fiveMinute.candles;
+      const fallback = defaultProTimeframe(contract.expiryDate ?? event.expiryDate, now);
+      const selected = timeframe ?? pickReadableTimeframe({
+        "5m": tradedCount(planChartCandles(fiveMinuteValue, "5m", now)),
+        "1h": tradedCount(planChartCandles(hourlyValue, "1h", now)),
+        "4h": tradedCount(planChartCandles(hourlyValue, "4h", now)),
+      }, fallback);
+      const chartCandles = selected === "5m" && fiveMinute !== null
+        ? fiveMinute
+        : (selected === "1h" || selected === "4h") && hourly.ok && hourly.value.length > 0
+          ? { candles: hourly.value, live: true }
+          : await loadChartCandles(symbol, selected);
       const spotLast = ticker !== null && ticker.ok ? ticker.value.last : null;
       return {
         kind: "ok",

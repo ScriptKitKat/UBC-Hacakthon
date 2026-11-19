@@ -36,6 +36,41 @@ export const INDICATOR_CANDLE: CandleTimeframe = "1hr";
 export const DAY_MS_VALUE = DAY_MS;
 export const HOUR_MS_VALUE = HOUR_MS;
 
+
+export const MIN_TRADED_CANDLES = 20;
+
+export function isTradedCandle(candle: Candle): boolean {
+  return candle.volume > 0 || candle.highCents > candle.lowCents || candle.openCents !== candle.closeCents;
+}
+
+export function tradedCount(candles: readonly Candle[]): number {
+  return candles.reduce((count, candle) => count + (isTradedCandle(candle) ? 1 : 0), 0);
+}
+
+export function cropToTradedWindow(candles: readonly Candle[]): Candle[] {
+  let first = -1;
+  let last = -1;
+  for (let index = 0; index < candles.length; index += 1) {
+    const candle = candles[index];
+    if (candle !== undefined && isTradedCandle(candle)) {
+      if (first < 0) first = index;
+      last = index;
+    }
+  }
+  if (first < 0 || last < 0) return [];
+  return candles.slice(first, last + 1);
+}
+
+export function pickReadableTimeframe(
+  tradedByTimeframe: Readonly<Partial<Record<ProTimeframe, number>>>,
+  fallback: ProTimeframe,
+): ProTimeframe {
+  for (const timeframe of ["5m", "1h", "4h", "1D", "1W"] as const) {
+    if ((tradedByTimeframe[timeframe] ?? 0) >= MIN_TRADED_CANDLES) return timeframe;
+  }
+  return fallback;
+}
+
 export function aggregateCandles(candles: readonly Candle[], bucketMs: number): Candle[] {
   if (bucketMs <= 0) return [...candles].sort((a, b) => a.timeMs - b.timeMs);
   const buckets = new Map<number, Candle>();
@@ -64,4 +99,15 @@ export function planCandles(candles: readonly Candle[], timeframe: ProTimeframe,
   if (plan.windowMs === null) return aggregated;
   const start = nowMs - plan.windowMs;
   return aggregated.filter((candle) => candle.timeMs >= start);
+}
+
+export function planChartCandles(candles: readonly Candle[], timeframe: ProTimeframe, nowMs: number): Candle[] {
+  const plan = TIMEFRAME_PLANS[timeframe];
+  const aggregated = plan.bucketMs === null ? [...candles].sort((a, b) => a.timeMs - b.timeMs) : aggregateCandles(candles, plan.bucketMs);
+  const allTrades = cropToTradedWindow(aggregated);
+  if (tradedCount(allTrades) < MIN_TRADED_CANDLES) return allTrades;
+  const windowMs = plan.windowMs;
+  const windowed = windowMs === null ? aggregated : aggregated.filter((candle) => candle.timeMs >= nowMs - windowMs);
+  const cropped = cropToTradedWindow(windowed);
+  return cropped.length > 0 ? cropped : allTrades;
 }

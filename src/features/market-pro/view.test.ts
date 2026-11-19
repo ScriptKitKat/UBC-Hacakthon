@@ -181,18 +181,27 @@ describe("createMarketPro", () => {
     expect(result.shell.chart.candles.length).toBeGreaterThan(0);
   });
 
-  it("defaults a short-lived contract to a 5m chart when no timeframe is requested", async () => {
+  it("auto-picks 5m on a short-lived contract when five-minute history has enough trades", async () => {
     const soon = {
       ...event,
       expiryDate: new Date(NOW + 2 * 60 * 60 * 1000).toISOString(),
       contracts: event.contracts.map((item) => ({ ...item, expiryDate: new Date(NOW + 2 * 60 * 60 * 1000).toISOString() })),
     };
+    const fiveMinute: Candle[] = Array.from({ length: 36 }, (_, index) => ({
+      timeMs: NOW - (35 - index) * 5 * 60 * 1000,
+      openCents: 50,
+      highCents: 55,
+      lowCents: 48,
+      closeCents: 50 + (index % 10),
+      volume: 4,
+    }));
     const marketsSoon: MarketProMarkets = {
       ...markets(),
       getEvent: (ticker) => Promise.resolve(ticker === "SOL261231" ? ok(soon) : { ok: false, error: { kind: "http", status: 404 } }),
       candles: (symbol, timeframe) => {
         if (symbol !== SYMBOL) return Promise.resolve(ok([]));
-        if (timeframe === "5m" || timeframe === "1hr") return Promise.resolve(ok(hourly));
+        if (timeframe === "5m") return Promise.resolve(ok(fiveMinute));
+        if (timeframe === "1hr") return Promise.resolve(ok(hourly));
         return Promise.resolve(ok([]));
       },
     };
@@ -201,7 +210,85 @@ describe("createMarketPro", () => {
     expect(result.kind).toBe("ok");
     if (result.kind !== "ok") return;
     expect(result.shell.chart.timeframe).toBe("5m");
-    expect(result.shell.chart.candles.length).toBeGreaterThan(0);
+    expect(result.shell.chart.candles.length).toBeGreaterThanOrEqual(20);
+    expect(result.shell.chart.note).toBeNull();
+  });
+
+  it("falls back to the expiry default when no timeframe has enough traded candles", async () => {
+    const soon = {
+      ...event,
+      expiryDate: new Date(NOW + 2 * 60 * 60 * 1000).toISOString(),
+      contracts: event.contracts.map((item) => ({ ...item, expiryDate: new Date(NOW + 2 * 60 * 60 * 1000).toISOString() })),
+    };
+    const five = 5 * 60 * 1000;
+    const sparse: Candle[] = [
+      { timeMs: NOW - 4 * 60 * 60 * 1000, openCents: 72, highCents: 94, lowCents: 72, closeCents: 94, volume: 20 },
+      { timeMs: NOW - 3 * 60 * 60 * 1000, openCents: 94, highCents: 94, lowCents: 89, closeCents: 89, volume: 8 },
+      ...Array.from({ length: 20 }, (_, index) => ({
+        timeMs: NOW - (19 - index) * five,
+        openCents: 89,
+        highCents: 89,
+        lowCents: 89,
+        closeCents: 89,
+        volume: 0,
+      })),
+    ];
+    const marketsSoon: MarketProMarkets = {
+      ...markets(),
+      getEvent: (ticker) => Promise.resolve(ticker === "SOL261231" ? ok(soon) : { ok: false, error: { kind: "http", status: 404 } }),
+      candles: (symbol) => Promise.resolve(symbol === SYMBOL ? ok(sparse) : ok([])),
+    };
+    const pro = createMarketPro({ markets: marketsSoon, nowMs: () => NOW, desk: desk(), isWatched: () => Promise.resolve(false) });
+    const result = await pro.shell(SYMBOL);
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.shell.chart.timeframe).toBe("5m");
+    expect(result.shell.chart.candles).toHaveLength(2);
+    expect(result.shell.chart.rsiLast).toBeNull();
+    expect(result.shell.chart.note).toMatch(/not enough trading/i);
+  });
+
+
+  it("crops a sparse series to actual trades and withholds Bollinger and RSI", async () => {
+    const five = 5 * 60 * 1000;
+    const firstTrade = NOW - 16 * 60 * 60 * 1000;
+    const lastTrade = NOW - 14 * 60 * 60 * 1000;
+    const sparse: Candle[] = [
+      ...Array.from({ length: 20 }, (_, index) => ({
+        timeMs: firstTrade - (20 - index) * five,
+        openCents: 72,
+        highCents: 72,
+        lowCents: 72,
+        closeCents: 72,
+        volume: 0,
+      })),
+      { timeMs: firstTrade, openCents: 72, highCents: 94, lowCents: 72, closeCents: 94, volume: 250 },
+      { timeMs: firstTrade + five, openCents: 94, highCents: 94, lowCents: 91, closeCents: 91, volume: 4 },
+      { timeMs: lastTrade, openCents: 91, highCents: 91, lowCents: 89, closeCents: 89, volume: 105 },
+      ...Array.from({ length: 80 }, (_, index) => ({
+        timeMs: lastTrade + (index + 1) * five,
+        openCents: 89,
+        highCents: 89,
+        lowCents: 89,
+        closeCents: 89,
+        volume: 0,
+      })),
+    ];
+    const marketsSparse: MarketProMarkets = {
+      ...markets(),
+      candles: (symbol) => Promise.resolve(symbol === SYMBOL ? ok(sparse) : ok([])),
+    };
+    const pro = createMarketPro({ markets: marketsSparse, nowMs: () => NOW, desk: desk(), isWatched: () => Promise.resolve(false) });
+    const result = await pro.shell(SYMBOL, "5m");
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.shell.chart.candles[0]?.timeMs).toBe(firstTrade);
+    expect(result.shell.chart.candles.at(-1)?.timeMs).toBe(lastTrade);
+    expect(result.shell.chart.candles).toHaveLength(3);
+    expect(result.shell.chart.rsiLast).toBeNull();
+    expect(result.shell.chart.bbLower).toBeNull();
+    expect(result.shell.chart.bbUpper).toBeNull();
+    expect(result.shell.chart.note).toMatch(/not enough trading/i);
   });
 
   it("returns unknown-symbol for a malformed ticker and unavailable when Gemini is down", async () => {

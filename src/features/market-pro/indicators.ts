@@ -41,7 +41,7 @@ export function bollingerAt(values: readonly number[], endIndex: number, window 
   if (middle === null) return { middle: null, upper: null, lower: null };
   const slice = values.slice(endIndex - window + 1, endIndex + 1);
   const deviation = stdDev(slice);
-  if (deviation === null) return { middle, upper: null, lower: null };
+  if (deviation === null || deviation === 0) return { middle, upper: null, lower: null };
   return { middle, upper: middle + sigmas * deviation, lower: middle - sigmas * deviation };
 }
 
@@ -72,6 +72,12 @@ export function rsiSeries(closes: readonly number[], period = RSI_PERIOD): reado
     } else {
       gains = (gains * (period - 1) + gain) / period;
       losses = (losses * (period - 1) + loss) / period;
+    }
+    const recentWindow = closes.slice(index - period, index + 1);
+    const recentMoves = recentWindow.filter((value, offset, window) => offset > 0 && value !== window[offset - 1]).length;
+    if (recentMoves < 2) {
+      result.push(null);
+      continue;
     }
     if (losses === 0) {
       result.push(gains === 0 ? 50 : 100);
@@ -183,7 +189,9 @@ export function indicatorRows(input: {
 
   const momentumMissing = hourChange === null && dayChange === null ? "Not enough recent candles to measure momentum." : null;
   const maMissing = ma7 === null || slow.middle === null ? "Need at least 20 hourly closes for the moving averages." : null;
-  const rsiMissing = rsi === null ? "Need at least 15 hourly closes for RSI 14." : null;
+  const rsiMissing = rsi === null
+    ? (closes.length < RSI_PERIOD + 1 ? "Need at least 15 hourly closes for RSI 14." : "Not enough trading to compute RSI 14.")
+    : null;
   const bbMissing = bands === null ? "Need 20 hourly closes for Bollinger bands." : null;
   const stdMissing = deviation === null ? "Need at least two recent closes for a standard deviation." : null;
   const obvMissing = obvSlope === null ? "Need more volume history for an OBV slope." : null;

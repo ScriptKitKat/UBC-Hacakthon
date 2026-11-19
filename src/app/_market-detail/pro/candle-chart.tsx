@@ -1,4 +1,4 @@
-import type { ProChart, ProTimeframe } from "@/shared";
+import type { ProCandle, ProChart, ProTimeframe } from "@/shared";
 import { formatAxisTime, formatCents } from "./format";
 import styles from "./pro.module.css";
 
@@ -18,6 +18,10 @@ function yOf(value: number, min: number, max: number, top: number, bottom: numbe
   return top + ((max - value) / (max - min)) * (bottom - top);
 }
 
+function isTraded(candle: ProCandle): boolean {
+  return candle.volume > 0 || candle.highCents > candle.lowCents || candle.openCents !== candle.closeCents;
+}
+
 export function CandleChart({
   chart,
   timeframe,
@@ -32,13 +36,11 @@ export function CandleChart({
   const candles = chart.candles;
   const highs = candles.map((candle) => candle.highCents);
   const lows = candles.map((candle) => candle.lowCents);
-  const bandHighs = chart.bands.map((band) => band.upper).filter((value): value is number => value !== null);
-  const bandLows = chart.bands.map((band) => band.lower).filter((value): value is number => value !== null);
-  const max = candles.length === 0 ? 1 : Math.max(...highs, ...bandHighs);
-  const min = candles.length === 0 ? 0 : Math.min(...lows, ...bandLows);
+  const max = candles.length === 0 ? 1 : Math.max(...highs);
+  const min = candles.length === 0 ? 0 : Math.min(...lows);
   const last = candles[candles.length - 1]?.closeCents ?? null;
   const step = candles.length === 0 ? WIDTH : WIDTH / candles.length;
-  const body = step * 0.6;
+  const body = Math.max(1, step * 0.6);
   const volMax = Math.max(1, ...candles.map((candle) => candle.volume));
   const priceY = (value: number) => yOf(value, min, max, PRICE_TOP, PRICE_BOTTOM);
   const rsiY = (value: number) => yOf(value, 0, 100, RSI_TOP, RSI_BOTTOM);
@@ -48,8 +50,12 @@ export function CandleChart({
   const upVol: string[] = [];
   const downVol: string[] = [];
   const wicks: string[] = [];
+  const holdLine: string[] = [];
   candles.forEach((candle, index) => {
     const x = xOf(index);
+    const closeY = priceY(candle.closeCents);
+    holdLine.push(`${index === 0 ? "M" : "L"} ${x.toFixed(1)} ${closeY.toFixed(1)}`);
+    if (!isTraded(candle)) return;
     const up = candle.closeCents >= candle.openCents;
     const top = priceY(Math.max(candle.openCents, candle.closeCents));
     const bottom = priceY(Math.min(candle.openCents, candle.closeCents));
@@ -68,12 +74,18 @@ export function CandleChart({
   const firstValue = (values: readonly (number | null)[]) => values.findIndex((value) => value !== null);
   const line = (values: readonly (number | null)[], mapY: (value: number) => number) => {
     const start = firstValue(values);
+    if (start < 0) return "";
     return values
       .map((value, index) => (value === null ? null : `${index === start ? "M" : "L"} ${xOf(index).toFixed(1)} ${mapY(value).toFixed(1)}`))
       .filter((part): part is string => part !== null)
       .join(" ");
   };
+  const showBands = chart.bands.some((band) => band.upper !== null && band.lower !== null);
+  const showRsi = chart.bands.some((band) => band.rsi !== null);
+  const showMa7 = chart.bands.some((band) => band.ma7 !== null);
+  const showMa20 = chart.bands.some((band) => band.ma20 !== null);
   const bbPath = (() => {
+    if (!showBands) return "";
     const topLine = chart.bands.flatMap((band, index) => (band.upper === null ? [] : [[xOf(index), priceY(band.upper)] as const]));
     const bottomLine = chart.bands.flatMap((band, index) => (band.lower === null ? [] : [[xOf(index), priceY(band.lower)] as const])).reverse();
     if (topLine.length === 0 || bottomLine.length === 0) return "";
@@ -83,6 +95,7 @@ export function CandleChart({
   const ticks = [0, Math.floor(lastIndex / 3), Math.floor((2 * lastIndex) / 3), lastIndex]
     .filter((index, position, list) => index >= 0 && candles[index] !== undefined && list.indexOf(index) === position);
   const lastY = last === null ? null : priceY(last);
+  const emptyCopy = chart.note ?? "Gemini has no candle history for this contract yet.";
   return (
     <section className={styles.panel} aria-label="Price chart">
       <div className={styles.panelHead}>
@@ -106,23 +119,24 @@ export function CandleChart({
         </div>
       </div>
       {candles.length === 0 ? (
-        <p className={styles.empty}>Gemini has no candle history for this contract yet.</p>
+        <p className={styles.empty}>{emptyCopy}</p>
       ) : (
         <>
           <svg className={styles.chart} role="img" aria-label="Candlestick chart of YES price" viewBox={`0 0 ${String(WIDTH)} ${String(HEIGHT)}`} preserveAspectRatio="none">
             {bbPath !== "" ? <path d={bbPath} fill="rgba(161,161,170,0.12)" stroke="none" /> : null}
-            <path d={line(chart.bands.map((band) => band.upper), priceY)} fill="none" stroke="#8a8a93" strokeWidth="1" opacity="0.6" />
-            <path d={line(chart.bands.map((band) => band.lower), priceY)} fill="none" stroke="#8a8a93" strokeWidth="1" opacity="0.6" />
-            <path d={line(chart.bands.map((band) => band.ma20), priceY)} fill="none" stroke="#f5a524" strokeWidth="1.2" />
-            <path d={line(chart.bands.map((band) => band.ma7), priceY)} fill="none" stroke="#a1a1aa" strokeWidth="1.2" />
+            {showBands ? <path d={line(chart.bands.map((band) => band.upper), priceY)} fill="none" stroke="#8a8a93" strokeWidth="1" opacity="0.6" /> : null}
+            {showBands ? <path d={line(chart.bands.map((band) => band.lower), priceY)} fill="none" stroke="#8a8a93" strokeWidth="1" opacity="0.6" /> : null}
+            {showMa20 ? <path d={line(chart.bands.map((band) => band.ma20), priceY)} fill="none" stroke="#f5a524" strokeWidth="1.2" /> : null}
+            {showMa7 ? <path d={line(chart.bands.map((band) => band.ma7), priceY)} fill="none" stroke="#a1a1aa" strokeWidth="1.2" /> : null}
+            {holdLine.length > 1 ? <path d={holdLine.join(" ")} fill="none" stroke="#6b6b74" strokeWidth="1.2" /> : null}
             <path d={wicks.join(" ")} stroke="#a1a1aa" strokeWidth="1" />
             <path d={upBodies.join(" ")} fill="#3ddc97" />
             <path d={downBodies.join(" ")} fill="#ff9a7a" />
             <path d={upVol.join(" ")} fill="#3ddc97" opacity="0.45" />
             <path d={downVol.join(" ")} fill="#ff9a7a" opacity="0.45" />
-            <path d={line(chart.bands.map((band) => band.rsi), rsiY)} fill="none" stroke="#a1a1aa" strokeWidth="1.2" />
-            <line x1="0" x2={String(WIDTH)} y1={String(rsiY(70))} y2={String(rsiY(70))} stroke="#262626" strokeWidth="1" />
-            <line x1="0" x2={String(WIDTH)} y1={String(rsiY(30))} y2={String(rsiY(30))} stroke="#262626" strokeWidth="1" />
+            {showRsi ? <path d={line(chart.bands.map((band) => band.rsi), rsiY)} fill="none" stroke="#a1a1aa" strokeWidth="1.2" /> : null}
+            {showRsi ? <line x1="0" x2={String(WIDTH)} y1={String(rsiY(70))} y2={String(rsiY(70))} stroke="#262626" strokeWidth="1" /> : null}
+            {showRsi ? <line x1="0" x2={String(WIDTH)} y1={String(rsiY(30))} y2={String(rsiY(30))} stroke="#262626" strokeWidth="1" /> : null}
             {last !== null && lastY !== null ? (
               <>
                 <line x1="0" x2={String(WIDTH)} y1={String(lastY)} y2={String(lastY)} stroke="#262626" strokeDasharray="3 3" />
@@ -136,6 +150,7 @@ export function CandleChart({
               return candle === undefined ? null : <span key={`${String(candle.timeMs)}-${String(index)}`}>{formatAxisTime(candle.timeMs, timeframe)}</span>;
             })}
           </div>
+          {chart.note !== null ? <p className={styles.chartNote}>{chart.note}</p> : null}
           <p className={styles.rsiLabel}>RSI 14 {chart.rsiLast === null ? "—" : String(Math.round(chart.rsiLast))}</p>
         </>
       )}
