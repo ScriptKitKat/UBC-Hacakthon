@@ -31,7 +31,7 @@ function validPrice(priceCents: number | null): priceCents is number {
 
 function validLimits(limits: QuantityLimits): boolean {
   return Number.isSafeInteger(limits.quantityIncrementHundredths) && limits.quantityIncrementHundredths > 0
-    && Number.isSafeInteger(limits.quantityMinimumHundredths) && limits.quantityMinimumHundredths > 0;
+    && Number.isSafeInteger(limits.quantityMinimumHundredths) && limits.quantityMinimumHundredths >= 0;
 }
 
 export function payoutFor(priceCents: number | null, stakeCents: number, limits: QuantityLimits = DEFAULT_LIMITS): PayoutResult {

@@ -228,6 +228,26 @@ describe("rate limiting and caching", () => {
     expect(urls).toHaveLength(2);
   });
 
+  it("shares one request between concurrent calls for the same url", async () => {
+    const { client, urls } = setup(() => jsonResponse(eventFixture));
+    const results = await Promise.all([client.getEvent("FED261211", { refresh: true }), client.getEvent("FED261211"), client.getEvent("FED261211")]);
+    expect(results.every((result) => result.ok)).toBe(true);
+    expect(urls).toHaveLength(1);
+  });
+
+  it("checks the contract once for concurrent candles, book and trades", async () => {
+    const { client, clock } = setup((url) => {
+      if (url.includes("/prediction-markets/events/")) return jsonResponse(eventFixture);
+      if (url.includes("/v2/candles/")) return jsonResponse(candlesFixture);
+      if (url.includes("/v1/book/")) return jsonResponse(bookFixture);
+      return jsonResponse(tradesFixture);
+    });
+    const symbol = "GEMI-FED261211-HIKE25";
+    const startMs = clock.nowMs();
+    await Promise.all([client.candles(symbol, "15m"), client.candles(symbol, "1hr"), client.orderBook(symbol), client.recentTrades(symbol)]);
+    expect(clock.nowMs() - startMs).toBe(4000);
+  });
+
   it("refreshes event detail within the cache ttl", async () => {
     const closed = { ...eventFixture, status: "closed" };
     let current = eventFixture;

@@ -335,7 +335,7 @@ describe("feed positions", () => {
         explorerUrl: "https://explorer.test/tx/latest", researchPath: "/markets/GEMI-FED-HOLD",
       }],
       totals: { costCents: 100, pricedCostCents: 0, valueCents: 0, pnlCents: 0, pnlPercent: null, unpricedPositions: 1 },
-      budget: { dailyCapCents: 2000, spentCents: 105, remainingCents: 1895, researchSpentCents: 5 },
+      budget: { dailyCapCents: 2000, spentCents: 105, remainingCents: 1895, researchSpentCents: 5, perTradeMaxCents: 1000, autoApproveMaxCents: 200 },
     };
     getFeedPositions.mockResolvedValue(view);
     const response = await positionsRoute.GET(new Request(url, { headers: { origin: EXTENSION, authorization } }));

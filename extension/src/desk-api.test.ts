@@ -7,6 +7,11 @@ import { decisionEntrySchema, feedMatchSchema, feedQuoteSchema } from "./wire";
 
 const DESK = { url: "http://localhost:3000/", token: "desk-token" };
 const ORDER_ID = "8f14e45f-ceea-467f-a0e6-1d0b6f1c6a2e";
+const POSITIONS = {
+  positions: [],
+  totals: { costCents: 0, pricedCostCents: 0, valueCents: 0, pnlCents: 0, pnlPercent: null, unpricedPositions: 0 },
+  budget: { dailyCapCents: 2000, spentCents: 200, remainingCents: 1800, researchSpentCents: 0, perTradeMaxCents: 1000, autoApproveMaxCents: 200 },
+};
 
 function fakeFetch(respond: () => Promise<Response> | Response) {
   return vi.fn<typeof fetch>(() => Promise.resolve(respond()));
@@ -33,6 +38,44 @@ describe("callDesk", () => {
     const reply = await callDesk(DESK, { type: "quote", symbol: "A B" }, send);
     expect(reply.ok).toBe(true);
     expect(send.mock.calls[0]?.[0]).toBe("http://localhost:3000/api/feed/quote?symbol=A%20B");
+  });
+
+  it("authenticates budget reads and returns only the three card limits", async () => {
+    const send = fakeFetch(() => Response.json(POSITIONS));
+    expect(await callDesk(DESK, { type: "budget" }, send)).toEqual({
+      ok: true,
+      value: { perTradeMaxCents: 1000, remainingCents: 1800, autoApproveMaxCents: 200 },
+    });
+    expect(send).toHaveBeenCalledExactlyOnceWith("http://localhost:3000/api/feed/positions", {
+      method: "GET", cache: "no-store", redirect: "error", headers: { authorization: "Bearer desk-token" },
+    });
+  });
+
+  it.each(["budget", "positions"] as const)("refuses %s reads without a desk token", async (type) => {
+    const send = fakeFetch(() => Response.json(POSITIONS));
+    expect(await callDesk({ ...DESK, token: "" }, { type }, send)).toEqual({
+      ok: false, error: "Set a desk token in the extension options.",
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a rejected token without returning budget or portfolio data", async () => {
+    const send = fakeFetch(() => Response.json(POSITIONS, { status: 401 }));
+    expect(await callDesk(DESK, { type: "budget" }, send)).toEqual({
+      ok: false, error: "The desk rejected the desk token. Check the extension options.",
+    });
+  });
+
+  it.each([
+    { ...POSITIONS.budget, perTradeMaxCents: undefined },
+    { ...POSITIONS.budget, autoApproveMaxCents: -1 },
+    { ...POSITIONS.budget, remainingCents: 1.5 },
+    { ...POSITIONS.budget, remainingCents: Number.MAX_SAFE_INTEGER + 1 },
+  ])("refuses invalid card limits in the desk response: %j", async (budget) => {
+    const send = fakeFetch(() => Response.json({ ...POSITIONS, budget }));
+    expect(await callDesk(DESK, { type: "budget" }, send)).toEqual({
+      ok: false, error: "The desk sent an unexpected response.",
+    });
   });
 
   it("sends only the buy fields the desk expects", async () => {

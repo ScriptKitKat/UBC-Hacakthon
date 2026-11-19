@@ -19,6 +19,18 @@ function press(element: HTMLElement): void {
   element.dispatchEvent(trusted(new MouseEvent("click", { bubbles: true, composed: true })));
 }
 
+function amountField(root: ShadowRoot): HTMLInputElement {
+  const input = root.querySelector<HTMLInputElement>('[data-key="amount"]');
+  if (!input) throw new Error("missing amount field");
+  return input;
+}
+
+function editAmount(root: ShadowRoot, value: string): void {
+  const input = amountField(root);
+  input.value = value;
+  input.dispatchEvent(trusted(new Event("input", { bubbles: true, composed: true })));
+}
+
 function setup(card = matched) {
   const send = vi.fn();
   const handle = createCard(card, send);
@@ -46,7 +58,7 @@ describe("research link", () => {
     expect(link?.getAttribute("href")).toBe("http://localhost:3000/markets/GEMI-FED261211-MAINTAIN");
     expect(link?.getAttribute("target")).toBe("_blank");
     expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(link?.textContent).toBe("Research ↗");
+    expect(link?.textContent).toBe("Research");
   });
 
   it("omits the link without a href", () => {
@@ -56,123 +68,229 @@ describe("research link", () => {
 });
 
 describe("market card", () => {
-  it("renders the market, prices, Grok badge, why line and footer", () => {
-    const { text, handle, root } = setup();
+  it("shows the Gemini expiry in Central Time without inventing a deadline", () => {
+    const { root } = setup({ ...matched, market: { ...market, expiryDate: "2026-11-19T22:00:00.000Z" } });
+    expect(root.querySelector(".deadline")?.textContent).toContain("Nov 19, 4:00 PM CST");
+  });
+
+  it("renders the sketch layout with the Gemini title, outcome pill, payout and footer", () => {
+    const { text, handle, root, button } = setup();
     expect(handle.host.getAttribute(CARD_HOST_ATTRIBUTE)).toBe(matched.postId);
-    expect(text()).toContain("Fed decision in December?");
-    expect(text()).toContain("Fed maintains rate · Economics");
-    expect(text()).toContain("YES 62¢");
-    expect(text()).toContain("NO 40¢");
-    expect(root.querySelector(".price")?.textContent).toBe("62¢");
-    expect(root.querySelector(".change")).toBeNull();
-    expect(root.querySelector(".badge")?.textContent).toBe("Grok");
-    expect(text()).toContain(matched.why);
-    expect(text()).toContain("Trade on Gemini · settled in USDC on Solana");
-    expect(root.querySelector('[data-key="amount-100"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(root.querySelector(".title")?.textContent).toBe("Fed decision in December?");
+    expect(root.querySelector("select")?.textContent).toBe("Fed maintains rate");
+    expect(button("outcome-yes").textContent).toBe("Yes 62%");
+    expect(button("outcome-no").textContent).toBe("No 40%");
+    expect(button("outcome-yes").getAttribute("aria-pressed")).toBe("true");
+    expect(text()).toContain("62% chance · 1.61 USDC potential payout");
+    expect(text()).not.toContain("Implied by price");
+    expect(text()).not.toContain("before fees");
+    expect(text()).not.toContain("Your trade");
+    expect(root.querySelector(".contract-picker .contract-chevron")).not.toBeNull();
+    expect(button("trade").textContent).toBe("Trade now");
+    expect(root.querySelector<HTMLAnchorElement>('[data-key="gemini"]')?.href).toBe(market.geminiUrl);
+    expect(amountField(root).value).toBe("1.00");
+    expect(amountField(root).getAttribute("aria-label")).toBe("Trade amount in USDC");
+    expect(root.querySelector(".amount-unit")?.textContent).toBe("USDC");
+    expect(root.querySelector(".amount-field")?.textContent).not.toContain("$");
   });
 
-  it("labels the keyword fallback", () => {
-    const { root } = setup({ ...matched, matchedBy: "keywords" });
-    expect(root.querySelector(".badge")?.textContent).toBe("matched by keywords");
+  it("keeps the card black and both outcome colors visible regardless of selection", () => {
+    const { root, button } = setup();
+    const card = root.querySelector(".card");
+    if (!card) throw new Error("missing card");
+    expect(getComputedStyle(card).backgroundColor).toBe("rgb(0, 0, 0)");
+    expect(getComputedStyle(card).backgroundImage).not.toContain("gradient");
+    for (const side of ["yes", "no"]) {
+      press(button(`outcome-${side}`));
+      expect(getComputedStyle(button("outcome-yes")).color).toBe("rgb(74, 222, 128)");
+      expect(getComputedStyle(button("outcome-no")).color).toBe("rgb(248, 113, 113)");
+    }
   });
 
-  it("shows a probability bar until there is enough history, then a sparkline", () => {
-    const { root, handle } = setup();
-    expect(root.querySelector(".bar")).not.toBeNull();
-    expect(root.querySelector("path.line")).toBeNull();
+  it("updates the chance and payout for the selected side, stake and live quote", () => {
+    const { root, handle, button } = setup();
+    press(button("outcome-no"));
+    expect(root.textContent).toContain("40% chance · 2.50 USDC potential payout");
+    editAmount(root, "5.00");
+    expect(root.textContent).toContain("40% chance · 12.50 USDC potential payout");
     handle.update(quote);
-    expect(root.querySelector("path.line")?.getAttribute("data-trend")).toBe("up");
-    expect(root.querySelector(".bar")).toBeNull();
-    expect(root.textContent).toContain("YES 65¢");
-    expect(root.querySelector(".change")?.textContent).toBe("+8.3%");
+    expect(root.textContent).toContain("37% chance · 13.51 USDC potential payout");
+    expect(button("outcome-no").getAttribute("aria-pressed")).toBe("true");
+    expect(amountField(root).value).toBe("5.00");
   });
 
-  it("keeps the probability bar when history has fewer than three distinct points", () => {
-    const { root, handle } = setup();
-    handle.update({ ...quote, history: quote.history.slice(0, 2) });
-    expect(root.querySelector(".bar")).not.toBeNull();
-    expect(root.querySelector("path.line")).toBeNull();
-    handle.update({ ...quote, history: quote.history.map((point) => ({ ...point, yesCents: 62 })) });
-    expect(root.querySelector(".bar")).not.toBeNull();
-    expect(root.querySelector(".change")?.textContent).toBe("0%");
+  it("calculates the sketched payout from a custom USDC stake and live Gemini price", async () => {
+    const { root, button, send, handle } = setup({ ...matched, market: { ...market, yesCents: 43 } });
+    editAmount(root, "23.00");
+    expect(root.querySelector(".payout")?.textContent).toBe("43% chance · 53.48 USDC potential payout");
+    expect(send).not.toHaveBeenCalled();
+    handle.update({ ...quote, market: { ...quote.market, yesCents: 50 } });
+    expect(root.querySelector(".payout")?.textContent).toBe("50% chance · 46 USDC potential payout");
+    send.mockResolvedValue({ ok: false, error: "stubbed" });
+    press(button("trade"));
+    await vi.waitFor(() => { expect(send).toHaveBeenCalledWith(expect.objectContaining({ amountCents: 2300, seenPriceCents: 50 })); });
+  });
+
+  it.each(["", "0", "-1", "1.234", "1e3", "1000.01", "9999999999999999"])("does not submit an invalid USDC amount %j", (value) => {
+    const { root, button, send } = setup();
+    editAmount(root, value);
+    expect(button("trade").disabled).toBe(true);
+    expect(amountField(root).getAttribute("aria-invalid")).toBe("true");
+    press(button("trade"));
+    expect(send).not.toHaveBeenCalled();
+    editAmount(root, "2.50");
+    expect(button("trade").disabled).toBe(false);
+    expect(amountField(root).getAttribute("aria-invalid")).toBe("false");
+  });
+
+  it("uses Gemini quantity limits and disables trades below the minimum", () => {
+    const { root, button } = setup({ ...matched, market: { ...market, quantityLimits: { quantityIncrementHundredths: 100, quantityMinimumHundredths: 200 } } });
+    expect(root.textContent).toContain("Minimum 2 contracts");
+    expect(button("trade").disabled).toBe(true);
+    editAmount(root, "2.00");
+    expect(root.textContent).toContain("62% chance · 3 USDC potential payout");
+    expect(button("trade").disabled).toBe(false);
+  });
+
+  it("does not invent a chance or payout when a quote is missing", () => {
+    const { root, button } = setup({ ...matched, market: { ...market, yesCents: null } });
+    expect(button("outcome-yes").textContent).toBe("Yes —");
+    expect(root.textContent).toContain("Payout unavailable");
+    expect(button("trade").disabled).toBe(true);
+  });
+
+  it("switches contracts, research links, polling symbol and the submitted order together", async () => {
+    const other = { ...market, instrumentSymbol: "GEMI-FED261211-CUT25", contractLabel: "Cut 25bps", yesCents: 20 };
+    const send = vi.fn().mockResolvedValue({ ok: false, error: "test refusal" });
+    const handle = createCard({ ...matched, contracts: [market, other] }, send, { researchHrefFor: (symbol) => `https://desk.test/markets/${symbol}` });
+    const root = handle.host.shadowRoot;
+    if (!root) throw new Error("missing root");
+    document.body.append(handle.host);
+    const select = root.querySelector("select");
+    if (!select) throw new Error("missing contract selector");
+    select.value = other.instrumentSymbol;
+    select.dispatchEvent(new Event("change"));
+    expect(handle.symbol).toBe(market.instrumentSymbol);
+    select.dispatchEvent(trusted(new Event("change")));
+    expect(handle.symbol).toBe(other.instrumentSymbol);
+    expect(root.textContent).toContain("20% chance · 5 USDC potential payout");
+    expect(root.querySelector<HTMLAnchorElement>('[data-key="research"]')?.href).toBe(`https://desk.test/markets/${other.instrumentSymbol}`);
+    handle.update(quote);
+    expect(handle.symbol).toBe(other.instrumentSymbol);
+    press(root.querySelector('[data-key="trade"]') as HTMLElement);
+    await vi.waitFor(() => { expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: "buy", instrumentSymbol: other.instrumentSymbol, seenPriceCents: 20 })); });
   });
 
   it("gives each buy click a fresh client order id", async () => {
     const { send, button, root } = setup();
     send.mockResolvedValue({ ok: false, error: "no" });
-    press(button("buy-yes"));
+    press(button("trade"));
     await vi.waitFor(() => { expect(root.textContent).toContain("no"); });
-    press(button("buy-yes"));
+    press(button("trade"));
     await vi.waitFor(() => { expect(send).toHaveBeenCalledTimes(2); });
     const ids = send.mock.calls.map(([request]) => (request as { clientOrderId: string }).clientOrderId);
     expect(new Set(ids).size).toBe(2);
   });
 
   it("ignores events that did not come from the user", () => {
-    const { send, button } = setup();
-    button("amount-500").click();
-    button("buy-yes").click();
-    button("buy-yes").dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
-    expect(button("amount-500").getAttribute("aria-pressed")).toBe("false");
+    const { send, button, root } = setup();
+    amountField(root).value = "5";
+    amountField(root).dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    button("trade").click();
+    button("trade").dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    press(button("outcome-yes"));
+    expect(amountField(root).value).toBe("1.00");
     expect(send).not.toHaveBeenCalled();
   });
 
   it("ignores synthetic approvals", async () => {
     const { send, button, root } = setup();
     send.mockResolvedValueOnce(reply(entry({ kind: "needs-approval", intentId: "intent-9" })));
-    press(button("buy-yes"));
+    press(button("trade"));
     await vi.waitFor(() => { expect(root.querySelector('.result[data-tone="approval"]')).not.toBeNull(); });
     button("approve").click();
     expect(send).toHaveBeenCalledTimes(1);
   });
 
   it("stops pointer and keyboard events from reaching the tweet", () => {
-    const { button } = setup();
+    const { root } = setup();
     const outside = vi.fn();
     document.body.addEventListener("click", outside);
     document.body.addEventListener("keydown", outside);
-    press(button("amount-200"));
-    button("amount-200").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, composed: true }));
+    editAmount(root, "2.00");
+    amountField(root).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, composed: true }));
     expect(outside).not.toHaveBeenCalled();
   });
 
   it("buys with the chosen amount and outcome, disabling controls while pending", async () => {
     const pending = deferred<BackgroundReply<WireEntry>>();
-    const { send, button, text } = setup();
+    const { send, button, text, root } = setup();
     send.mockReturnValue(pending.promise);
-    press(button("amount-500"));
-    press(button("buy-no"));
-    press(button("buy-no"));
+    editAmount(root, "5.00");
+    press(button("outcome-no"));
+    press(button("trade"));
+    press(button("trade"));
     expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith({
       type: "buy", postId: matched.postId, instrumentSymbol: market.instrumentSymbol, outcome: "no", amountCents: 500,
       clientOrderId: expect.stringMatching(UUID) as string, seenPriceCents: 40,
     });
     expect(text()).toContain("Placing order…");
-    expect(button("buy-yes").disabled).toBe(true);
-    expect(button("buy-no").disabled).toBe(true);
+    expect(button("trade").disabled).toBe(true);
+    expect(amountField(root).disabled).toBe(true);
+    expect(root.querySelector<HTMLSelectElement>("select")?.disabled).toBe(true);
+    expect(root.querySelector(".contract-picker")?.getAttribute("data-disabled")).toBe("true");
+    const select = root.querySelector("select");
+    if (!select) throw new Error("missing contract selector");
+    expect(getComputedStyle(select).opacity).toBe("0");
     pending.resolve(reply(entry({ outcome: "no", notionalCents: 500 })));
-    await vi.waitFor(() => { expect(text()).toContain("Filled"); });
-    expect(button("buy-yes").disabled).toBe(false);
+    await vi.waitFor(() => { expect(text()).toContain("Simulated prediction"); });
+    expect(button("trade").disabled).toBe(false);
   });
 
-  it("shows the fill with the ticket and an explorer link", async () => {
+  it("distinguishes a simulated prediction from its actual USDC payment receipt", async () => {
     const { send, button, root } = setup();
     send.mockResolvedValue(reply(entry()));
-    press(button("buy-yes"));
+    press(button("trade"));
     await vi.waitFor(() => { expect(root.querySelector('.result[data-tone="filled"]')).not.toBeNull(); });
-    expect(root.textContent).toContain("$1 YES · 1.61 @ 0.62 · paper ticket ticket-1");
+    expect(root.querySelector(".result-title")?.textContent).toBe("Simulated prediction");
+    expect(root.querySelector(".result-detail")?.textContent).toBe("1 USDC on Yes");
+    expect(root.querySelector(".result-note")?.textContent).toBe("USDC payment on Solana");
+    expect(root.querySelector(".result")?.textContent).not.toContain("ticket-1");
     const link = root.querySelector<HTMLAnchorElement>("a.link");
-    expect(link?.textContent).toBe("View on Solana Explorer ↗");
+    expect(link?.textContent).toBe("View transaction ↗");
     expect(link?.href).toBe("https://explorer.solana.com/tx/sig?cluster=devnet");
     expect(link?.rel).toBe("noopener noreferrer");
   });
 
-  it("refuses to link non-https explorer urls", async () => {
+  it.each([
+    { explorerUrl: "javascript:alert(1)" },
+    { explorerUrl: "http://explorer.solana.com/tx/sig" },
+    { explorerUrl: "https://evil.test/tx/sig" },
+    { explorerUrl: "https://solscan.io/tx/sig" },
+    { explorerUrl: "https://explorer.solana.com.evil.test/tx/sig" },
+    { explorerUrl: undefined },
+    { signature: undefined },
+    { signature: " " },
+  ])("does not invent a transaction link without a safe signed receipt: %j", async (receipt) => {
     const { send, button, root } = setup();
-    send.mockResolvedValue(reply(entry({ explorerUrl: "javascript:alert(1)" })));
-    press(button("buy-yes"));
-    await vi.waitFor(() => { expect(root.textContent).toContain("Filled"); });
+    send.mockResolvedValue(reply(entry(receipt)));
+    press(button("trade"));
+    await vi.waitFor(() => { expect(root.textContent).toContain("Simulated prediction"); });
+    expect(root.querySelector("a.link")).toBeNull();
+    expect(root.querySelector(".result-note")?.textContent).toBe("No transaction receipt");
+  });
+
+  it("does not expose test identifiers or pretend a simulated prediction is a fill", async () => {
+    const { send, button, root } = setup();
+    const result = entry({ signature: undefined, explorerUrl: undefined });
+    send.mockResolvedValue(reply({ ...result, ticket: { ticketId: "QA-stub", symbol: market.instrumentSymbol, outcome: "yes", quantity: "1.61", price: "0.62", mode: "paper" } }));
+    press(button("trade"));
+    await vi.waitFor(() => { expect(root.querySelector(".result-title")?.textContent).toBe("Simulated prediction"); });
+    const confirmation = root.querySelector(".result")?.textContent;
+    expect(confirmation).not.toContain("QA-stub");
+    expect(confirmation).not.toContain("Filled");
+    expect(confirmation).not.toContain("$");
     expect(root.querySelector("a.link")).toBeNull();
   });
 
@@ -180,7 +298,7 @@ describe("market card", () => {
     const { send, button, root } = setup();
     const reason = "A $5 trade exceeds the $2 limit per trade.";
     send.mockResolvedValue(reply(entry({ kind: "refuse", spokenReason: reason, code: "over-per-trade-cap" })));
-    press(button("buy-yes"));
+    press(button("trade"));
     await vi.waitFor(() => { expect(root.querySelector('.result[data-tone="refused"]')).not.toBeNull(); });
     expect(root.querySelector(".result-detail")?.textContent).toBe(reason);
     expect(root.querySelector(".result-title")?.textContent).toBe("Refused");
@@ -189,11 +307,14 @@ describe("market card", () => {
   it("asks for approval and confirms through the desk", async () => {
     const { send, button, root } = setup();
     send.mockResolvedValueOnce(reply(entry({ kind: "needs-approval", spokenReason: "The $5 trade needs your approval.", intentId: "intent-9" })));
-    press(button("buy-yes"));
+    press(button("trade"));
     await vi.waitFor(() => { expect(root.querySelector('.result[data-tone="approval"]')).not.toBeNull(); });
     expect(root.textContent).toContain("The $5 trade needs your approval.");
-    expect(button("buy-yes").disabled).toBe(true);
+    expect(button("trade").disabled).toBe(true);
     send.mockResolvedValueOnce(reply(entry()));
+    expect(amountField(root).disabled).toBe(true);
+    editAmount(root, "23.00");
+    expect(amountField(root).value).toBe("1.00");
     press(button("approve"));
     expect(send).toHaveBeenLastCalledWith({ type: "confirm", intentId: "intent-9" });
     await vi.waitFor(() => { expect(root.querySelector('.result[data-tone="filled"]')).not.toBeNull(); });
@@ -202,7 +323,7 @@ describe("market card", () => {
   it("keeps the approval prompt and shows the error when confirming fails", async () => {
     const { send, button, root } = setup();
     send.mockResolvedValueOnce(reply(entry({ kind: "needs-approval", intentId: "intent-9" })));
-    press(button("buy-yes"));
+    press(button("trade"));
     await vi.waitFor(() => { expect(button("approve")).not.toBeNull(); });
     send.mockResolvedValueOnce({ ok: false, error: "Can't reach the desk. Is it running?" });
     press(button("approve"));
@@ -213,7 +334,7 @@ describe("market card", () => {
   it("shows desk errors quietly", async () => {
     const { send, button, root } = setup();
     send.mockResolvedValue({ ok: false, error: "The desk is not configured." });
-    press(button("buy-yes"));
+    press(button("trade"));
     await vi.waitFor(() => { expect(root.querySelector('.result[data-tone="quiet"]')).not.toBeNull(); });
     expect(root.textContent).toContain("The desk is not configured.");
   });
@@ -222,15 +343,111 @@ describe("market card", () => {
     const reason = "Sports markets are outside the desk's news-trading policy.";
     const { button, text, send } = setup({ ...matched, market: { ...market, category: "Sports", tradeable: false, tradeBlockedReason: reason } });
     expect(text()).toContain(reason);
-    expect(button("buy-yes").disabled).toBe(true);
-    press(button("buy-yes"));
+    expect(button("trade").disabled).toBe(true);
+    press(button("trade"));
     expect(send).not.toHaveBeenCalled();
   });
 
   it("keeps keyboard focus on the same control across re-renders", () => {
-    const { button, root } = setup();
-    button("amount-200").focus();
-    press(button("amount-200"));
-    expect(root.activeElement?.getAttribute("data-key")).toBe("amount-200");
+    const { root, handle } = setup();
+    editAmount(root, "23.00");
+    amountField(root).focus();
+    amountField(root).setSelectionRange(2, 2);
+    handle.update(quote);
+    expect(root.activeElement?.getAttribute("data-key")).toBe("amount");
+    expect(amountField(root).selectionStart).toBe(2);
+    expect(amountField(root).value).toBe("23.00");
+  });
+
+  it("keeps the native contract selector and options connected during price refreshes", () => {
+    const { root, handle } = setup();
+    const select = root.querySelector("select");
+    if (!select) throw new Error("missing contract selector");
+    const firstOption = select.options[0];
+    select.focus();
+    handle.update({ ...quote, market: { ...quote.market, yesCents: 50 } });
+    expect(root.querySelector("select")).toBe(select);
+    expect(select.options[0]).toBe(firstOption);
+    expect(select.isConnected).toBe(true);
+    expect(root.activeElement).toBe(select);
+    expect(root.querySelector(".payout")?.textContent).toBe("50% chance · 2 USDC potential payout");
+    select.blur();
+  });
+
+  it("refreshes listed contract options without replacing the selector", () => {
+    const { root, handle } = setup();
+    const select = root.querySelector("select");
+    if (!select) throw new Error("missing contract selector");
+    const other = { ...market, instrumentSymbol: "GEMI-FED261211-CUT25", contractLabel: "Cut 25bps", yesCents: 20 };
+    handle.update({ ...quote, contracts: [market, other] });
+    expect(root.querySelector("select")).toBe(select);
+    expect(Array.from(select.options).map((option) => option.value)).toEqual([market.instrumentSymbol, other.instrumentSymbol]);
+    expect(select.value).toBe(market.instrumentSymbol);
+    select.value = other.instrumentSymbol;
+    select.dispatchEvent(trusted(new Event("change")));
+    expect(handle.symbol).toBe(other.instrumentSymbol);
+    expect(root.querySelector(".contract-label")?.textContent).toBe(other.contractLabel);
+  });
+
+  it("hides a Gemini link that is not on gemini.com", () => {
+    const handle = createCard({ ...matched, market: { ...market, geminiUrl: "https://evil.test/predictions" } }, vi.fn());
+    document.body.append(handle.host);
+    const root = handle.host.shadowRoot;
+    if (!root) throw new Error("missing root");
+    expect(root.querySelector('[data-key="gemini"]')).toBeNull();
+    expect(root.querySelector(".foot")?.textContent).toContain("Trade on Gemini");
+  });
+});
+
+const deskBudget = { perTradeMaxCents: 1000, remainingCents: 1800, autoApproveMaxCents: 200 };
+
+describe("card desk limits", () => {
+  it("disables Trade now and explains when the stake exceeds the desk limit", () => {
+    const handle = createCard(matched, vi.fn(), { budget: deskBudget });
+    document.body.append(handle.host);
+    const root = handle.host.shadowRoot;
+    if (!root) throw new Error("missing root");
+    const button = () => root.querySelector<HTMLButtonElement>('[data-key="trade"]') as HTMLButtonElement;
+    editAmount(root, "10.01");
+    expect(button().disabled).toBe(true);
+    expect(root.textContent).toContain("Over your limit: max 10 USDC per trade (18 USDC left today)");
+    expect(amountField(root).getAttribute("aria-invalid")).toBe("true");
+    press(button());
+    editAmount(root, "5.00");
+    expect(button().disabled).toBe(false);
+    expect(root.textContent).toContain("Needs approval");
+    expect(root.textContent).not.toContain("Over your limit");
+    editAmount(root, "1.00");
+    expect(button().disabled).toBe(false);
+    expect(root.textContent).not.toContain("Needs approval");
+    expect(root.textContent).not.toContain("Over your limit");
+  });
+
+  it("does not present the API ceiling as a personal desk limit when budget is unknown", () => {
+    const { root, button, send } = setup();
+    editAmount(root, "23.00");
+    expect(button("trade").disabled).toBe(false);
+    expect(root.textContent).not.toContain("Over your limit");
+    editAmount(root, "1000.01");
+    expect(button("trade").disabled).toBe(true);
+    expect(root.textContent).toContain("Maximum 1000 USDC per order.");
+    expect(root.textContent).not.toContain("Over your limit");
+    press(button("trade"));
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("applies a later budget update from the feed positions payload", () => {
+    const handle = createCard(matched, vi.fn());
+    document.body.append(handle.host);
+    const root = handle.host.shadowRoot;
+    if (!root) throw new Error("missing root");
+    const button = () => root.querySelector<HTMLButtonElement>('[data-key="trade"]') as HTMLButtonElement;
+    editAmount(root, "10.00");
+    expect(button().disabled).toBe(false);
+    handle.updateBudget(deskBudget);
+    expect(button().disabled).toBe(false);
+    handle.updateBudget({ ...deskBudget, remainingCents: 350 });
+    expect(button().disabled).toBe(true);
+    expect(root.textContent).toContain("Over your limit: max 10 USDC per trade (3.50 USDC left today)");
   });
 });

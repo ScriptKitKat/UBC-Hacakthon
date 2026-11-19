@@ -1,8 +1,8 @@
 import type { FeedPositions } from "@/shared";
+import { MAX_FEED_BUY_CENTS } from "@/shared";
 import { z } from "zod";
 import type { WireEntry, WireMatch, WireQuote } from "./wire";
-
-export const AMOUNT_CHOICES_CENTS = [100, 200, 500] as const;
+import type { TradeBudget } from "./trade-budget";
 
 export const backgroundRequestSchema = z.discriminatedUnion("type", [
   z.object({
@@ -13,13 +13,14 @@ export const backgroundRequestSchema = z.discriminatedUnion("type", [
     url: z.string().optional(),
   }),
   z.object({ type: z.literal("positions") }),
+  z.object({ type: z.literal("budget") }),
   z.object({ type: z.literal("quote"), symbol: z.string().min(1) }),
   z.object({
     type: z.literal("buy"),
     postId: z.string().min(1),
     instrumentSymbol: z.string().min(1),
     outcome: z.enum(["yes", "no"]),
-    amountCents: z.number().int().positive(),
+    amountCents: z.number().int().positive().max(MAX_FEED_BUY_CENTS),
     clientOrderId: z.uuid(),
     seenPriceCents: z.number().int().min(1).max(100).optional(),
   }),
@@ -32,6 +33,7 @@ export interface ReplyValues {
   readonly match: WireMatch;
   readonly quote: WireQuote;
   readonly positions: FeedPositions;
+  readonly budget: TradeBudget;
   readonly buy: WireEntry;
   readonly confirm: WireEntry;
 }

@@ -3,6 +3,10 @@ import { z } from "zod";
 const nullableCents = z.number().nullable();
 
 const feedMarket = z.object({
+  geminiUrl: z.url().optional(),
+  description: z.string().optional(),
+  expiryDate: z.string().nullable().optional(),
+  quantityLimits: z.object({ quantityIncrementHundredths: z.number().int().positive(), quantityMinimumHundredths: z.number().int().nonnegative() }).optional(),
   eventTicker: z.string(),
   eventTitle: z.string(),
   contractLabel: z.string(),
@@ -29,12 +33,14 @@ export const feedMatchSchema = z.discriminatedUnion("kind", [
     confidence: z.number(),
     why: z.string(),
     market: feedMarket,
+    contracts: z.array(feedMarket).optional(),
   }),
   z.object({ kind: z.literal("no-match"), postId: z.string(), matchedBy, reason: z.string() }),
 ]);
 
 export const feedQuoteSchema = z.object({
   market: feedMarket,
+  contracts: z.array(feedMarket).optional(),
   history: z.array(z.object({ at: z.string(), yesCents: z.number() })),
 });
 

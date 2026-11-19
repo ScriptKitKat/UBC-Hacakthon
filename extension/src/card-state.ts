@@ -1,4 +1,6 @@
-import { AMOUNT_CHOICES_CENTS } from "./protocol";
+import { parseDollarsToCents, payoutFor } from "@/shared";
+import { tradeCapCents } from "./trade-budget";
+import type { TradeBudget } from "./trade-budget";
 import type { WireEntry, WireMarket, WireMatched, WireQuote } from "./wire";
 
 export type TradeStatus =
@@ -14,13 +16,19 @@ export interface CardState {
   readonly match: WireMatched;
   readonly market: WireMarket;
   readonly history: WireQuote["history"];
-  readonly amountCents: number;
+  readonly contracts: readonly WireMarket[];
+  readonly outcome: "yes" | "no";
+  readonly amountText: string;
+  readonly budget: TradeBudget | undefined;
   readonly status: TradeStatus;
 }
 
 export type CardAction =
   | { readonly type: "quote-received"; readonly quote: WireQuote }
-  | { readonly type: "amount-selected"; readonly amountCents: number }
+  | { readonly type: "budget-received"; readonly budget: TradeBudget | undefined }
+  | { readonly type: "amount-edited"; readonly amountText: string }
+  | { readonly type: "contract-selected"; readonly symbol: string }
+  | { readonly type: "outcome-selected"; readonly outcome: "yes" | "no" }
   | { readonly type: "buy-started" }
   | { readonly type: "buy-settled"; readonly entry: WireEntry }
   | { readonly type: "buy-failed"; readonly message: string }
@@ -28,10 +36,8 @@ export type CardAction =
   | { readonly type: "approve-settled"; readonly entry: WireEntry }
   | { readonly type: "approve-failed"; readonly message: string };
 
-const [DEFAULT_AMOUNT_CENTS] = AMOUNT_CHOICES_CENTS;
-
-export function initialCardState(match: WireMatched): CardState {
-  return { match, market: match.market, history: [], amountCents: DEFAULT_AMOUNT_CENTS, status: { phase: "idle" } };
+export function initialCardState(match: WireMatched, budget?: TradeBudget): CardState {
+  return { match, market: match.market, contracts: match.contracts ?? [match.market], outcome: "yes", history: [], amountText: "1.00", budget, status: { phase: "idle" } };
 }
 
 export function statusFromEntry(entry: WireEntry): TradeStatus {
@@ -55,16 +61,30 @@ export function isBusy(state: CardState): boolean {
 }
 
 export function canBuy(state: CardState): boolean {
-  return state.market.tradeable && !isBusy(state) && state.status.phase !== "needs-approval";
+  const price = state.outcome === "yes" ? state.market.yesCents : state.market.noCents;
+  const amountCents = parseDollarsToCents(state.amountText);
+  return state.market.tradeable && amountCents !== undefined && amountCents <= tradeCapCents(state.budget)
+    && payoutFor(price, amountCents, state.market.quantityLimits).kind === "quote" && !isBusy(state) && state.status.phase !== "needs-approval";
 }
 
 export function cardReducer(state: CardState, action: CardAction): CardState {
   const { status } = state;
   switch (action.type) {
+    case "budget-received":
+      return { ...state, budget: action.budget };
     case "quote-received":
-      return { ...state, market: action.quote.market, history: action.quote.history };
-    case "amount-selected":
-      return isBusy(state) ? state : { ...state, amountCents: action.amountCents };
+      return action.quote.market.instrumentSymbol === state.market.instrumentSymbol
+        ? { ...state, market: action.quote.market, contracts: action.quote.contracts ?? state.contracts, history: action.quote.history }
+        : state;
+    case "contract-selected": {
+      if (isBusy(state) || status.phase === "needs-approval") return state;
+      const market = state.contracts.find((contract) => contract.instrumentSymbol === action.symbol);
+      return market ? { ...state, market, history: [], status: { phase: "idle" } } : state;
+    }
+    case "outcome-selected":
+      return isBusy(state) || status.phase === "needs-approval" ? state : { ...state, outcome: action.outcome, status: { phase: "idle" } };
+    case "amount-edited":
+      return isBusy(state) || status.phase === "needs-approval" ? state : { ...state, amountText: action.amountText, status: { phase: "idle" } };
     case "buy-started":
       return canBuy(state) ? { ...state, status: { phase: "buying" } } : state;
     case "buy-settled":
