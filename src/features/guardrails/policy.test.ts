@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { instrumentSymbol, usdCents } from "@/shared";
 import type { TradeIntent } from "@/shared";
-import { DEFAULT_MARKET_CATEGORIES, applyApproved, confirm, createPolicy, evaluate, marketPolicyRefusal, rollDay } from "./index";
+import { DEFAULT_MARKET_CATEGORIES, applyApproved, confirm, createPolicy, evaluate, evaluateResearch, marketPolicyRefusal, remainingBudget, restorePolicyState, rollDay } from "./index";
 import type { PolicyConfig, PolicyState } from "./index";
 
 const now = new Date("2026-11-17T23:59:59Z");
@@ -189,5 +189,53 @@ describe("trade policy", () => {
         expect(current.spentToday).toBeLessThanOrEqual(config.dailyCap);
       }
     }
+  });
+});
+
+describe("research spend", () => {
+  const research = validated({ ...config, autoApproveMax: usdCents(200) });
+  const spend = { spendId: "research:n1", notional: usdCents(5) };
+
+  it("approves a spend under every limit", () => {
+    expect(evaluateResearch(spend, research, state, now)).toMatchObject({ kind: "approve", intentId: "research:n1", notional: 5 });
+  });
+
+  it.each([
+    ["kill switch", research.withKillSwitch(true), spend, state, "kill-switch", "Trading is paused, so I did not buy research."],
+    ["zero price", research, { ...spend, notional: usdCents(0) }, state, "zero-notional", "The research price must be greater than $0."],
+    ["per-trade cap", validated({ ...config, perTradeMax: usdCents(300), autoApproveMax: usdCents(2) }), { ...spend, notional: usdCents(400) }, state, "over-per-trade-cap", "A $4 research purchase exceeds the $3 limit per trade."],
+    ["auto-approve limit", research, { ...spend, notional: usdCents(300) }, state, "over-auto-approve-max", "A $3 research purchase is above the $2 I can approve on my own."],
+    ["daily cap", research, spend, { ...state, spentToday: usdCents(1998) }, "over-daily-cap", "A $0.05 research purchase would exceed today's $20 budget, with $0.02 left."],
+    ["reserved budget", research, spend, { ...state, spentToday: usdCents(1990), reservedToday: usdCents(8) }, "over-daily-cap", "A $0.05 research purchase would exceed today's $20 budget, with $0.02 left."],
+    ["duplicate", research, spend, { ...state, seenIntentIds: new Set(["research:n1"]) }, "duplicate-intent", "I've already approved this research purchase."],
+  ] as const)("refuses on %s with a spoken reason", (_name, testPolicy, testSpend, testState, code, spokenReason) => {
+    expect(evaluateResearch(testSpend, testPolicy, testState, now)).toEqual({ kind: "refuse", spendId: testSpend.spendId, code, spokenReason });
+  });
+
+  it("shares the daily budget with bets: a research spend lowers what a trade can use", () => {
+    const approved = evaluateResearch(spend, research, state, now);
+    if (approved.kind !== "approve") throw new Error("expected approval");
+    const spent = applyApproved(state, approved);
+    expect(spent.spentToday).toBe(5);
+    expect(remainingBudget(research, spent, now)).toBe(1995);
+  });
+});
+
+describe("restoring the daily budget", () => {
+  const entries = [
+    { kind: "approve", at: "2026-11-17T10:00:00.000Z", notionalCents: 200 },
+    { kind: "approve", at: "2026-11-17T11:00:00.000Z", notionalCents: 5 },
+    { kind: "refuse", at: "2026-11-17T11:30:00.000Z", notionalCents: 900 },
+    { kind: "execution-failed", at: "2026-11-17T11:40:00.000Z", notionalCents: 700 },
+    { kind: "needs-approval", at: "2026-11-17T11:50:00.000Z", notionalCents: 600 },
+    { kind: "approve", at: "2026-11-16T23:59:59.000Z", notionalCents: 1000 },
+  ] as const;
+
+  it("sums only today's filled entries, bets and research alike", () => {
+    expect(restorePolicyState(entries, now)).toMatchObject({ day: "2026-11-17", spentToday: 205, reservedToday: 0 });
+  });
+
+  it("starts the next UTC day at zero", () => {
+    expect(restorePolicyState(entries, new Date("2026-11-18T00:00:00Z"))).toMatchObject({ day: "2026-11-18", spentToday: 0 });
   });
 });

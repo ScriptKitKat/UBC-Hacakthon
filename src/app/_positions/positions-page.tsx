@@ -145,6 +145,37 @@ function PositionsTable({ view }: { readonly view: PositionsView }) {
   );
 }
 
+function ResearchSpend({ spend }: { readonly spend: PositionsView["researchSpend"] }) {
+  return (
+    <section className={styles.panel} aria-labelledby="research-spend-heading">
+      <h2 id="research-spend-heading" className={styles.panelTitle}>Research spend</h2>
+      <p className={styles.researchTotal}>
+        {formatDollarsFromCents(spend.todayCents)} <span className={styles.muted}>on deep dives today (not counted in positions)</span>
+      </p>
+      {spend.purchases.length === 0 ? (
+        <p className={styles.muted}>No deep dives bought yet.</p>
+      ) : (
+        <ul className={styles.fills}>
+          {spend.purchases.map((purchase) => (
+            <li key={purchase.entryId} className={styles.researchRow}>
+              <span className={styles.muted}>{formatClock(purchase.at)}</span>
+              <Link className={styles.marketLink} href={`/markets/${purchase.symbol}`}>{purchase.symbol}</Link>
+              <span>{formatDollarsFromCents(purchase.costCents)}</span>
+              {purchase.explorerUrl !== null && purchase.signature !== null ? (
+                <a className={styles.explorerLink} href={purchase.explorerUrl} target="_blank" rel="noopener noreferrer" title={purchase.signature}>
+                  View on Solana Explorer ↗ <span className={styles.signature}>{shortenMiddle(purchase.signature, 8, 6)}</span>
+                </a>
+              ) : (
+                <span className={styles.muted}>No explorer link recorded</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export function PositionsPage() {
   const [result, setResult] = useState<PositionsResult | null>(null);
   usePolling(() => {
@@ -164,6 +195,7 @@ export function PositionsPage() {
         {result?.kind === "ready" && result.view.positions.length > 0 ? <PositionsTable view={result.view} /> : null}
         <p className={styles.note}>Value uses the price you could sell at today. Paper tickets: no real Gemini order is placed.</p>
       </section>
+      {result?.kind === "ready" ? <ResearchSpend spend={result.view.researchSpend} /> : null}
     </div>
   );
 }

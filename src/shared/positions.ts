@@ -28,8 +28,18 @@ const position = z.object({
   fills: z.array(fill),
 });
 
+const researchPurchase = z.object({
+  entryId: z.string(),
+  at: z.string(),
+  symbol: z.string(),
+  costCents: z.number(),
+  signature: z.string().nullable(),
+  explorerUrl: z.string().nullable(),
+});
+
 export const positionsViewSchema = z.object({
   generatedAt: z.string(),
+  researchSpend: z.object({ todayCents: z.number(), purchases: z.array(researchPurchase) }),
   positions: z.array(position),
   totals: z.object({
     costCents: z.number(),
@@ -45,3 +55,4 @@ export type PositionsView = z.output<typeof positionsViewSchema>;
 export type PositionView = z.output<typeof position>;
 export type PositionFillView = z.output<typeof fill>;
 export type PositionStatus = z.output<typeof positionStatus>;
+export type ResearchPurchaseView = z.output<typeof researchPurchase>;

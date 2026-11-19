@@ -68,16 +68,18 @@ export function buildRequestBody(model: string, post: PostInput, candidates: rea
 
 const completion = z.object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1) });
 
-export function parseCompletion(body: unknown): GrokAnswer | undefined {
+export function completionJson(body: unknown): unknown {
   const parsed = completion.safeParse(body);
   const content = parsed.success ? parsed.data.choices[0]?.message.content : undefined;
   if (content === undefined) return undefined;
-  let json: unknown;
   try {
-    json = JSON.parse(content);
+    return JSON.parse(content);
   } catch {
     return undefined;
   }
-  const answer = grokAnswer.safeParse(json);
+}
+
+export function parseCompletion(body: unknown): GrokAnswer | undefined {
+  const answer = grokAnswer.safeParse(completionJson(body));
   return answer.success ? answer.data : undefined;
 }

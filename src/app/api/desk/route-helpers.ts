@@ -56,3 +56,8 @@ export async function withDashboardGet(
   if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
   return handler(access);
 }
+
+export function withDashboardPost(request: Request, handler: (desk: Desk) => Promise<Response>): Promise<Response> {
+  if (isCrossOrigin(request)) return Promise.resolve(Response.json({ error: "cross-origin-forbidden" }, { status: 403 }));
+  return withDesk(handler);
+}

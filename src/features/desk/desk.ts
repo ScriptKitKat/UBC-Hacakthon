@@ -2,8 +2,8 @@ import { executeApproved } from "@/features/execution";
 import type { ExecutionError, TradeRecord } from "@/features/execution";
 import { CARD_CATEGORIES, createPostMatcher } from "@/features/grok";
 import type { PostCandidate, PostInput } from "@/features/grok";
-import { confirm, evaluate, marketPolicyRefusal, rollDay } from "@/features/guardrails";
-import type { ApprovedTrade, Decision, Policy, PolicyState } from "@/features/guardrails";
+import { confirm, evaluate, evaluateResearch, marketPolicyRefusal, remainingBudget, restorePolicyState, rollDay } from "@/features/guardrails";
+import type { ApprovedResearch, ApprovedTrade, Decision, Policy, PolicyState } from "@/features/guardrails";
 import { createMemoryHistory } from "@/features/history";
 import type { HistoryStore } from "@/features/history";
 import type { UsdcLedger } from "@/features/ledger";
@@ -11,12 +11,16 @@ import { parseInstrumentSymbol } from "@/features/markets";
 import type { ContractLimits, GeminiMarketsClient, MarketContract } from "@/features/markets";
 import { allowAll, matchNews } from "@/features/matcher";
 import type { MatchCandidate, MatchResult, NewsItem } from "@/features/matcher";
-import { aggregatePositions, fillsFromLog, markFromContract } from "@/features/positions";
+import { aggregatePositions, fillsFromLog, markFromContract, summarizeResearchSpend, todaysResearchSpendCents } from "@/features/positions";
 import type { MarketMark } from "@/features/positions";
 import { instrumentSymbol, usdCents } from "@/shared";
 import type { FeedSettings } from "./config";
+import { buyDeepDive } from "./deep-dive";
+import type { DeepDiveSettings, SpendOutcome } from "./deep-dive";
+import type { StoredPurchase } from "./purchase-store";
 import type {
   DecisionLogEntry,
+  DeepDiveResult,
   DeskSnapshot,
   FeedMarketView,
   FeedMatch,
@@ -43,6 +47,8 @@ const HISTORY_LIMIT = 90;
 const MATCH_CACHE_LIMIT = 300;
 const MATCH_CACHE_TTL_MS = 10 * 60 * 1000;
 const ORDER_MEMORY_LIMIT = 500;
+const PURCHASE_REUSE_MS = 15 * 60 * 1000;
+const PURCHASE_LIMIT = 50;
 
 type PendingTrade = Extract<Decision, { kind: "needs-approval" }>;
 
@@ -58,6 +64,9 @@ export interface DeskDeps {
   readonly history?: HistoryStore;
   readonly initialLog?: readonly DecisionLogEntry[];
   readonly saveLog?: (log: readonly DecisionLogEntry[]) => Promise<void>;
+  readonly research?: DeepDiveSettings;
+  readonly initialPurchases?: readonly StoredPurchase[];
+  readonly savePurchases?: (purchases: readonly StoredPurchase[]) => Promise<void>;
 }
 
 export interface FeedBuyRequest {
@@ -88,6 +97,7 @@ export interface Desk {
   readonly quote: (symbol: string) => Promise<FeedQuote | undefined>;
   readonly postContextFor: (symbol: string) => Promise<ResearchPostContext | undefined>;
   readonly getPositions: () => Promise<PositionsView>;
+  readonly buyDeepDive: (symbol: string, origin: string) => Promise<DeepDiveResult>;
   readonly buyFromFeed: (request: FeedBuyRequest) => Promise<DecisionLogEntry>;
   readonly confirmFromFeed: (intentId: string) => Promise<ConfirmResult>;
   readonly proposeTrade: (request: ProposeRequest) => Promise<DecisionLogEntry>;
@@ -196,6 +206,7 @@ function failureReason(error: ExecutionError): string {
     case "recipient-ata-missing": return "The vault recipient has no USDC account yet, so I did not place the trade.";
     case "notional-overflow": return "The trade amount exceeds the ledger limit.";
     case "invalid-notional":
+    case "invalid-recipient":
     case "debit-preparation-failed":
     case "debit-rejected":
     case "balance-failed": return "The ledger payment failed, so I did not place the trade.";
@@ -216,17 +227,16 @@ export function createDesk(deps: DeskDeps): Desk {
     now,
   });
   let policy = deps.policy;
-  let state: PolicyState = {
-    day: now().toISOString().slice(0, 10),
-    spentToday: usdCents(0),
-    reservedToday: usdCents(0),
-    seenIntentIds: new Set(),
-  };
+  const initialLog = (deps.initialLog ?? []).slice(0, LOG_LIMIT);
+  let state: PolicyState = restorePolicyState(initialLog, now());
   let current: { readonly news: NewsItem; readonly match: MatchResult } | undefined;
   const history = deps.history ?? createMemoryHistory();
   const saveLog = deps.saveLog ?? (() => Promise.resolve());
   const lastMarks = new Map<string, MarketMark>();
-  let log: readonly DecisionLogEntry[] = (deps.initialLog ?? []).slice(0, LOG_LIMIT);
+  let log: readonly DecisionLogEntry[] = initialLog;
+  let purchases: readonly StoredPurchase[] = (deps.initialPurchases ?? []).slice(0, PURCHASE_LIMIT);
+  const savePurchases = deps.savePurchases ?? (() => Promise.resolve());
+  const deepDives = new Map<string, Promise<DeepDiveResult>>();
   const pending = new Map<string, PendingRecord>();
   const tickers = new Map<InstrumentSymbol, string>();
   const matchCache = new Map<string, { readonly at: number; readonly post: PostInput; readonly match: Promise<FeedMatch> }>();
@@ -331,7 +341,7 @@ export function createDesk(deps: DeskDeps): Desk {
     return match;
   }
 
-  function reserve(approved: ApprovedTrade): void {
+  function reserve(approved: Pick<ApprovedTrade, "intentId" | "notional">): void {
     const rolled = rollDay(state, now());
     state = {
       ...rolled,
@@ -348,6 +358,72 @@ export function createDesk(deps: DeskDeps): Desk {
     } else if (trade.error.code !== "debit-unconfirmed") {
       state = { ...rolled, reservedToday: released };
     }
+  }
+
+  function settleSpend(approved: ApprovedResearch, outcome: SpendOutcome): void {
+    if (outcome === "held") return;
+    const rolled = rollDay(state, now());
+    const released = usdCents(Math.max(0, rolled.reservedToday - approved.notional));
+    state = outcome === "paid"
+      ? { ...rolled, reservedToday: released, spentToday: usdCents(rolled.spentToday + approved.notional) }
+      : { ...rolled, reservedToday: released };
+  }
+
+  function purchaseFor(symbol: string): StoredPurchase | undefined {
+    const found = purchases.find((purchase) => purchase.symbol === symbol);
+    return found && now().getTime() - found.atMs < PURCHASE_REUSE_MS ? found : undefined;
+  }
+
+  function rememberPurchase(result: DeepDiveResult, symbol: string): void {
+    if (result.status !== "delivered" || !result.brief || !result.purchase) return;
+    const { signature, explorerUrl, costCents, at } = result.purchase;
+    purchases = [
+      { symbol, atMs: Date.parse(at), brief: result.brief, receipt: { signature, explorerUrl, costCents } },
+      ...purchases.filter((purchase) => purchase.symbol !== symbol),
+    ].slice(0, PURCHASE_LIMIT);
+    savePurchases(purchases).catch(() => undefined);
+  }
+
+  function alreadyPurchased(purchase: StoredPurchase): DeepDiveResult {
+    return {
+      status: "delivered",
+      alreadyPurchased: true,
+      trace: [{ step: "brief", detail: "You already bought this brief in the last 15 minutes, so I did not pay again." }],
+      failureReason: null,
+      brief: purchase.brief,
+      purchase: { at: new Date(purchase.atMs).toISOString(), ...purchase.receipt },
+    };
+  }
+
+  function deepDive(symbol: string, origin: string): Promise<DeepDiveResult> {
+    const reusable = purchaseFor(symbol);
+    if (reusable) return Promise.resolve(alreadyPurchased(reusable));
+    const running = deepDives.get(symbol);
+    if (running) return running;
+    const buying = buyDeepDive(
+      {
+        fetch: deps.fetch ?? fetch,
+        ledger,
+        ledgerView: deps.ledgerView,
+        settings: deps.research,
+        account: {
+          decide: (spend) => evaluateResearch(spend, policy, state, now()),
+          reserve,
+          settle: settleSpend,
+          remaining: () => remainingBudget(policy, state, now()),
+          record,
+        },
+      },
+      symbol,
+      origin,
+    ).then((result) => {
+      rememberPurchase(result, symbol);
+      return result;
+    });
+    deepDives.set(symbol, buying);
+    const forget = () => deepDives.delete(symbol);
+    buying.then(forget, forget);
+    return buying;
   }
 
   async function execute(approved: ApprovedTrade, intent: TradeIntent, quote: Quote): Promise<DecisionLogEntry> {
@@ -486,8 +562,10 @@ export function createDesk(deps: DeskDeps): Desk {
           }
         }),
       );
-      return aggregatePositions(fills, lastMarks, now().toISOString());
+      return { ...aggregatePositions(fills, lastMarks, now().toISOString()), researchSpend: summarizeResearchSpend(log, now().toISOString()) };
     },
+
+    buyDeepDive: deepDive,
 
     buyFromFeed({ clientOrderId, ...request }) {
       const previous = feedOrders.get(clientOrderId);
@@ -522,6 +600,7 @@ export function createDesk(deps: DeskDeps): Desk {
       const policyView: PolicyView = {
         dailyCapCents: config.dailyCap,
         spentCents: rolled.spentToday,
+        researchSpentCents: todaysResearchSpendCents(log, rolled.day),
         remainingCents: Math.max(0, config.dailyCap - rolled.spentToday - rolled.reservedToday),
         autoApproveMaxCents: config.autoApproveMax,
         perTradeMaxCents: config.perTradeMax,

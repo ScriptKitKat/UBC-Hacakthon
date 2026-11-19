@@ -5,6 +5,7 @@ import type { GrokSettings } from "@/features/grok";
 import { DEFAULT_MARKET_CATEGORIES, createPolicy } from "@/features/guardrails";
 import type { Policy } from "@/features/guardrails";
 import { instrumentSymbol, usdCents } from "@/shared";
+import type { UsdCents } from "@/shared";
 
 const dollarAmount = z
   .string()
@@ -41,6 +42,9 @@ const envSchema = z.object({
   SOLANA_KEYPAIR_PATH: z.string().min(1).optional(),
   VAULT_RECIPIENT: publicKey.optional(),
   USDC_MINT: publicKey.optional(),
+  RESEARCH_RECIPIENT: publicKey.optional(),
+  RESEARCH_PRICE_USD: dollarAmount.default(usdCents(5)),
+  RESEARCH_PAYMENT_SECRET: z.string().min(16).optional(),
   SOLANA_TEST_MINT: publicKey.optional(),
 });
 
@@ -61,8 +65,15 @@ export interface FeedSettings {
   readonly grok: GrokSettings;
 }
 
+export interface ResearchSettings {
+  readonly recipient: PublicKey | undefined;
+  readonly priceCents: UsdCents;
+  readonly paymentSecret: string | undefined;
+}
+
 export interface DeskConfig {
   readonly policy: Policy;
+  readonly research: ResearchSettings;
   readonly feed: FeedSettings;
   readonly geminiBaseUrl: string;
   readonly ledger: LedgerSettings;
@@ -108,5 +119,10 @@ export function loadDeskConfig(env: Readonly<Record<string, string | undefined>>
   const operatorId = values.FEED_OPERATOR_ID ?? values.VOICE_OPERATOR_ID ?? values.SENDER_ALLOWLIST[0];
   if (operatorId === undefined) return { ok: false, issues: ["SENDER_ALLOWLIST: must list at least one value"] };
   const feed: FeedSettings = { operatorId, grok: loadGrokSettings(present) };
-  return { ok: true, value: { policy: policy.value, feed, geminiBaseUrl: values.GEMINI_API_BASE, ledger: ledgerSettings(values) } };
+  const research: ResearchSettings = {
+    recipient: values.RESEARCH_RECIPIENT ?? values.VAULT_RECIPIENT,
+    priceCents: values.RESEARCH_PRICE_USD,
+    paymentSecret: values.RESEARCH_PAYMENT_SECRET,
+  };
+  return { ok: true, value: { policy: policy.value, research, feed, geminiBaseUrl: values.GEMINI_API_BASE, ledger: ledgerSettings(values) } };
 }

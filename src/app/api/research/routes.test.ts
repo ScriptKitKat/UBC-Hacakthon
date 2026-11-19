@@ -40,6 +40,7 @@ const sampleView: ResearchView = {
 
 const emptyPositions: PositionsView = {
   generatedAt: "2026-11-18T00:00:00.000Z",
+  researchSpend: { todayCents: 0, purchases: [] },
   positions: [],
   totals: { costCents: 0, pricedCostCents: 0, valueCents: 0, pnlCents: 0, pnlPercent: null, unpricedPositions: 0 },
 };
@@ -50,7 +51,7 @@ const call = (symbol: string, query = "", headers: Record<string, string> = {}) 
 beforeEach(() => {
   view.mockReset().mockResolvedValue({ kind: "ok", view: sampleView });
   getPositions.mockReset().mockResolvedValue(emptyPositions);
-  getDesk.mockReset().mockResolvedValue({ ok: true, desk: { getPositions } as unknown as Desk, research: { view } });
+  getDesk.mockReset().mockResolvedValue({ ok: true, desk: { getPositions } as unknown as Desk, research: { view, brief: vi.fn() }, payments: undefined });
 });
 
 describe("GET /api/research/[symbol]", () => {

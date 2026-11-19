@@ -2,12 +2,11 @@ import type { GeminiMarketsClient, MarketEvent } from "@/features/markets";
 import { matchPostToEvents, trimWhy } from "@/features/matcher";
 import { createCandidateSource, selectCandidates } from "./candidates";
 import type { GrokSettings } from "./env";
+import { postGrokChat } from "./chat";
 import { buildRequestBody, parseCompletion } from "./request";
 import type { PostCandidate, PostInput, PostMatcher, PostMatchResult } from "./types";
 
 export const MIN_CONFIDENCE = 0.6;
-const GROK_URL = "https://api.x.ai/v1/chat/completions";
-const DEFAULT_TIMEOUT_MS = 8000;
 
 export interface PostMatcherOptions {
   readonly markets: Pick<GeminiMarketsClient, "searchEvents">;
@@ -27,18 +26,13 @@ export function createPostMatcher(options: PostMatcherOptions): PostMatcher {
   const source = createCandidateSource({ markets, categories: options.categories, now });
 
   async function askGrok(apiKey: string, post: PostInput, candidates: readonly PostCandidate[]) {
-    try {
-      const response = await options.fetch(GROK_URL, {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify(buildRequestBody(settings.model, post, candidates)),
-        signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
-      });
-      if (!response.ok) return undefined;
-      return parseCompletion(await response.json());
-    } catch {
-      return undefined;
-    }
+    const body = await postGrokChat({
+      apiKey,
+      fetch: options.fetch,
+      body: buildRequestBody(settings.model, post, candidates),
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    });
+    return body === undefined ? undefined : parseCompletion(body);
   }
 
   async function matchWithGrok(apiKey: string, post: PostInput): Promise<PostMatchResult | undefined> {

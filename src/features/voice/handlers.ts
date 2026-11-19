@@ -12,7 +12,7 @@ export interface VoiceDeps {
 
 export interface TradeOutcome {
   readonly intentId: string;
-  readonly side: Outcome;
+  readonly side?: Outcome;
   readonly amountUsd: number;
   readonly ticketId?: string;
   readonly explorerUrl?: string;
@@ -80,7 +80,7 @@ function tradeResult(entry: DecisionLogEntry): VoiceToolResult {
     status: TRADE_STATUS[entry.kind],
     say: entry.spokenReason,
     intentId: entry.intentId,
-    side: entry.outcome,
+    ...(entry.outcome === null ? {} : { side: entry.outcome }),
     amountUsd: centsToUsd(entry.notionalCents),
     ...(entry.ticket ? { ticketId: entry.ticket.ticketId } : {}),
     ...(entry.explorerUrl ? { explorerUrl: entry.explorerUrl } : {}),

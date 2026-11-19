@@ -11,6 +11,11 @@ const BADGES: Record<DecisionKind, { readonly label: string; readonly className:
   "execution-failed": { label: "Failed", className: styles.badgeFailed ?? "" },
 };
 
+function senderLabel(entry: DecisionLogEntry): string {
+  if (entry.source === "feed") return `X feed card · ${entry.senderId}`;
+  return entry.source === "research" ? `Deep dive · paid by ${entry.senderId}` : entry.senderId;
+}
+
 export function LatestDecision({ entry }: { readonly entry: DecisionLogEntry | undefined }) {
   if (!entry) return <p className={styles.quoteEmpty}>No decisions yet.</p>;
   return (
@@ -19,7 +24,7 @@ export function LatestDecision({ entry }: { readonly entry: DecisionLogEntry | u
         <SpeakerIcon />
       </span>
       <div className={styles.quoteBody}>
-        <figcaption className={styles.quoteLabel}>Desk said · {BADGES[entry.kind].label}</figcaption>
+        <figcaption className={styles.quoteLabel}>Desk said · {entry.source === "research" ? "Research" : BADGES[entry.kind].label}</figcaption>
         <blockquote className={styles.quoteText}>“{entry.spokenReason}”</blockquote>
       </div>
     </figure>
@@ -37,14 +42,19 @@ export function LogPanel({ log }: { readonly log: readonly DecisionLogEntry[] })
           {log.map((entry) => (
             <li key={entry.entryId} className={styles.logRow}>
               <span className={styles.logTime}>{formatClock(entry.at)}</span>
-              <span className={BADGES[entry.kind].className}>{BADGES[entry.kind].label}</span>
+              <span className={styles.logBadges}>
+                {entry.source === "research" ? <span className={styles.badgeResearch}>Research</span> : null}
+                {entry.source === "research" && entry.kind === "approve" ? null : (
+                  <span className={BADGES[entry.kind].className}>{BADGES[entry.kind].label}</span>
+                )}
+              </span>
               <span className={styles.logTrade}>
                 <span className={styles.logTradeTop}>
-                  <span className={entry.outcome === "yes" ? styles.pillYes : styles.pillNo}>{entry.outcome.toUpperCase()}</span>
+                  {entry.outcome === null ? null : <span className={entry.outcome === "yes" ? styles.pillYes : styles.pillNo}>{entry.outcome.toUpperCase()}</span>}
                   <span className={styles.logAmount}>{formatDollars(entry.notionalCents)}</span>
                 </span>
                 <Link className={styles.logSymbol} href={`/markets/${entry.symbol}`} title="Research this market">{entry.symbol}</Link>
-                <span className={styles.logSender}>{entry.source === "feed" ? `X feed card · ${entry.senderId}` : entry.senderId}</span>
+                <span className={styles.logSender}>{senderLabel(entry)}</span>
               </span>
               <span className={styles.logReason}>{entry.spokenReason}</span>
               <span className={styles.logProof}>

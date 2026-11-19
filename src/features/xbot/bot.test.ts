@@ -29,7 +29,7 @@ const matched: MatchView = {
 
 const policy: PolicyView = {
   dailyCapCents: 2000,
-  spentCents: 300,
+  spentCents: 300, researchSpentCents: 0,
   remainingCents: 1700,
   autoApproveMaxCents: 200,
   perTradeMaxCents: 1000,
@@ -115,7 +115,7 @@ function fakeDesk(script: DeskScript = {}) {
   );
   const desk: Desk = {
     submitNews, proposeTrade, confirmPending, getSnapshot, setKillSwitch: vi.fn(),
-    matchPost: vi.fn(), isCardFor: vi.fn(), quote: vi.fn(), postContextFor: vi.fn(), getPositions: vi.fn(), buyFromFeed: vi.fn(), confirmFromFeed: vi.fn(),
+    matchPost: vi.fn(), isCardFor: vi.fn(), quote: vi.fn(), postContextFor: vi.fn(), getPositions: vi.fn(), buyDeepDive: vi.fn(), buyFromFeed: vi.fn(), confirmFromFeed: vi.fn(),
   };
   return { desk, proposeTrade, confirmPending, submitNews };
 }
@@ -287,7 +287,7 @@ describe("handleReply bets", () => {
       policy: created.value,
       feed: { operatorId: "@Priscilla", grok: { apiKey: undefined, model: "grok-test" } },
       markets,
-      ledger: { debit, balance: vi.fn() },
+      ledger: { debit, signPayment: vi.fn(), balance: vi.fn() },
       ledgerView: { configured: false, missing: [] },
       now: () => new Date("2026-11-17T12:00:00Z"),
       idGen: () => "desk-id",

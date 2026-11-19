@@ -59,7 +59,7 @@ const configuredLedger: LedgerView = {
 function setup(options: { ledger?: UsdcLedger; ledgerView?: LedgerView; markets?: ReturnType<typeof fakeMarkets>; killSwitch?: boolean; extra?: Partial<DeskDeps> } = {}) {
   let counter = 0;
   const debit = vi.fn<UsdcLedger["debit"]>(() => Promise.resolve({ ok: true, value: receipt(`sig-${String(++counter)}`) }));
-  const ledger = options.ledger ?? { debit, balance: vi.fn() };
+  const ledger = options.ledger ?? { debit, signPayment: vi.fn(), balance: vi.fn() };
   const markets = options.markets ?? fakeMarkets();
   const policy = createPolicy({
     dailyCap: usdCents(2000), autoApproveMax: usdCents(200), perTradeMax: usdCents(1000),
@@ -249,7 +249,7 @@ describe("desk", () => {
     const debit = vi.fn<UsdcLedger["debit"]>()
       .mockResolvedValueOnce({ ok: false, error: { code: "debit-rejected" } })
       .mockResolvedValueOnce({ ok: false, error: { code: "debit-unconfirmed", signature: "s" } });
-    const { desk } = await readyDesk({ ledger: { debit, balance: vi.fn() } });
+    const { desk } = await readyDesk({ ledger: { debit, signPayment: vi.fn(), balance: vi.fn() } });
     expect(await desk.proposeTrade(propose("yes", 200))).toMatchObject({ kind: "execution-failed", code: "debit-rejected" });
     expect((await desk.getSnapshot()).policy.remainingCents).toBe(2000);
     expect(await desk.proposeTrade(propose("yes", 200))).toMatchObject({ kind: "execution-failed", code: "debit-unconfirmed" });

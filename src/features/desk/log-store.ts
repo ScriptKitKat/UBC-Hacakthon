@@ -12,10 +12,10 @@ const entrySchema = z.object({
   spokenReason: z.string(),
   intentId: z.string(),
   symbol: z.string(),
-  outcome,
+  outcome: outcome.nullable(),
   notionalCents: z.number(),
   senderId: z.string(),
-  source: z.enum(["voice", "x", "desk", "feed"]),
+  source: z.enum(["voice", "x", "desk", "feed", "research"]),
   signature: z.exactOptional(z.string()),
   explorerUrl: z.exactOptional(z.string()),
   ticket: z.exactOptional(

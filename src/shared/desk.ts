@@ -1,5 +1,7 @@
 import type { Outcome, TradeSource } from "./types";
 
+export type DecisionSource = TradeSource | "research";
+
 export type DecisionKind = "approve" | "needs-approval" | "refuse" | "execution-failed";
 
 export interface TicketView {
@@ -18,10 +20,10 @@ export interface DecisionLogEntry {
   readonly spokenReason: string;
   readonly intentId: string;
   readonly symbol: string;
-  readonly outcome: Outcome;
+  readonly outcome: Outcome | null;
   readonly notionalCents: number;
   readonly senderId: string;
-  readonly source: TradeSource;
+  readonly source: DecisionSource;
   readonly signature?: string;
   readonly explorerUrl?: string;
   readonly ticket?: TicketView;
@@ -55,6 +57,7 @@ export type MatchView =
 export interface PolicyView {
   readonly dailyCapCents: number;
   readonly spentCents: number;
+  readonly researchSpentCents: number;
   readonly remainingCents: number;
   readonly autoApproveMaxCents: number;
   readonly perTradeMaxCents: number;

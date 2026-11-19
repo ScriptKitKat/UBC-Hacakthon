@@ -71,18 +71,3 @@ export function PostPanel({ post }: { readonly post: ResearchPostContext | null 
     </section>
   );
 }
-
-export function DeepDiveCard() {
-  return (
-    <section className={styles.deepDive} aria-labelledby="deep-dive-heading" aria-disabled="true">
-      <div className={styles.deepDiveHead}>
-        <h2 id="deep-dive-heading" className={styles.panelTitle}>Deep dive · $0.05</h2>
-        <span className={styles.soon}>Coming soon</span>
-      </div>
-      <p className={styles.explainerNote}>Paid research via x402: a written brief on this market, built from the data on this page.</p>
-      <button type="button" className={styles.secondaryButton} disabled>
-        Buy deep dive
-      </button>
-    </section>
-  );
-}

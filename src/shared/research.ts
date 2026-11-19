@@ -120,3 +120,41 @@ export type ResearchTrade = z.output<typeof trade>;
 export function isResearchTimeframe(value: string): value is ResearchTimeframe {
   return (RESEARCH_TIMEFRAMES as readonly string[]).includes(value);
 }
+
+export const BRIEF_SECTION_TITLES = [
+  "What the market thinks",
+  "What changed recently",
+  "Crowd and liquidity",
+  "Related markets",
+  "What would move it",
+  "Risks / what this doesn't know",
+] as const;
+
+export const researchBriefSchema = z.object({
+  symbol: z.string(),
+  generatedAt: z.string(),
+  headline: z.string(),
+  sections: z.array(z.object({ title: z.string(), body: z.string() })),
+  polishedBy: z.enum(["template", "grok"]),
+});
+
+const deepDiveStep = z.discriminatedUnion("step", [
+  z.object({ step: z.literal("requirements"), detail: z.string() }),
+  z.object({ step: z.literal("guardrails"), detail: z.string(), remainingCents: z.number() }),
+  z.object({ step: z.literal("signed"), detail: z.string(), signature: z.string() }),
+  z.object({ step: z.literal("settled"), detail: z.string(), signature: z.string(), explorerUrl: z.string() }),
+  z.object({ step: z.literal("brief"), detail: z.string() }),
+]);
+
+export const deepDiveResultSchema = z.object({
+  status: z.enum(["delivered", "refused", "failed"]),
+  alreadyPurchased: z.boolean(),
+  trace: z.array(deepDiveStep),
+  failureReason: z.string().nullable(),
+  brief: researchBriefSchema.nullable(),
+  purchase: z.object({ at: z.string(), signature: z.string(), explorerUrl: z.string(), costCents: z.number() }).nullable(),
+});
+
+export type ResearchBrief = z.output<typeof researchBriefSchema>;
+export type DeepDiveStep = z.output<typeof deepDiveStep>;
+export type DeepDiveResult = z.output<typeof deepDiveResultSchema>;

@@ -7,7 +7,8 @@ import { usePolling } from "../_desk/use-polling";
 import { loadResearch } from "./api";
 import type { ResearchResult } from "./api";
 import { BeginnerPanel } from "./beginner-panel";
-import { DeepDiveCard, PostPanel, RelatedPanel } from "./context-panels";
+import { PostPanel, RelatedPanel } from "./context-panels";
+import { DeepDiveCard } from "./deep-dive-card";
 import { OrderBookPanel, TradesPanel } from "./depth-panels";
 import { IndicatorsPanel } from "./indicators-panel";
 import { MarketHeader, RulesPanel } from "./market-panels";
@@ -125,7 +126,7 @@ export function ResearchPage({ symbol }: { readonly symbol: string }) {
             <PostPanel post={view.postContext} />
             <RulesPanel rulesText={view.market.rulesText} />
             <RelatedPanel related={view.related} />
-            <DeepDiveCard />
+            <DeepDiveCard symbol={symbol} />
           </div>
         </>
       ) : null}

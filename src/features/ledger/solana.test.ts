@@ -1,4 +1,4 @@
-import { decodeTransferCheckedInstruction } from "@solana/spl-token";
+import { decodeTransferCheckedInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { usdCents } from "@/shared";
@@ -146,4 +146,43 @@ it("rejects the first cent amount beyond the token u64 limit", async () => {
   });
   expect(rpc.genesis).not.toHaveBeenCalled();
   expect(rpc.send).not.toHaveBeenCalled();
+});
+
+it.each([devnet, localnet])("signs but never sends a USDC payment with a memo on $cluster", async (network) => {
+  const rpc = fakeRpc(network.cluster === "devnet" ? devnetGenesis : Keypair.generate().publicKey.toBase58());
+  const ledger = await createSolanaLedger({ ...config, network });
+  const payee = Keypair.generate().publicKey;
+  const result = await ledger.signPayment({ recipient: payee.toBase58(), notional: usdCents(5), memo: "x402|SYMBOL|nonce" });
+  if (!result.ok) throw new Error("expected a signed payment");
+  expect(rpc.send).not.toHaveBeenCalled();
+  expect(result.value.payer).toBe(authority.publicKey.toBase58());
+  const transaction = Transaction.from(Buffer.from(result.value.transaction, "base64"));
+  expect(transaction.verifySignatures()).toBe(true);
+  const [transfer, memo] = transaction.instructions;
+  const decoded = decodeTransferCheckedInstruction(transfer ?? (() => { throw new Error("missing transfer"); })());
+  expect(decoded.data).toMatchObject({ amount: 50_000n, decimals: 6 });
+  expect(decoded.keys.destination.pubkey.toBase58()).toBe(getAssociatedTokenAddressSync(config.mint, payee).toBase58());
+  expect(memo?.data.toString()).toBe("x402|SYMBOL|nonce");
+  expect(rpc.account).toHaveBeenCalledWith(getAssociatedTokenAddressSync(config.mint, payee), "confirmed");
+});
+
+it("refuses to sign a payment to the authority itself, to a missing token account, or on an unsafe network", async () => {
+  const rpc = fakeRpc(Keypair.generate().publicKey.toBase58());
+  const ledger = await createSolanaLedger({ ...config, network: localnet });
+  const payment = { notional: usdCents(5), memo: "m" };
+  expect(await ledger.signPayment({ ...payment, recipient: authority.publicKey.toBase58() })).toEqual({ ok: false, error: { code: "invalid-recipient" } });
+  expect(await ledger.signPayment({ ...payment, recipient: "not a key" })).toEqual({ ok: false, error: { code: "invalid-recipient" } });
+  rpc.account.mockResolvedValueOnce(null);
+  expect(await ledger.signPayment({ ...payment, recipient: Keypair.generate().publicKey.toBase58() })).toEqual({ ok: false, error: { code: "recipient-ata-missing" } });
+  rpc.genesis.mockResolvedValueOnce(mainnetGenesis);
+  expect(await ledger.signPayment({ ...payment, recipient: Keypair.generate().publicKey.toBase58() })).toEqual({ ok: false, error: { code: "unsafe-ledger-network" } });
+  expect(rpc.send).not.toHaveBeenCalled();
+});
+
+it("rejects a payment with no amount or no memo", async () => {
+  fakeRpc(Keypair.generate().publicKey.toBase58());
+  const ledger = await createSolanaLedger({ ...config, network: localnet });
+  const recipient = Keypair.generate().publicKey.toBase58();
+  expect(await ledger.signPayment({ recipient, notional: usdCents(0), memo: "m" })).toEqual({ ok: false, error: { code: "invalid-notional" } });
+  expect(await ledger.signPayment({ recipient, notional: usdCents(5), memo: "" })).toEqual({ ok: false, error: { code: "debit-preparation-failed" } });
 });

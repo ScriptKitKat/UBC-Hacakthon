@@ -1,5 +1,5 @@
 import type { MarketContract, MarketEvent } from "@/features/markets";
-import type { DecisionLogEntry, Outcome, PositionStatus, PositionView, PositionsView } from "@/shared";
+import type { DecisionLogEntry, Outcome, PositionStatus, PositionView, PositionsView, ResearchPurchaseView } from "@/shared";
 
 export interface Fill {
   readonly entryId: string;
@@ -31,7 +31,7 @@ function round(value: number, places: number): number {
 export function fillsFromLog(log: readonly DecisionLogEntry[]): readonly Fill[] {
   return log.flatMap((entry): Fill[] => {
     const { ticket } = entry;
-    if (entry.kind !== "approve" || ticket === undefined) return [];
+    if (entry.kind !== "approve" || ticket === undefined || entry.outcome === null) return [];
     const contracts = Number(ticket.quantity);
     const priceCents = Number(ticket.price) * CENTS_PER_DOLLAR;
     if (!Number.isFinite(contracts) || contracts <= 0 || !Number.isFinite(priceCents) || priceCents <= 0) return [];
@@ -105,7 +105,7 @@ function buildPosition(fills: readonly Fill[], mark: MarketMark | undefined): Po
   };
 }
 
-export function aggregatePositions(fills: readonly Fill[], marks: ReadonlyMap<string, MarketMark>, generatedAt: string): PositionsView {
+export function aggregatePositions(fills: readonly Fill[], marks: ReadonlyMap<string, MarketMark>, generatedAt: string): Omit<PositionsView, "researchSpend"> {
   const groups = new Map<string, Fill[]>();
   for (const fill of fills) groups.set(groupKey(fill), [...(groups.get(groupKey(fill)) ?? []), fill]);
   const positions = [...groups.values()]
@@ -127,4 +127,28 @@ export function aggregatePositions(fills: readonly Fill[], marks: ReadonlyMap<st
       unpricedPositions: positions.length - priced.length,
     },
   };
+}
+
+const RESEARCH_PURCHASE_LIMIT = 20;
+
+function paidResearch(log: readonly DecisionLogEntry[]): readonly DecisionLogEntry[] {
+  return log.filter((entry) => entry.source === "research" && entry.kind === "approve");
+}
+
+export function todaysResearchSpendCents(log: readonly DecisionLogEntry[], day: string): number {
+  return paidResearch(log)
+    .filter((entry) => entry.at.slice(0, 10) === day)
+    .reduce((total, entry) => total + entry.notionalCents, 0);
+}
+
+export function summarizeResearchSpend(log: readonly DecisionLogEntry[], nowIso: string): PositionsView["researchSpend"] {
+  const purchases: ResearchPurchaseView[] = paidResearch(log).slice(0, RESEARCH_PURCHASE_LIMIT).map((entry) => ({
+    entryId: entry.entryId,
+    at: entry.at,
+    symbol: entry.symbol,
+    costCents: entry.notionalCents,
+    signature: entry.signature ?? null,
+    explorerUrl: entry.explorerUrl ?? null,
+  }));
+  return { todayCents: todaysResearchSpendCents(log, nowIso.slice(0, 10)), purchases };
 }

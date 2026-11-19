@@ -1,7 +1,9 @@
 import type { HistoryStore } from "@/features/history";
 import type { Candle, GeminiMarketsClient, MarketContract, MarketEvent, MarketsError, MarketsResult } from "@/features/markets";
 import { parseInstrumentSymbol } from "@/features/markets";
-import type { ResearchPostContext, ResearchRelatedContract, ResearchTimeframe, ResearchView } from "@/shared";
+import type { ResearchBrief, ResearchPostContext, ResearchRelatedContract, ResearchTimeframe, ResearchView } from "@/shared";
+import { composeBrief, polishBrief } from "./brief";
+import type { JsonCompleter } from "./brief";
 import { computeIndicators } from "./indicators";
 import { cumulativeDepth, hourlyIndicatorPoints, INDICATOR_CANDLE, mergeSeries, TIMEFRAME_PLANS } from "./series";
 
@@ -9,6 +11,7 @@ const RELATED_EVENTS = 6;
 const RELATED_SEARCH_LIMIT = 12;
 const LAST_KNOWN_LIMIT = 50;
 const TRADE_LIMIT = 30;
+const BRIEF_TIMEFRAME = "1D";
 
 export type ResearchMarkets = Pick<GeminiMarketsClient, "getEvent" | "searchEvents" | "candles" | "orderBook" | "recentTrades">;
 
@@ -17,6 +20,7 @@ export interface ResearchDeps {
   readonly history: HistoryStore;
   readonly nowMs: () => number;
   readonly postContextFor: (symbol: string) => Promise<ResearchPostContext | undefined>;
+  readonly completeJson?: JsonCompleter;
 }
 
 export type ResearchResult =
@@ -24,8 +28,14 @@ export type ResearchResult =
   | { readonly kind: "unknown-symbol" }
   | { readonly kind: "unavailable" };
 
+export type BriefResult =
+  | { readonly kind: "ok"; readonly template: ResearchBrief; readonly polished: () => Promise<ResearchBrief> }
+  | { readonly kind: "unknown-symbol" }
+  | { readonly kind: "unavailable" };
+
 export interface Research {
   readonly view: (symbol: string, timeframe: ResearchTimeframe) => Promise<ResearchResult>;
+  readonly brief: (symbol: string) => Promise<BriefResult>;
 }
 
 type MarketInfo = Pick<ResearchView, "market" | "related">;
@@ -115,69 +125,77 @@ export function createResearch(deps: ResearchDeps): Research {
       .slice(0, RELATED_EVENTS);
   }
 
-  return {
-    async view(symbol, timeframe) {
-      const parsed = parseInstrumentSymbol(symbol);
-      if (!parsed) return { kind: "unknown-symbol" };
-      const plan = TIMEFRAME_PLANS[timeframe];
-      const [eventResult, chartCandles, hourlyCandles, book, trades, postContext] = await Promise.all([
-        markets.getEvent(parsed.eventTicker, { refresh: true }),
-        markets.candles(symbol, plan.candle),
-        markets.candles(symbol, INDICATOR_CANDLE),
-        markets.orderBook(symbol),
-        markets.recentTrades(symbol, TRADE_LIMIT),
-        deps.postContextFor(symbol),
-      ]);
-      const now = nowMs();
-      let info: MarketInfo;
-      let eventFreshness: "live" | "stale" = "live";
-      if (eventResult.ok) {
-        const contract = eventResult.value.contracts.find((candidate) => candidate.instrumentSymbol === symbol);
-        if (!contract) return { kind: "unknown-symbol" };
-        info = marketInfo({ event: eventResult.value, contract }, await sameCategoryMarkets(eventResult.value));
-        remember(symbol, info);
-        if (contract.prices.buyYesCents !== null) {
-          history.record(symbol, {
-            atMs: now,
-            yesCents: contract.prices.buyYesCents,
-            bidCents: contract.prices.bestBidCents,
-            askCents: contract.prices.bestAskCents,
-          });
-        }
-      } else if (isNotFound(eventResult.error)) {
-        return { kind: "unknown-symbol" };
-      } else {
-        const known = lastKnown.get(symbol);
-        if (!known) return { kind: "unavailable" };
-        info = known;
-        eventFreshness = "stale";
+  async function view(symbol: string, timeframe: ResearchTimeframe): Promise<ResearchResult> {
+    const parsed = parseInstrumentSymbol(symbol);
+    if (!parsed) return { kind: "unknown-symbol" };
+    const plan = TIMEFRAME_PLANS[timeframe];
+    const [eventResult, chartCandles, hourlyCandles, book, trades, postContext] = await Promise.all([
+      markets.getEvent(parsed.eventTicker, { refresh: true }),
+      markets.candles(symbol, plan.candle),
+      markets.candles(symbol, INDICATOR_CANDLE),
+      markets.orderBook(symbol),
+      markets.recentTrades(symbol, TRADE_LIMIT),
+      deps.postContextFor(symbol),
+    ]);
+    const now = nowMs();
+    let info: MarketInfo;
+    let eventFreshness: "live" | "stale" = "live";
+    if (eventResult.ok) {
+      const contract = eventResult.value.contracts.find((candidate) => candidate.instrumentSymbol === symbol);
+      if (!contract) return { kind: "unknown-symbol" };
+      info = marketInfo({ event: eventResult.value, contract }, await sameCategoryMarkets(eventResult.value));
+      remember(symbol, info);
+      if (contract.prices.buyYesCents !== null) {
+        history.record(symbol, {
+          atMs: now,
+          yesCents: contract.prices.buyYesCents,
+          bidCents: contract.prices.bestBidCents,
+          askCents: contract.prices.bestAskCents,
+        });
       }
-      history.watch(symbol);
-      const snapshots = history.series(symbol);
-      const chart: readonly Candle[] = valueOr(chartCandles, []);
-      const hourly: readonly Candle[] = valueOr(hourlyCandles, []);
-      const bookView = valueOr(book, { bids: [], asks: [] });
-      const merged = mergeSeries({ candles: chart, snapshots, windowMs: plan.windowMs, nowMs: now });
-      return {
-        kind: "ok",
-        view: {
-          symbol,
-          generatedAt: new Date(now).toISOString(),
-          timeframe,
-          ...info,
-          data: {
-            event: eventFreshness,
-            candles: chartCandles.ok ? "live" : "unavailable",
-            book: book.ok ? "live" : "unavailable",
-            trades: trades.ok ? "live" : "unavailable",
-          },
-          series: { source: merged.source, points: [...merged.points] },
-          book: { bids: [...cumulativeDepth(bookView.bids, "bids")], asks: [...cumulativeDepth(bookView.asks, "asks")] },
-          trades: [...valueOr(trades, [])],
-          indicators: computeIndicators(hourlyIndicatorPoints(hourly, snapshots)),
-          postContext: postContext ?? null,
+    } else if (isNotFound(eventResult.error)) {
+      return { kind: "unknown-symbol" };
+    } else {
+      const known = lastKnown.get(symbol);
+      if (!known) return { kind: "unavailable" };
+      info = known;
+      eventFreshness = "stale";
+    }
+    history.watch(symbol);
+    const snapshots = history.series(symbol);
+    const chart: readonly Candle[] = valueOr(chartCandles, []);
+    const hourly: readonly Candle[] = valueOr(hourlyCandles, []);
+    const bookView = valueOr(book, { bids: [], asks: [] });
+    const merged = mergeSeries({ candles: chart, snapshots, windowMs: plan.windowMs, nowMs: now });
+    return {
+      kind: "ok",
+      view: {
+        symbol,
+        generatedAt: new Date(now).toISOString(),
+        timeframe,
+        ...info,
+        data: {
+          event: eventFreshness,
+          candles: chartCandles.ok ? "live" : "unavailable",
+          book: book.ok ? "live" : "unavailable",
+          trades: trades.ok ? "live" : "unavailable",
         },
-      };
+        series: { source: merged.source, points: [...merged.points] },
+        book: { bids: [...cumulativeDepth(bookView.bids, "bids")], asks: [...cumulativeDepth(bookView.asks, "asks")] },
+        trades: [...valueOr(trades, [])],
+        indicators: computeIndicators(hourlyIndicatorPoints(hourly, snapshots)),
+        postContext: postContext ?? null,
+      },
+    };
+  }
+
+  return {
+    view,
+    async brief(symbol) {
+      const result = await view(symbol, BRIEF_TIMEFRAME);
+      if (result.kind !== "ok") return result;
+      const template = composeBrief(result.view);
+      return { kind: "ok", template, polished: () => polishBrief(template, deps.completeJson) };
     },
   };
 }

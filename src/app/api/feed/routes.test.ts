@@ -47,7 +47,7 @@ beforeEach(() => {
   deskQuote.mockReset();
   buyFromFeed.mockReset().mockResolvedValue(entry);
   confirmFromFeed.mockReset().mockResolvedValue({ ok: true, entry });
-  getDesk.mockResolvedValue({ ok: true, desk: stubDesk, research: { view: vi.fn() } });
+  getDesk.mockResolvedValue({ ok: true, desk: stubDesk, research: { view: vi.fn(), brief: vi.fn() }, payments: undefined });
 });
 
 describe("feed cors", () => {

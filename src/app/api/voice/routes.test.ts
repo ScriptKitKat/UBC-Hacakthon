@@ -19,7 +19,7 @@ const snapshot: DeskSnapshot = {
     reasons: ["fed"],
   },
   policy: {
-    dailyCapCents: 2000, spentCents: 0, remainingCents: 2000, autoApproveMaxCents: 200, perTradeMaxCents: 1000,
+    dailyCapCents: 2000, spentCents: 0, researchSpentCents: 0, remainingCents: 2000, autoApproveMaxCents: 200, perTradeMaxCents: 1000,
     killSwitch: false, marketAllowlist: [], marketCategories: ["Economics"], senderAllowlist: ["priscilla"],
   },
   pending: [],
@@ -43,6 +43,7 @@ const stubDesk: Desk = {
   quote: vi.fn(),
   postContextFor: vi.fn(),
   getPositions: vi.fn(),
+  buyDeepDive: vi.fn(),
   buyFromFeed: vi.fn(),
   confirmFromFeed: vi.fn(),
   setKillSwitch: vi.fn(),
@@ -60,7 +61,7 @@ beforeEach(() => {
   vi.stubEnv("ELEVENLABS_API_KEY", "");
   vi.stubEnv("ELEVENLABS_AGENT_ID", "");
   vi.stubEnv("VOICE_OPERATOR_ID", "priscilla");
-  getDesk.mockResolvedValue({ ok: true, desk: stubDesk, research: { view: vi.fn() } });
+  getDesk.mockResolvedValue({ ok: true, desk: stubDesk, research: { view: vi.fn(), brief: vi.fn() }, payments: undefined });
 });
 
 describe("voice tool route", () => {

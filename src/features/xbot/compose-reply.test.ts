@@ -6,6 +6,7 @@ import { TWEET_LIMIT } from "./tweet";
 const policy: PolicyView = {
   dailyCapCents: 2000,
   spentCents: 300,
+  researchSpentCents: 0,
   remainingCents: 1700,
   autoApproveMaxCents: 200,
   perTradeMaxCents: 1000,

@@ -16,6 +16,15 @@ const mainnetGenesis = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 const testnetGenesis = "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY";
 const circleDevnetMint = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
 const commitment = "confirmed";
+const maxMemoBytes = 256;
+
+function safePublicKey(text: string): PublicKey | undefined {
+  try {
+    return new PublicKey(text);
+  } catch {
+    return undefined;
+  }
+}
 
 type Result<Value, Error> = { ok: true; value: Value } | { ok: false; error: Error };
 
@@ -26,12 +35,26 @@ export interface DebitReceipt {
 
 export type LedgerError =
   | {
-      readonly code: "notional-overflow" | "unsafe-ledger-network" | "invalid-notional" | "debit-preparation-failed" | "debit-rejected" | "balance-failed" | "ledger-not-configured" | "recipient-ata-missing";
+      readonly code: "notional-overflow" | "unsafe-ledger-network" | "invalid-notional" | "invalid-recipient" | "debit-preparation-failed" | "debit-rejected" | "balance-failed" | "ledger-not-configured" | "recipient-ata-missing";
     }
   | { readonly code: "debit-unconfirmed"; readonly signature: string };
 
+export interface PaymentRequest {
+  readonly recipient: string;
+  readonly notional: UsdCents;
+  readonly memo: string;
+}
+
+export interface SignedPayment {
+  readonly signature: string;
+  readonly transaction: string;
+  readonly payer: string;
+  readonly explorerUrl: string;
+}
+
 export interface UsdcLedger {
   debit(intentId: string, notional: UsdCents, memo: string): Promise<Result<DebitReceipt, LedgerError>>;
+  signPayment(payment: PaymentRequest): Promise<Result<SignedPayment, LedgerError>>;
   balance(): Promise<Result<{ baseUnits: bigint }, LedgerError>>;
 }
 
@@ -43,6 +66,7 @@ export function createUnconfiguredLedger(): UsdcLedger {
   const notConfigured = { ok: false, error: { code: "ledger-not-configured" } } as const;
   return {
     debit: () => Promise.resolve(notConfigured),
+    signPayment: () => Promise.resolve(notConfigured),
     balance: () => Promise.resolve(notConfigured),
   };
 }
@@ -69,9 +93,8 @@ export function isLocalLedgerRpc(rpcUrl: string): boolean {
   return localhostOrigin(rpcUrl) !== undefined;
 }
 
-async function hasExpectedGenesis(network: LedgerNetwork, connection: Pick<Connection, "getGenesisHash">): Promise<boolean> {
-  const hash = await connection.getGenesisHash();
-  if (network.cluster === "devnet") return hash === devnetGenesis;
+export function isExpectedGenesis(cluster: LedgerNetwork["cluster"], hash: string): boolean {
+  if (cluster === "devnet") return hash === devnetGenesis;
   return hash !== mainnetGenesis && hash !== devnetGenesis && hash !== testnetGenesis;
 }
 
@@ -106,6 +129,37 @@ export async function createSolanaLedger(config: LedgerConfig): Promise<Configur
   const destination = getAssociatedTokenAddressSync(mint, recipient);
   if (source.equals(destination)) throw new Error("Ledger recipient must differ from the authority");
 
+  async function prepareTransfer(
+    to: PublicKey,
+    notional: UsdCents,
+    memo: string,
+  ): Promise<Result<{ readonly blockhash: string; readonly lastValidBlockHeight: number; readonly signature: string; readonly bytes: Buffer }, LedgerError>> {
+    const amount = BigInt(notional) * baseUnitsPerCent;
+    if (amount > maxTokenAmount) return { ok: false, error: { code: "notional-overflow" } };
+    try {
+      if (!isExpectedGenesis(network.cluster, await connection.getGenesisHash())) {
+        return { ok: false, error: { code: "unsafe-ledger-network" } };
+      }
+      if (await connection.getAccountInfo(to, commitment) === null) {
+        return { ok: false, error: { code: "recipient-ata-missing" } };
+      }
+      const block = await connection.getLatestBlockhash(commitment);
+      const transaction = new Transaction({
+        feePayer: authority.publicKey,
+        blockhash: block.blockhash,
+        lastValidBlockHeight: block.lastValidBlockHeight,
+      }).add(
+        createTransferCheckedInstruction(source, mint, to, authority.publicKey, amount, usdcDecimals),
+        new TransactionInstruction({ programId: memoProgram, keys: [], data: Buffer.from(memo, "utf8") }),
+      );
+      transaction.sign(authority);
+      if (!transaction.signature) return { ok: false, error: { code: "debit-preparation-failed" } };
+      return { ok: true, value: { ...block, signature: bs58.encode(transaction.signature), bytes: transaction.serialize() } };
+    } catch {
+      return { ok: false, error: { code: "debit-preparation-failed" } };
+    }
+  }
+
   return {
     authority: authority.publicKey.toBase58(),
     async balance() {
@@ -116,41 +170,39 @@ export async function createSolanaLedger(config: LedgerConfig): Promise<Configur
         return { ok: false, error: { code: "balance-failed" } };
       }
     },
+    async signPayment({ recipient, notional, memo }) {
+      if (!Number.isSafeInteger(notional) || notional <= 0) {
+        return { ok: false, error: { code: "invalid-notional" } };
+      }
+      if (memo.length === 0 || Buffer.byteLength(memo, "utf8") > maxMemoBytes) {
+        return { ok: false, error: { code: "debit-preparation-failed" } };
+      }
+      const payee = safePublicKey(recipient);
+      if (!payee) return { ok: false, error: { code: "invalid-recipient" } };
+      const payeeAta = getAssociatedTokenAddressSync(mint, payee);
+      if (payeeAta.equals(source)) return { ok: false, error: { code: "invalid-recipient" } };
+      const prepared = await prepareTransfer(payeeAta, notional, memo);
+      if (!prepared.ok) return prepared;
+      return {
+        ok: true,
+        value: {
+          signature: prepared.value.signature,
+          transaction: prepared.value.bytes.toString("base64"),
+          payer: authority.publicKey.toBase58(),
+          explorerUrl: explorerUrl(prepared.value.signature, network),
+        },
+      };
+    },
     async debit(intentId, notional, memo) {
       if (!Number.isSafeInteger(notional) || notional <= 0) {
         return { ok: false, error: { code: "invalid-notional" } };
       }
-      const amount = BigInt(notional) * baseUnitsPerCent;
-      if (amount > maxTokenAmount) return { ok: false, error: { code: "notional-overflow" } };
       if (!memo.startsWith(`${intentId}|`) || !memo.endsWith(`|${String(notional)}`)) {
         return { ok: false, error: { code: "debit-preparation-failed" } };
       }
-
-      let signedDebit;
-      try {
-        if (!await hasExpectedGenesis(network, connection)) {
-          return { ok: false, error: { code: "unsafe-ledger-network" } };
-        }
-        if (await connection.getAccountInfo(destination, commitment) === null) {
-          return { ok: false, error: { code: "recipient-ata-missing" } };
-        }
-        const block = await connection.getLatestBlockhash(commitment);
-        const transaction = new Transaction({
-          feePayer: authority.publicKey,
-          blockhash: block.blockhash,
-          lastValidBlockHeight: block.lastValidBlockHeight,
-        }).add(
-          createTransferCheckedInstruction(source, mint, destination, authority.publicKey, amount, usdcDecimals),
-          new TransactionInstruction({ programId: memoProgram, keys: [], data: Buffer.from(memo, "utf8") }),
-        );
-        transaction.sign(authority);
-        if (!transaction.signature) return { ok: false, error: { code: "debit-preparation-failed" } };
-        signedDebit = { ...block, signature: bs58.encode(transaction.signature), bytes: transaction.serialize() };
-      } catch {
-        return { ok: false, error: { code: "debit-preparation-failed" } };
-      }
-
-      const { bytes, ...confirmation } = signedDebit;
+      const prepared = await prepareTransfer(destination, notional, memo);
+      if (!prepared.ok) return prepared;
+      const { bytes, ...confirmation } = prepared.value;
       try {
         await connection.sendRawTransaction(bytes, { preflightCommitment: commitment });
         const { value } = await connection.confirmTransaction(confirmation, commitment);

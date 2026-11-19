@@ -2,6 +2,7 @@ export { instrumentSymbol, usdCents } from "./types";
 export type { InstrumentSymbol, Outcome, TradeIntent, TradeSource, UsdCents } from "./types";
 export type {
   DecisionKind,
+  DecisionSource,
   DecisionLogEntry,
   DeskSnapshot,
   LedgerView,
@@ -17,9 +18,20 @@ export type { FeedMarketView, FeedMatch, FeedMatchedBy, FeedQuote, PricePoint } 
 export { payoutFor } from "./payout";
 export type { PayoutQuote, PayoutResult } from "./payout";
 export { positionsViewSchema } from "./positions";
-export type { PositionFillView, PositionStatus, PositionView, PositionsView } from "./positions";
-export { RESEARCH_TIMEFRAMES, indicatorsSchema, isResearchTimeframe, researchViewSchema } from "./research";
+export type { PositionFillView, PositionStatus, PositionView, PositionsView, ResearchPurchaseView } from "./positions";
+export {
+  BRIEF_SECTION_TITLES,
+  RESEARCH_TIMEFRAMES,
+  deepDiveResultSchema,
+  indicatorsSchema,
+  isResearchTimeframe,
+  researchBriefSchema,
+  researchViewSchema,
+} from "./research";
 export type {
+  DeepDiveResult,
+  DeepDiveStep,
+  ResearchBrief,
   ResearchDepthLevel,
   ResearchIndicators,
   ResearchPostContext,
