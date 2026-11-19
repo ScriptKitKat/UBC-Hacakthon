@@ -33,7 +33,7 @@ beforeEach(() => {
       mimeType: "application/json", maxTimeoutSeconds: 120, extra: { nonce: "n", memo: `x402|${symbol}|n` },
     }],
   }));
-  verify.mockReset().mockResolvedValue({ ok: true, value: { symbol: SYMBOL, nonce: "n", simulationSlot: 1, payment: { payer: "P", signature: "S", memo: "m", rawTransaction: Buffer.alloc(0) } } });
+  verify.mockReset().mockResolvedValue({ ok: true, value: { symbol: SYMBOL, nonce: "n", simulationSlot: 1, payment: { payer: "P", signature: "S", memo: "m", blockhash: "b", rawTransaction: Buffer.alloc(0) } } });
   settle.mockReset().mockResolvedValue({ ok: true, value: { signature: "S", payer: "P", network: "solana-localnet" } });
   recover.mockReset();
   polished.mockClear();

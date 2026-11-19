@@ -4,7 +4,12 @@ import { nodeFileSystem } from "./file-system";
 
 vi.mock("node:fs/promises", { spy: true });
 
-it.each([undefined, "EINVAL", "EISDIR", "EIO"])("syncs the file before rename and the directory after it (%s)", async (directoryError) => {
+it.each([
+  [undefined, undefined],
+  ["/data", "EIO"],
+  ["/", "EIO"],
+  ["/data", "EINVAL"],
+])("syncs the file before rename and the directory chain after it (%s, %s)", async (failedDirectory, directoryError) => {
   const order: string[] = [];
   const path = "/data/store.json";
   const openMock = vi.mocked(open);
@@ -16,19 +21,19 @@ it.each([undefined, "EINVAL", "EISDIR", "EIO"])("syncs the file before rename an
   openMock.mockImplementation((target, flags) => {
     const file = flags === "w";
     if (file) expect(target).toMatch(/^\/data\/store\.json\..*\.tmp$/);
-    else expect(target).toBe("/data");
+    else expect(["/data", "/"]).toContain(target);
     const handle = {
       writeFile: () => {
         order.push("write");
         return Promise.resolve();
       },
       sync: () => {
-        order.push(file ? "sync file" : "sync directory");
-        if (!file && directoryError) return Promise.reject(Object.assign(new Error(directoryError), { code: directoryError }));
+        order.push(file ? "sync file" : `sync ${String(target)}`);
+        if (!file && target === failedDirectory) return Promise.reject(Object.assign(new Error(directoryError), { code: directoryError }));
         return Promise.resolve();
       },
       close: () => {
-        order.push(file ? "close file" : "close directory");
+        order.push(file ? "close file" : `close ${String(target)}`);
         return Promise.resolve();
       },
     };
@@ -36,7 +41,10 @@ it.each([undefined, "EINVAL", "EISDIR", "EIO"])("syncs the file before rename an
   });
 
   const write = nodeFileSystem.writeTextAtomic(path, "contents");
-  if (directoryError === "EIO") await expect(write).rejects.toThrow("EIO");
+  if (directoryError) await expect(write).rejects.toThrow(directoryError);
   else await expect(write).resolves.toBeUndefined();
-  expect(order).toEqual(["write", "sync file", "close file", "rename", "sync directory", "close directory"]);
+  expect(order).toEqual([
+    "write", "sync file", "close file", "rename", "sync /data", "close /data",
+    ...(failedDirectory === "/data" ? [] : ["sync /", "close /"]),
+  ]);
 });

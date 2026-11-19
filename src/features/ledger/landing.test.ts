@@ -16,5 +16,9 @@ it.each([
   ["absent without a finalized height", null, undefined, 100, "pending"],
   ["missing RPC result", undefined, 101, 100, "pending"],
 ] as const)("classifies %s", (_label, status, finalizedBlockHeight, lastValidBlockHeight, expected) => {
-  expect(classifySignature({ status, finalizedBlockHeight, lastValidBlockHeight })).toBe(expected);
+  expect(classifySignature({ status, statusSlot: 5, finalized: finalizedBlockHeight === undefined ? undefined : { absoluteSlot: 5, blockHeight: finalizedBlockHeight }, lastValidBlockHeight })).toBe(expected);
+});
+
+it("keeps a payment pending when the null status comes from an RPC behind the expiry observation", () => {
+  expect(classifySignature({ status: null, statusSlot: 5, finalized: { absoluteSlot: 6, blockHeight: 101 }, lastValidBlockHeight: 100 })).toBe("pending");
 });

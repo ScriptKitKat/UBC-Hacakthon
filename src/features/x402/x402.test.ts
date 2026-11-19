@@ -97,7 +97,7 @@ function fixture(options: { simulateError?: unknown; landing?: Landing; paid?: b
     sendRawTransaction: vi.fn((raw: Buffer) => Promise.resolve(paymentSignature(raw.toString("base64")))),
     getAccountInfo: vi.fn(() => Promise.resolve(tokenAccount(options.destinationOwner ?? payTo))),
     getLatestBlockhash: vi.fn(() => Promise.resolve({ blockhash, lastValidBlockHeight: 150 })),
-    getBlockHeight: vi.fn(() => Promise.resolve(options.landing === "expired" ? 151 : 150)),
+    getEpochInfo: vi.fn(() => Promise.resolve({ blockHeight: options.landing === "expired" ? 151 : 150, absoluteSlot: 2 })),
     getSignatureStatuses: vi.fn(() => {
       const landing = options.landing ?? "landed";
       const status = landing === "landed"
@@ -172,7 +172,7 @@ describe("verify and settle", () => {
     expect(f.connection.simulateTransaction).toHaveBeenCalledOnce();
     expect(f.connection.sendRawTransaction).toHaveBeenCalledOnce();
     expect(f.connection.getLatestBlockhash).toHaveBeenCalledWith({ commitment: "confirmed", minContextSlot: 1 });
-    expect(f.connection.getBlockHeight).toHaveBeenCalledWith("finalized");
+    expect(f.connection.getEpochInfo).toHaveBeenCalledWith("finalized");
     expect(f.persist).toHaveBeenCalledTimes(2);
   });
 
@@ -299,7 +299,22 @@ describe("verify and settle", () => {
   it("reports settlement_failed only once the signed blockhash has actually expired without the payment landing", async () => {
     const f = fixture({ landing: "expired" });
     expect(await pay(f, buildPayment(f.nonce()))).toEqual({ ok: false, error: "settlement_failed" });
-    expect(f.connection.getBlockHeight).toHaveBeenCalledWith("finalized");
+    expect(f.connection.getEpochInfo).toHaveBeenCalledWith("finalized");
+  });
+
+  it("does not use an expiry height issued for a different blockhash to reject a payment", async () => {
+    const f = fixture({ landing: "expired" });
+    f.connection.getLatestBlockhash.mockResolvedValue({ blockhash: Keypair.generate().publicKey.toBase58(), lastValidBlockHeight: 150 });
+    const transaction = buildPayment(f.nonce());
+    expect(await pay(f, transaction)).toEqual({ ok: false, error: "settlement_unconfirmed" });
+    expect(f.connection.getEpochInfo).not.toHaveBeenCalled();
+    expect(await f.server.recover(symbol, paymentSignature(transaction))).toEqual({ ok: false, error: "settlement_unconfirmed" });
+  });
+
+  it("can settle a visible payment when the optional expiry lookup fails", async () => {
+    const f = fixture();
+    f.connection.getLatestBlockhash.mockRejectedValueOnce(new Error("RPC unavailable"));
+    expect(await pay(f, buildPayment(f.nonce()))).toMatchObject({ ok: true });
   });
 
   it("reports settlement_unconfirmed, not failure, while the payment may still land", async () => {
@@ -394,7 +409,7 @@ describe("recovering a paid brief without paying again", () => {
   it("reports a claimed payment as failed after the finalized height passes its stored limit", async () => {
     const f = fixture({ landing: "pending" });
     const { signature } = await paid(f);
-    f.connection.getBlockHeight.mockResolvedValue(151);
+    f.connection.getEpochInfo.mockResolvedValue({ blockHeight: 151, absoluteSlot: 2 });
     expect(await f.server.recover(symbol, signature)).toEqual({ ok: false, error: "settlement_failed" });
   });
 

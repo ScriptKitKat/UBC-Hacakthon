@@ -18,6 +18,7 @@ export interface InspectedPayment {
   readonly payer: string;
   readonly signature: string;
   readonly memo: string;
+  readonly blockhash: string;
   readonly rawTransaction: Buffer;
 }
 
@@ -75,6 +76,7 @@ export function inspectPayment(transactionBase64: string, expected: PaymentExpec
   if (data.amount !== expected.amount) return fail("wrong_amount");
   if (!memoInstruction || memoInstruction.keys.length > 0) return fail("memo_mismatch");
   const { feePayer, signature } = transaction;
+  if (!transaction.recentBlockhash) return fail("invalid_transaction");
   if (!feePayer || !signature || !keys.owner.pubkey.equals(feePayer)) return fail("wrong_payer");
   if (!transaction.verifySignatures()) return fail("invalid_signature");
   return {
@@ -83,6 +85,7 @@ export function inspectPayment(transactionBase64: string, expected: PaymentExpec
       payer: feePayer.toBase58(),
       signature: bs58.encode(signature),
       memo: memoInstruction.data.toString("utf8"),
+      blockhash: transaction.recentBlockhash,
       rawTransaction: raw,
     },
   };

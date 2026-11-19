@@ -1,7 +1,7 @@
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { VersionedTransaction } from "@solana/web3.js";
 import type { Connection, PublicKey } from "@solana/web3.js";
-import { classifySignature, inspectTokenDestination, isExpectedGenesis } from "@/features/ledger";
+import { checkPaymentLanding, inspectTokenDestination, isExpectedGenesis } from "@/features/ledger";
 import type { SignatureOutcome } from "@/features/ledger";
 import { inspectPayment } from "./inspect";
 import type { InspectedPayment } from "./inspect";
@@ -12,7 +12,6 @@ import type { PaymentErrorCode, PaymentRequired, X402Network } from "./schema";
 import type { UsedPayments } from "./store";
 
 const CONFIRM_COMMITMENT = "confirmed";
-const FINALIZED_COMMITMENT = "finalized";
 const LANDING_POLL_ATTEMPTS = 80;
 const LANDING_POLL_MS = 500;
 const PARSED_TRANSACTION_ATTEMPTS = 5;
@@ -20,7 +19,7 @@ const PARSED_TRANSACTION_RETRY_MS = 300;
 
 export type SettlementConnection = Pick<
   Connection,
-  "getAccountInfo" | "getGenesisHash" | "getBlockHeight" | "getLatestBlockhash" | "getParsedTransaction" | "getSignatureStatuses" | "sendRawTransaction" | "simulateTransaction"
+  "getAccountInfo" | "getGenesisHash" | "getEpochInfo" | "getLatestBlockhash" | "getParsedTransaction" | "getSignatureStatuses" | "sendRawTransaction" | "simulateTransaction"
 >;
 
 export interface X402ServerConfig {
@@ -102,17 +101,9 @@ export function createX402Server(deps: X402ServerDeps): X402Server {
     }
   }
 
-  async function checkLanding(signature: string, lastValidBlockHeight: number | undefined): Promise<SignatureOutcome> {
-    const finalizedBlockHeight = lastValidBlockHeight === undefined
-      ? undefined
-      : await connection.getBlockHeight(FINALIZED_COMMITMENT).catch(() => undefined);
-    const { value } = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
-    return classifySignature({ status: value[0], finalizedBlockHeight, lastValidBlockHeight });
-  }
-
-  async function awaitLanding(signature: string, lastValidBlockHeight: number): Promise<SignatureOutcome> {
+  async function awaitLanding(signature: string, lastValidBlockHeight: number | undefined): Promise<SignatureOutcome> {
     for (let attempt = 0; attempt < LANDING_POLL_ATTEMPTS; attempt += 1) {
-      const outcome = await checkLanding(signature, lastValidBlockHeight);
+      const outcome = await checkPaymentLanding(connection, { signature, lastValidBlockHeight });
       if (outcome !== "pending") return outcome;
       await sleep(LANDING_POLL_MS);
     }
@@ -186,7 +177,8 @@ export function createX402Server(deps: X402ServerDeps): X402Server {
       if (expiry !== "ok") return fail(expiry);
       if (!await destinationIsPayee()) return fail("wrong_recipient");
       try {
-        const { lastValidBlockHeight } = await connection.getLatestBlockhash({ commitment: CONFIRM_COMMITMENT, minContextSlot: simulationSlot });
+        const latest = await connection.getLatestBlockhash({ commitment: CONFIRM_COMMITMENT, minContextSlot: simulationSlot }).catch(() => undefined);
+        const lastValidBlockHeight = latest && latest.blockhash === payment.blockhash ? latest.lastValidBlockHeight : undefined;
         const claimError = await used.claim({ nonce, signature: payment.signature, atMs: nowMs(), symbol, payer: payment.payer, lastValidBlockHeight });
         if (claimError) return fail(claimError);
         const signature = await connection.sendRawTransaction(payment.rawTransaction, { preflightCommitment: CONFIRM_COMMITMENT });
@@ -208,7 +200,7 @@ export function createX402Server(deps: X402ServerDeps): X402Server {
       const settlement = { signature, payer: record.payer, network: config.network };
       if (record.status === "settled") return { ok: true, value: settlement };
       try {
-        const landing = await checkLanding(signature, record.lastValidBlockHeight);
+        const landing = await checkPaymentLanding(connection, { signature, lastValidBlockHeight: record.lastValidBlockHeight });
         if (landing === "failed") return fail("settlement_failed");
         if (landing === "pending" || !await paidAmountMatches(signature)) return fail("settlement_unconfirmed");
         await used.markSettled(signature);

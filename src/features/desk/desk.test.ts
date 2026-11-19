@@ -440,6 +440,44 @@ describe("desk persistence, positions and research context", () => {
     expect((await restarted.getPositions()).positions).toHaveLength(1);
   });
 
+  it("restores a paid approval when only its reservation reached the journal on disk", async () => {
+    const fs = createMemoryFileSystem();
+    const { desk } = await readyDesk();
+    const filled = await desk.proposeTrade(propose("yes", 200));
+    if (!filled.signature || !filled.ticket) throw new Error("Expected a paid trade");
+    const options = { fs, path: "/d/journal.json", nowIso: () => filled.at };
+    const journal = await openSpendJournal(options);
+    expect(await journal.begin({
+      operationId: filled.intentId,
+      kind: "trade",
+      notionalCents: filled.notionalCents,
+      symbol: filled.symbol,
+      outcome: filled.outcome,
+      senderId: filled.senderId,
+      source: filled.source,
+      ticket: filled.ticket,
+    })).toEqual({ ok: true });
+    expect(await journal.attachPayment(filled.intentId, {
+      signature: filled.signature,
+      blockhash: "recorded-hash",
+      lastValidBlockHeight: 123,
+      explorerUrl: "https://explorer.test/tx/recorded",
+    })).toEqual({ ok: true });
+
+    await openMigratedSpendJournal(options, [filled]);
+    const restarted = await openSpendJournal(options);
+    expect(restarted.entries()).toMatchObject([{
+      operationId: filled.intentId,
+      status: "settled",
+      signature: filled.signature,
+      resolvedAt: filled.at,
+      lastValidBlockHeight: 123,
+    }]);
+    const { desk: recovered } = setup({ extra: { initialLog: [filled], journal: restarted } });
+    expect((await recovered.getSnapshot()).policy).toMatchObject({ spentCents: 200, remainingCents: 1800 });
+    expect((await recovered.getPositions()).positions).toHaveLength(1);
+  });
+
   it("refuses to start empty when the decision log is corrupt", async () => {
     const fs = createMemoryFileSystem({ "/d/log.json": "}{" });
     await expect(openDecisionLog({ fs, path: "/d/log.json" })).rejects.toMatchObject({ name: "StoreUnavailableError" });

@@ -79,16 +79,32 @@ export interface ObservedSignatureStatus {
 
 export function classifySignature(observation: {
   readonly status: ObservedSignatureStatus | null | undefined;
-  readonly finalizedBlockHeight: number | undefined;
+  readonly finalized: { readonly blockHeight?: number; readonly absoluteSlot: number } | undefined;
+  readonly statusSlot: number;
   readonly lastValidBlockHeight: number | undefined;
 }): SignatureOutcome {
-  const { status, finalizedBlockHeight, lastValidBlockHeight } = observation;
+  const { status, finalized, statusSlot, lastValidBlockHeight } = observation;
   if (status) {
     if (status.err !== null) return status.confirmationStatus === "finalized" ? "failed" : "pending";
     return status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized" ? "landed" : "pending";
   }
-  return status === null && lastValidBlockHeight !== undefined && finalizedBlockHeight !== undefined
-    && finalizedBlockHeight > lastValidBlockHeight ? "failed" : "pending";
+  return status === null && lastValidBlockHeight !== undefined && finalized?.blockHeight !== undefined
+    && statusSlot >= finalized.absoluteSlot && finalized.blockHeight > lastValidBlockHeight ? "failed" : "pending";
+}
+
+export async function checkPaymentLanding(
+  connection: Pick<Connection, "getEpochInfo" | "getSignatureStatuses">,
+  { signature, lastValidBlockHeight }: PaymentToCheck,
+): Promise<SignatureOutcome> {
+  try {
+    const finalized = lastValidBlockHeight === undefined
+      ? undefined
+      : await connection.getEpochInfo("finalized").catch(() => undefined);
+    const { context, value } = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
+    return classifySignature({ status: value[0], statusSlot: context.slot, finalized, lastValidBlockHeight });
+  } catch {
+    return "pending";
+  }
 }
 
 export interface UsdcLedger {
@@ -256,17 +272,7 @@ export async function createSolanaLedger(config: LedgerConfig): Promise<Configur
         },
       };
     },
-    async checkSignature({ signature, lastValidBlockHeight }) {
-      try {
-        const finalizedBlockHeight = lastValidBlockHeight === undefined
-          ? undefined
-          : await connection.getBlockHeight("finalized").catch(() => undefined);
-        const { value } = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
-        return classifySignature({ status: value[0], finalizedBlockHeight, lastValidBlockHeight });
-      } catch {
-        return "pending";
-      }
-    },
+    checkSignature: (payment) => checkPaymentLanding(connection, payment),
     async debit(intentId, notional, memo, beforeBroadcast) {
       if (!Number.isSafeInteger(notional) || notional <= 0) {
         return { ok: false, error: { code: "invalid-notional" } };

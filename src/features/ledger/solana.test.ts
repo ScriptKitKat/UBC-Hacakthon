@@ -295,6 +295,7 @@ it.each([
   ["failed on chain", { value: [{ slot: 1, confirmations: 1, err: { InstructionError: [0, "Custom"] }, confirmationStatus: "finalized" }], context: { slot: 1 } }, true, "failed"],
   ["pending while the blockhash is still valid", { value: [null], context: { slot: 1 } }, true, "pending"],
   ["failed once the signed blockhash expired without landing", { value: [null], context: { slot: 1 } }, false, "failed"],
+  ["pending when the status response predates the expiry observation", { value: [null], context: { slot: 0 } }, false, "pending"],
   ["pending when only processed", { value: [{ slot: 1, confirmations: 0, err: null, confirmationStatus: "processed" }], context: { slot: 1 } }, true, "pending"],
 ] as const)("checks a signature: %s", async (_name, statuses, blockhashValid, expected) => {
   fakeRpc(devnetGenesis);
@@ -302,8 +303,8 @@ it.each([
   const height = vi.fn<typeof fetch>((_url, init) => {
     if (typeof init?.body !== "string") throw new Error("Expected a JSON-RPC request body");
     const request = JSON.parse(init.body) as { id: string };
-    expect(request).toMatchObject({ method: "getBlockHeight", params: [{ commitment: "finalized" }] });
-    return Promise.resolve(Response.json({ jsonrpc: "2.0", id: request.id, result: blockhashValid ? 123 : 124 }));
+    expect(request).toMatchObject({ method: "getEpochInfo", params: [{ commitment: "finalized" }] });
+    return Promise.resolve(Response.json({ jsonrpc: "2.0", id: request.id, result: { absoluteSlot: 1, blockHeight: blockhashValid ? 123 : 124, epoch: 0, slotIndex: 1, slotsInEpoch: 100 } }));
   });
   vi.stubGlobal("fetch", height);
   const ledger = await createSolanaLedger(config);

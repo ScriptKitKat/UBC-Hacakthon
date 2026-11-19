@@ -43,11 +43,12 @@ export const nodeFileSystem: FileSystem = {
       await rm(temporary, { force: true });
       throw error;
     }
-    try {
-      await syncPath(dirname(path), "r");
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException | null)?.code;
-      if (code !== "EISDIR" && code !== "EINVAL" && code !== "ENOTSUP" && code !== "EOPNOTSUPP" && code !== "ENOSYS") throw error;
+    let directory = dirname(path);
+    for (;;) {
+      await syncPath(directory, "r");
+      const parent = dirname(directory);
+      if (parent === directory) break;
+      directory = parent;
     }
   },
   async preserveCopy(path, preservedPath) {

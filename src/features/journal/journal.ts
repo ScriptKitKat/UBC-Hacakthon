@@ -95,17 +95,26 @@ function createJournal(initial: readonly SpendEntry[], store: Pick<JsonStore<Jou
     entries: () => [...byId.values()],
     async adoptSettled(adopted) {
       const knownSignatures = new Set([...byId.values()].flatMap(({ signature }) => (signature === undefined ? [] : [signature])));
-      const addedIds: string[] = [];
+      const previousEntries = new Map<string, SpendEntry | undefined>();
       for (const entry of adopted) {
         const { operationId, signature } = entry;
-        if (byId.has(operationId) || signature === undefined || knownSignatures.has(signature)) continue;
-        byId.set(operationId, { ...entry, status: "settled" });
+        const existing = byId.get(operationId);
+        if (signature === undefined) continue;
+        if (existing) {
+          if (existing.status !== "reserved" || existing.signature !== signature) continue;
+        } else if (knownSignatures.has(signature)) continue;
+        previousEntries.set(operationId, existing);
+        byId.set(operationId, { ...entry, ...existing, status: "settled" });
         knownSignatures.add(signature);
-        addedIds.push(operationId);
       }
-      if (addedIds.length === 0) return OK;
+      if (previousEntries.size === 0) return OK;
       const written = await persist();
-      if (!written.ok) for (const operationId of addedIds) byId.delete(operationId);
+      if (!written.ok) {
+        for (const [operationId, previous] of previousEntries) {
+          if (previous) byId.set(operationId, previous);
+          else byId.delete(operationId);
+        }
+      }
       return written;
     },
   };
