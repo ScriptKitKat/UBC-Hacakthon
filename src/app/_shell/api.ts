@@ -118,3 +118,17 @@ export async function loadSpots(assets: readonly string[]): Promise<Readonly<Rec
     return {};
   }
 }
+
+export async function loadSparklines(symbols: readonly string[]): Promise<Readonly<Record<string, { readonly sparkline: readonly number[]; readonly changePercent: number | null }>>> {
+  if (symbols.length === 0) return {};
+  try {
+    const url = new URL("/api/home/sparklines", window.location.origin);
+    url.searchParams.set("symbols", symbols.join(","));
+    const response = await fetch(url, { headers: { accept: "application/json" } });
+    if (!response.ok) return {};
+    const body = await response.json() as { sparklines?: Record<string, { sparkline: number[]; changePercent: number | null }> };
+    return body.sparklines ?? {};
+  } catch {
+    return {};
+  }
+}

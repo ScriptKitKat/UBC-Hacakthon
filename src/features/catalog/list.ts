@@ -16,6 +16,7 @@ export interface CatalogQuery {
   readonly limit?: number;
   readonly offset?: number;
   readonly sort?: "moving" | "default";
+  readonly includeSparklines?: boolean;
 }
 
 export type CatalogListResult =
@@ -67,28 +68,9 @@ export async function listCatalog(deps: CatalogDeps, query: CatalogQuery = {}): 
     if (contract !== undefined) pending.push({ event, contract });
   }
 
-  let candleUses = 0;
   const cards: CatalogCard[] = [];
   for (const { event, contract } of pending) {
-    const fromHistory = snapshotsToValues(deps.history.series(contract.instrumentSymbol), cutoff);
-    let values = fromHistory.values;
-    if (values.length < 2 && candleUses < CANDLE_BUDGET) {
-      candleUses += 1;
-      const candles = await deps.markets.candles(contract.instrumentSymbol, "15m");
-      if (candles.ok && candles.value.length > 0) {
-        const fromCandles = candlesToValues(candles.value, cutoff);
-        values = fromCandles.values;
-        deps.history.watch(contract.instrumentSymbol);
-        for (const candle of candles.value) {
-          deps.history.record(contract.instrumentSymbol, {
-            atMs: candle.timeMs,
-            yesCents: candle.closeCents,
-            bidCents: null,
-            askCents: null,
-          });
-        }
-      }
-    }
+    const values = snapshotsToValues(deps.history.series(contract.instrumentSymbol), cutoff).values;
     const first = values[0];
     const last = values.at(-1);
     const change = first !== undefined && last !== undefined ? changePercent(first, last) : null;
@@ -120,14 +102,82 @@ export async function listCatalog(deps: CatalogDeps, query: CatalogQuery = {}): 
   }
 
   const categories = [...new Set(searched.value.events.map((event) => categoryLabel(event.category)))].sort();
+  let markets = uniqueByKey(cards, (card) => card.instrumentSymbol).slice(0, limit);
+  if (query.includeSparklines === true) {
+    markets = await enrichSparklines(deps, markets);
+    if (query.sort === "moving") {
+      markets = [...markets].sort((left, right) => {
+        const leftMove = left.changePercent === null ? -1 : Math.abs(left.changePercent);
+        const rightMove = right.changePercent === null ? -1 : Math.abs(right.changePercent);
+        return rightMove - leftMove;
+      });
+    }
+  }
   return {
     ok: true,
-    page: { markets: uniqueByKey(cards, (card) => card.instrumentSymbol).slice(0, limit), total: searched.value.total, categories },
+    page: { markets, total: searched.value.total, categories, stale: false },
   };
 }
 
+
+export async function enrichSparklines(deps: CatalogDeps, cards: readonly CatalogCard[]): Promise<CatalogCard[]> {
+  const now = deps.now();
+  const cutoff = now.getTime() - WINDOW_MS;
+  const needed = cards.filter((card) => card.sparkline.length < 2).slice(0, CANDLE_BUDGET);
+  const updates = new Map<string, { sparkline: number[]; changePercent: number | null }>();
+  await Promise.all(needed.map(async (card) => {
+    const candles = await deps.markets.candles(card.instrumentSymbol, "15m");
+    if (!candles.ok || candles.value.length === 0) return;
+    const fromCandles = candlesToValues(candles.value, cutoff);
+    deps.history.watch(card.instrumentSymbol);
+    for (const candle of candles.value) {
+      deps.history.record(card.instrumentSymbol, {
+        atMs: candle.timeMs,
+        yesCents: candle.closeCents,
+        bidCents: null,
+        askCents: null,
+      });
+    }
+    const first = fromCandles.values[0];
+    const last = fromCandles.values.at(-1);
+    updates.set(card.instrumentSymbol, {
+      sparkline: smoothSeries(downsample(fromCandles.values, SPARKLINE_POINTS)),
+      changePercent: first !== undefined && last !== undefined ? changePercent(first, last) : null,
+    });
+  }));
+  return cards.map((card) => {
+    const update = updates.get(card.instrumentSymbol);
+    return update === undefined ? card : { ...card, sparkline: update.sparkline, changePercent: update.changePercent };
+  });
+}
+
+
+export async function sparklineUpdates(deps: CatalogDeps, symbols: readonly string[]): Promise<Readonly<Record<string, { readonly sparkline: number[]; readonly changePercent: number | null }>>> {
+  const stubs: CatalogCard[] = symbols.map((symbol) => ({
+    eventTicker: "",
+    eventTitle: "",
+    contractLabel: "",
+    instrumentSymbol: symbol,
+    category: "",
+    categoryLabel: "",
+    expiryDate: null,
+    endsIn: null,
+    yesCents: null,
+    noCents: null,
+    changePercent: null,
+    sparkline: [],
+    tradeable: true,
+  }));
+  const enriched = await enrichSparklines(deps, stubs);
+  const updates: Record<string, { sparkline: number[]; changePercent: number | null }> = {};
+  for (const card of enriched) {
+    if (card.sparkline.length >= 2) updates[card.instrumentSymbol] = { sparkline: card.sparkline, changePercent: card.changePercent };
+  }
+  return updates;
+}
+
 export async function cardsForSymbols(deps: CatalogDeps, symbols: readonly string[]): Promise<CatalogCard[]> {
-  const listed = await listCatalog(deps, { sort: "default", limit: 48 });
+  const listed = await listCatalog(deps, { sort: "default", limit: 48, includeSparklines: true });
   const found = new Map((listed.ok ? listed.page.markets : []).map((card) => [card.instrumentSymbol, card]));
   const cards: CatalogCard[] = [];
   for (const symbol of symbols) {
