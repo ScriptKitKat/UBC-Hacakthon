@@ -21,14 +21,20 @@ export const TIMEFRAME_PLANS: Readonly<Record<ProTimeframe, TimeframePlan>> = {
   "1W": { source: "1day", fallback: "6hr", bucketMs: WEEK_MS, windowMs: null },
 };
 
+
+export function defaultProTimeframe(expiryDate: string | null, nowMs: number): ProTimeframe {
+  if (expiryDate === null) return "1D";
+  const remaining = Date.parse(expiryDate) - nowMs;
+  if (!Number.isFinite(remaining)) return "1D";
+  if (remaining > 0 && remaining <= 8 * HOUR_MS) return "5m";
+  if (remaining > 0 && remaining <= 2 * DAY_MS) return "1h";
+  return "1D";
+}
+
 export const STATS_CANDLE: CandleTimeframe = "1hr";
 export const INDICATOR_CANDLE: CandleTimeframe = "1hr";
 export const DAY_MS_VALUE = DAY_MS;
 export const HOUR_MS_VALUE = HOUR_MS;
-
-export function chronological(candles: readonly Candle[]): Candle[] {
-  return [...candles].sort((a, b) => a.timeMs - b.timeMs);
-}
 
 export function aggregateCandles(candles: readonly Candle[], bucketMs: number): Candle[] {
   if (bucketMs <= 0) return [...candles].sort((a, b) => a.timeMs - b.timeMs);

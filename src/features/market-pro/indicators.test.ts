@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Candle } from "@/features/markets";
+import { candlesSchema } from "@/features/markets";
 import { bollingerAt, chartBands, indicatorRows, onBalanceVolume, percentB, rsiSeries, smaAt } from "./indicators";
 
 describe("smaAt", () => {
@@ -62,18 +63,12 @@ describe("onBalanceVolume and indicatorRows", () => {
 
   it("treats a rising series as stretched even when candles arrive newest first", () => {
     const now = 20 * 60 * 60 * 1000;
-    const newestFirst: Candle[] = Array.from({ length: 20 }, (_, index) => {
+    const hourly = candlesSchema.parse(Array.from({ length: 20 }, (_, index) => {
       const age = index;
-      return {
-        timeMs: now - age * 60 * 60 * 1000,
-        openCents: 59 - age,
-        highCents: 60 - age,
-        lowCents: 58 - age,
-        closeCents: 59 - age,
-        volume: 10,
-      };
-    });
-    const rows = indicatorRows({ hourly: newestFirst, nowMs: now, lastCents: 59, depthPlusMinus5: null });
+      const close = (59 - age) / 100;
+      return [now - age * 60 * 60 * 1000, close, (60 - age) / 100, (58 - age) / 100, close, 10];
+    }));
+    const rows = indicatorRows({ hourly, nowMs: now, lastCents: 59, depthPlusMinus5: null });
     const rsi = rows.find((row) => row.key === "rsi");
     expect(rsi?.signal).toBe("Stretched");
     expect(rsi?.value).not.toBe("9.5");

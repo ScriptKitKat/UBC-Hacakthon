@@ -123,7 +123,7 @@ function desk(): MarketProDesk {
   return {
     getSnapshot: () => Promise.resolve(snapshot),
     getPositions: () => Promise.resolve(positions),
-    postContextFor: () => Promise.resolve({ source: "x-feed", text: "Inflows picked up", author: "solanafloor", url: "https://x.com/s/1", why: "keyword" }),
+    postContextFor: () => Promise.resolve({ source: "x-feed", text: "Inflows picked up", author: "solanafloor", url: "https://x.com/s/1", why: "keyword", atMs: null }),
   };
 }
 
@@ -178,6 +178,29 @@ describe("createMarketPro", () => {
     expect(result.kind).toBe("ok");
     if (result.kind !== "ok") return;
     expect(result.shell.chart.source).toBe("live");
+    expect(result.shell.chart.candles.length).toBeGreaterThan(0);
+  });
+
+  it("defaults a short-lived contract to a 5m chart when no timeframe is requested", async () => {
+    const soon = {
+      ...event,
+      expiryDate: new Date(NOW + 2 * 60 * 60 * 1000).toISOString(),
+      contracts: event.contracts.map((item) => ({ ...item, expiryDate: new Date(NOW + 2 * 60 * 60 * 1000).toISOString() })),
+    };
+    const marketsSoon: MarketProMarkets = {
+      ...markets(),
+      getEvent: (ticker) => Promise.resolve(ticker === "SOL261231" ? ok(soon) : { ok: false, error: { kind: "http", status: 404 } }),
+      candles: (symbol, timeframe) => {
+        if (symbol !== SYMBOL) return Promise.resolve(ok([]));
+        if (timeframe === "5m" || timeframe === "1hr") return Promise.resolve(ok(hourly));
+        return Promise.resolve(ok([]));
+      },
+    };
+    const pro = createMarketPro({ markets: marketsSoon, nowMs: () => NOW, desk: desk(), isWatched: () => Promise.resolve(false) });
+    const result = await pro.shell(SYMBOL);
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.shell.chart.timeframe).toBe("5m");
     expect(result.shell.chart.candles.length).toBeGreaterThan(0);
   });
 

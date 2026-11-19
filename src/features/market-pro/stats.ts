@@ -2,7 +2,7 @@ import type { Candle, ContractPrices } from "@/features/markets";
 import { formatVolumeUsd } from "@/shared";
 import type { ProStat, ProStats } from "@/shared";
 import { GEMINI_UNAVAILABLE_REASON } from "@/shared";
-import { DAY_MS_VALUE, chronological } from "./timeframes";
+import { DAY_MS_VALUE } from "./timeframes";
 
 const MAX_PAYOUT = "$1.00";
 
@@ -44,7 +44,7 @@ export function formatResolvesIn(expiryDate: string | null, nowMs: number): ProS
 
 export function trailingWindow(candles: readonly Candle[], nowMs: number, windowMs: number): Candle[] {
   const start = nowMs - windowMs;
-  return chronological(candles.filter((candle) => candle.timeMs >= start && candle.timeMs <= nowMs));
+  return candles.filter((candle) => candle.timeMs >= start && candle.timeMs <= nowMs);
 }
 
 export function windowHighLow(candles: readonly Candle[]): { readonly high: number; readonly low: number } | null {

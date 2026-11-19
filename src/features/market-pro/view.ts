@@ -21,7 +21,7 @@ import { strikeLadder } from "./ladder";
 import { positionFor } from "./position";
 import { buildSpot, iconBackground, spotPair, tickerAsset } from "./spot";
 import { buildStats } from "./stats";
-import { INDICATOR_CANDLE, STATS_CANDLE, TIMEFRAME_PLANS, planCandles } from "./timeframes";
+import { INDICATOR_CANDLE, STATS_CANDLE, TIMEFRAME_PLANS, defaultProTimeframe, planCandles } from "./timeframes";
 
 export type MarketProMarkets = Pick<GeminiMarketsClient, "getEvent" | "candles" | "orderBook" | "recentTrades" | "pubticker">;
 
@@ -49,7 +49,7 @@ export type ProLiveResult =
   | { readonly kind: "unavailable" };
 
 export interface MarketPro {
-  readonly shell: (symbol: string, timeframe: ProTimeframe) => Promise<ProShellResult>;
+  readonly shell: (symbol: string, timeframe?: ProTimeframe) => Promise<ProShellResult>;
   readonly live: (symbol: string, timeframe: ProTimeframe) => Promise<ProLiveResult>;
 }
 
@@ -162,9 +162,8 @@ export function createMarketPro(deps: MarketProDeps): MarketPro {
       const parsed = parseInstrumentSymbol(symbol);
       if (!parsed) return { kind: "unknown-symbol" };
       const guessedAsset = tickerAsset(parsed.eventTicker);
-      const [loaded, chartCandles, hourly, ticker, snapshot, positions, watched] = await Promise.all([
+      const [loaded, hourly, ticker, snapshot, positions, watched] = await Promise.all([
         loadEvent(symbol),
-        loadChartCandles(symbol, timeframe),
         markets.candles(symbol, STATS_CANDLE),
         guessedAsset === undefined ? Promise.resolve(null) : markets.pubticker(spotPair(guessedAsset)),
         deps.desk.getSnapshot(),
@@ -174,8 +173,12 @@ export function createMarketPro(deps: MarketProDeps): MarketPro {
       if (loaded.kind !== "ok") return loaded;
       const now = nowMs();
       const { event, contract } = loaded;
-      const spotLast = ticker !== null && ticker.ok ? ticker.value.last : null;
+      const selected = timeframe ?? defaultProTimeframe(contract.expiryDate ?? event.expiryDate, now);
       const hourlyValue = valueOr(hourly, []);
+      const chartCandles = selected === "1h" && hourly.ok && hourly.value.length > 0
+        ? { candles: hourly.value, live: true }
+        : await loadChartCandles(symbol, selected);
+      const spotLast = ticker !== null && ticker.ok ? ticker.value.last : null;
       return {
         kind: "ok",
         shell: {
@@ -189,7 +192,7 @@ export function createMarketPro(deps: MarketProDeps): MarketPro {
             expiryDate: contract.expiryDate ?? event.expiryDate,
             nowMs: now,
           }),
-          chart: toChart(chartCandles.candles, timeframe, now, chartCandles.live),
+          chart: toChart(chartCandles.candles, selected, now, chartCandles.live),
           ladder: [...strikeLadder(event, symbol)],
           spot: buildSpot({ event, symbol, last: spotLast }),
           budget: budgetFrom(snapshot, now),

@@ -15,7 +15,10 @@
 }
 
 .rail {
-  flex: 0 1 340px;
+  flex: 0 0 360px;
+  width: 360px;
+  max-width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   border-left: 1px solid #1f1f1f;
   display: flex;
@@ -62,29 +65,31 @@
 .subtitle { margin: 2px 0 0; color: #8a8a93; font-size: 12px; }
 .grow { flex: 1; }
 
-.viewToggle {
+.mode {
   display: flex;
   gap: 2px;
   padding: 3px;
   border: 1px solid #262626;
   border-radius: 10px;
   background: #111111;
+  flex-shrink: 0;
 }
-.viewToggle a, .viewToggle span, .viewToggle button {
+
+.modeButton {
   height: 28px;
   padding: 0 12px;
   border: 0;
   border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  text-decoration: none;
+  background: transparent;
+  color: #a1a1aa;
   font-size: 13px;
   font-weight: 500;
-  color: #a1a1aa;
-  background: transparent;
 }
-.viewToggle a:hover, .viewToggle button:hover { color: #ededed; }
-.viewToggle [aria-current="page"] { background: #ededed; color: #0a0a0a; }
+
+.modeButton[aria-pressed="true"] {
+  background: #ededed;
+  color: #0a0a0a;
+}
 
 .iconButton, .star {
   width: 32px;
@@ -226,7 +231,7 @@
 .yesOn { border-color: #1e5a43 !important; background: #0f2a20 !important; color: #3ddc97 !important; font-weight: 500; }
 .noOn { border-color: #6b3020 !important; background: #2a140d !important; color: #ff9a7a !important; font-weight: 500; }
 
-.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+.fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-bottom: 10px; }
 .fields label, .slider label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: #8a8a93; }
 .fields input {
   height: 36px;
@@ -264,9 +269,13 @@
 .note { margin: 8px 0 0; font-size: 11px; color: #8a8a93; }
 
 .bookMeta { margin: -6px 0 10px; color: #8a8a93; font-size: 11px; font-family: var(--mono); }
-.bookTable { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+.bookTable { width: 100%; table-layout: fixed; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
 .bookTable th { text-align: right; font-weight: 500; color: #8a8a93; font-size: 11px; padding: 0 0 6px; }
-.bookTable th:first-child, .bookTable td:first-child { text-align: left; }
+.bookTable th { white-space: nowrap; }
+.bookTable td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bookTable th:nth-child(1), .bookTable td:nth-child(1) { width: 26%; text-align: left; }
+.bookTable th:nth-child(2), .bookTable td:nth-child(2) { width: 30%; }
+.bookTable th:nth-child(3), .bookTable td:nth-child(3) { width: 44%; padding-right: 8px; }
 .bookTable td { padding: 3px 0; position: relative; }
 .ask { color: #ff9a7a; }
 .bid { color: #3ddc97; }

@@ -60,9 +60,6 @@ export function OrderTicket({ market, budget }: { readonly market: ProMarket; re
         </button>
       </div>
       <div className={styles.fields}>
-        <label>Limit price
-          <input value="Market" readOnly />
-        </label>
         <label>Stake
           <input inputMode="decimal" value={stakeText} onChange={(event) => { setStakeText(event.target.value); }} />
         </label>

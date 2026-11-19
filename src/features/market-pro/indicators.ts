@@ -1,6 +1,5 @@
 import type { Candle } from "@/features/markets";
 import type { ProBandPoint, ProIndicatorRow } from "@/shared";
-import { chronological } from "./timeframes";
 
 const SMA_FAST = 7;
 const SMA_SLOW = 20;
@@ -90,12 +89,11 @@ export function percentB(close: number, lower: number, upper: number): number | 
 }
 
 export function onBalanceVolume(candles: readonly Candle[]): number[] {
-  const ordered = chronological(candles);
   const result: number[] = [];
   let running = 0;
-  for (let index = 0; index < ordered.length; index += 1) {
-    const candle = ordered[index];
-    const previous = ordered[index - 1];
+  for (let index = 0; index < candles.length; index += 1) {
+    const candle = candles[index];
+    const previous = candles[index - 1];
     if (candle === undefined) continue;
     if (previous === undefined) {
       result.push(0);
@@ -125,11 +123,10 @@ export function changeOver(candles: readonly Candle[], nowMs: number, lookbackMs
 }
 
 export function chartBands(candles: readonly Candle[]): readonly ProBandPoint[] {
-  const ordered = chronological(candles);
-  const closes = ordered.map((candle) => candle.closeCents);
+  const closes = candles.map((candle) => candle.closeCents);
   const ma7 = rollingSma(closes, SMA_FAST);
   const rsi = rsiSeries(closes);
-  return ordered.map((candle, index) => {
+  return candles.map((candle, index) => {
     const bands = bollingerAt(closes, index);
     return {
       timeMs: candle.timeMs,
@@ -164,8 +161,7 @@ export function indicatorRows(input: {
   readonly lastCents: number | null;
   readonly depthPlusMinus5: number | null;
 }): readonly ProIndicatorRow[] {
-  const hourly = chronological(input.hourly);
-  const { nowMs, lastCents, depthPlusMinus5 } = input;
+  const { hourly, nowMs, lastCents, depthPlusMinus5 } = input;
   const closes = hourly.map((candle) => candle.closeCents);
   const lastIndex = closes.length - 1;
   const lastClose = lastCents ?? lastOf(closes) ?? null;

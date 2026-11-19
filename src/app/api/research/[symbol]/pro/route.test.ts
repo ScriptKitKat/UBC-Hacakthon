@@ -106,11 +106,11 @@ beforeEach(() => {
 });
 
 describe("GET /api/research/[symbol]/pro", () => {
-  it("returns a schema-valid shell and defaults the timeframe to 1D", async () => {
+  it("returns a schema-valid shell and lets the desk pick a default timeframe", async () => {
     const response = await call(SYMBOL);
     expect(response.status).toBe(200);
     expect(proShellSchema.parse(await response.json()).market.symbol).toBe(SYMBOL);
-    expect(shell).toHaveBeenCalledWith(SYMBOL, "1D");
+    expect(shell).toHaveBeenCalledWith(SYMBOL, undefined);
   });
 
   it("passes a requested timeframe and live part through", async () => {

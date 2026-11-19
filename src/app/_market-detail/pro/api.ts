@@ -13,8 +13,10 @@ export type ProLiveResult =
   | { readonly kind: "unavailable" }
   | { readonly kind: "error"; readonly message: string };
 
-async function request(symbol: string, part: "shell" | "live", timeframe: ProTimeframe): Promise<Response> {
-  return fetch(`/api/research/${encodeURIComponent(symbol)}/pro?part=${part}&timeframe=${timeframe}`, { cache: "no-store" });
+async function request(symbol: string, part: "shell" | "live", timeframe?: ProTimeframe): Promise<Response> {
+  const params = new URLSearchParams({ part });
+  if (timeframe !== undefined) params.set("timeframe", timeframe);
+  return fetch(`/api/research/${encodeURIComponent(symbol)}/pro?${params.toString()}`, { cache: "no-store" });
 }
 
 function classify(response: Response): "unknown" | "unavailable" | "error" {
@@ -23,8 +25,8 @@ function classify(response: Response): "unknown" | "unavailable" | "error" {
   return "error";
 }
 
-export async function loadProShell(symbol: string, timeframe: ProTimeframe): Promise<ProShellResult> {
-  if (!isProTimeframe(timeframe)) return { kind: "unknown" };
+export async function loadProShell(symbol: string, timeframe?: ProTimeframe): Promise<ProShellResult> {
+  if (timeframe !== undefined && !isProTimeframe(timeframe)) return { kind: "unknown" };
   try {
     const response = await request(symbol, "shell", timeframe);
     if (!response.ok) {
@@ -38,8 +40,8 @@ export async function loadProShell(symbol: string, timeframe: ProTimeframe): Pro
   }
 }
 
-export async function loadProLive(symbol: string, timeframe: ProTimeframe): Promise<ProLiveResult> {
-  if (!isProTimeframe(timeframe)) return { kind: "unknown" };
+export async function loadProLive(symbol: string, timeframe?: ProTimeframe): Promise<ProLiveResult> {
+  if (timeframe !== undefined && !isProTimeframe(timeframe)) return { kind: "unknown" };
   try {
     const response = await request(symbol, "live", timeframe);
     if (!response.ok) {

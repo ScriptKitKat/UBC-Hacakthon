@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Candle } from "@/features/markets";
-import { aggregateCandles, planCandles } from "./timeframes";
+import { aggregateCandles, defaultProTimeframe, planCandles } from "./timeframes";
 
 function candle(timeMs: number, open: number, high: number, low: number, close: number, volume = 1): Candle {
   return { timeMs, openCents: open, highCents: high, lowCents: low, closeCents: close, volume };
@@ -48,5 +48,22 @@ describe("planCandles", () => {
     const outside = candle(now - 13 * 60 * 60 * 1000, 30, 31, 29, 30);
     const latest = candle(now - five, 42, 43, 41, 42);
     expect(planCandles([outside, inside, latest], "5m", now).map((item) => item.timeMs)).toEqual([inside.timeMs, latest.timeMs]);
+  });
+});
+
+describe("defaultProTimeframe", () => {
+  const now = Date.UTC(2026, 10, 19, 18);
+
+  it("picks 5m when the contract expires within 8 hours", () => {
+    expect(defaultProTimeframe(new Date(now + 90 * 60 * 1000).toISOString(), now)).toBe("5m");
+  });
+
+  it("picks 1h when the contract expires within two days", () => {
+    expect(defaultProTimeframe(new Date(now + 30 * 60 * 60 * 1000).toISOString(), now)).toBe("1h");
+  });
+
+  it("picks 1D for longer-dated contracts or missing expiry", () => {
+    expect(defaultProTimeframe(new Date(now + 10 * 24 * 60 * 60 * 1000).toISOString(), now)).toBe("1D");
+    expect(defaultProTimeframe(null, now)).toBe("1D");
   });
 });

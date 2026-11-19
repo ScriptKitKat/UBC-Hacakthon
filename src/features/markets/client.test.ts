@@ -363,8 +363,23 @@ describe("candles", () => {
     expect(urls).toEqual(["https://example.test/v2/candles/GEMI-FED261211-MAINTAIN/1day"]);
     if (!result.ok) throw new Error("expected ok");
     expect(result.value).toHaveLength(6);
-    expect(result.value[0]).toEqual({ timeMs: 1794960000000, openCents: 8, highCents: 8, lowCents: 5, closeCents: 6, volume: 834.93 });
+    expect(result.value[0]).toEqual({ timeMs: 1794528000000, openCents: 4, highCents: 4, lowCents: 4, closeCents: 4, volume: 0 });
+    expect(result.value.at(-1)).toEqual({ timeMs: 1794960000000, openCents: 8, highCents: 8, lowCents: 5, closeCents: 6, volume: 834.93 });
+    expect(result.value.every((candle, index, list) => index === 0 || (list[index - 1]?.timeMs ?? 0) <= candle.timeMs)).toBe(true);
     expect(result.value.every((candle) => Number.isInteger(candle.closeCents))).toBe(true);
+  });
+
+  it("returns candles oldest-first when Gemini sends newest-first rows", async () => {
+    const newestFirst = [
+      [1_800_000, 0.6, 0.6, 0.6, 0.6, 1],
+      [1_200_000, 0.5, 0.5, 0.5, 0.5, 1],
+      [600_000, 0.4, 0.4, 0.4, 0.4, 1],
+    ];
+    const { client } = setupKnown(() => jsonResponse(newestFirst));
+    const result = await client.candles("GEMI-FED261211-MAINTAIN", "1hr");
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.value.map((candle) => candle.timeMs)).toEqual([600_000, 1_200_000, 1_800_000]);
+    expect(result.value.map((candle) => candle.closeCents)).toEqual([40, 50, 60]);
   });
 
   it("returns an empty list for a market with no candles", async () => {

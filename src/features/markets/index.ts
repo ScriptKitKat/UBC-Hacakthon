@@ -19,3 +19,5 @@ export type {
   RecentTrade,
   SpotTicker,
 } from "./types";
+
+export { candlesSchema, oldestFirst } from "./schema";

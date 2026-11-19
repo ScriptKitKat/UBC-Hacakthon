@@ -5,15 +5,7 @@ import type { ResearchTimeframe, ResearchView } from "@/shared";
 import { usePolling } from "../_desk/use-polling";
 import { loadResearch } from "./api";
 import type { ResearchResult } from "./api";
-import { BeginnerPanel } from "./beginner-panel";
 import { BeginnerView } from "./beginner-view";
-import { PostPanel, RelatedPanel } from "./context-panels";
-import { DeepDiveCard } from "./deep-dive-card";
-import { OrderBookPanel, TradesPanel } from "./depth-panels";
-import { IndicatorsPanel } from "./indicators-panel";
-import { MarketHeader, RulesPanel } from "./market-panels";
-import { PriceChart } from "./price-chart";
-import { useViewMode } from "./use-view-mode";
 import type { ViewMode } from "./use-view-mode";
 import styles from "./research.module.css";
 
@@ -52,10 +44,9 @@ function dataBanners(view: ResearchView): readonly string[] {
   ].filter((message) => message !== null);
 }
 
-export function ResearchPage({ symbol, initialView }: { readonly symbol: string; readonly initialView?: ViewMode }) {
+export function ResearchPage({ symbol }: { readonly symbol: string; readonly initialView?: ViewMode }) {
   const [loaded, setLoaded] = useState<Loaded>({ view: null, problem: null });
   const [timeframe, setTimeframe] = useState<ResearchTimeframe>(DEFAULT_TIMEFRAME);
-  const [mode] = useViewMode(initialView);
   const wanted = useRef<ResearchTimeframe>(DEFAULT_TIMEFRAME);
 
   const apply = (result: ResearchResult, requested: ResearchTimeframe) => {
@@ -79,40 +70,13 @@ export function ResearchPage({ symbol, initialView }: { readonly symbol: string;
   };
 
   const { view, problem } = loaded;
-  const pro = mode === "pro";
   const banners = view === null ? [] : dataBanners(view);
   return (
     <div className={styles.page}>
-      {mode === "pro" ? (
-        <div className={styles.toolbar}>
-          <p className={styles.symbol}>{symbol}</p>
-        </div>
-      ) : null}
       {problem !== null ? <p className={styles.banner} role="alert">{problemMessage(problem)}</p> : null}
       {view === null && problem === null ? <p className={styles.status}>Loading market data…</p> : null}
-      {view !== null && mode === "beginner" ? (
+      {view !== null ? (
         <BeginnerView view={view} timeframe={timeframe} onTimeframe={chooseTimeframe} banners={banners} />
-      ) : null}
-      {view !== null && mode === "pro" ? (
-        <>
-          {banners.map((message) => (
-            <p key={message} className={styles.notice} role="status">{message}</p>
-          ))}
-          <MarketHeader market={view.market} nowMs={Date.parse(view.generatedAt)} />
-          <DeepDiveCard symbol={symbol} />
-          <PriceChart series={view.series} timeframe={timeframe} onTimeframe={chooseTimeframe} showOverlays={pro} />
-          <div className={styles.columns}>
-            {pro ? <OrderBookPanel book={view.book} available={view.data.book === "live"} /> : null}
-            {pro ? <TradesPanel trades={view.trades} available={view.data.trades === "live"} /> : null}
-            {pro ? <IndicatorsPanel indicators={view.indicators} /> : null}
-          </div>
-          <BeginnerPanel prices={view.market.prices} limits={view.market.quantityLimits} />
-          <div className={styles.columns}>
-            <PostPanel post={view.postContext} />
-            <RulesPanel rulesText={view.market.rulesText} />
-            <RelatedPanel related={view.related} />
-          </div>
-        </>
       ) : null}
     </div>
   );

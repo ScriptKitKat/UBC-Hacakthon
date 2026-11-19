@@ -28,7 +28,6 @@ import styles from "./pro.module.css";
 
 const LIVE_MS = 8_000;
 const SHELL_MS = 15_000;
-const DEFAULT_TIMEFRAME: ProTimeframe = "1D";
 
 function problemMessage(kind: "unknown" | "unavailable" | "error", message?: string): string {
   if (kind === "unknown") return "We couldn't find this market on Gemini. It may have been removed or the link may be wrong.";
@@ -62,13 +61,12 @@ function Header({
   market,
   watched,
   onToggle,
-  onSimple,
 }: {
   readonly market: ProMarket;
   readonly watched: boolean;
   readonly onToggle: () => void;
-  readonly onSimple: () => void;
 }) {
+  const [mode, setMode] = useViewMode();
   const letter = (market.asset ?? market.displayTitle).slice(0, 1);
   const category = market.subcategory !== null && market.subcategory !== "" ? market.subcategory : market.category;
   return (
@@ -81,9 +79,9 @@ function Header({
         </div>
       </div>
       <div className={styles.grow} />
-      <div className={styles.viewToggle} role="group" aria-label="View">
-        <button type="button" onClick={onSimple}>Simple</button>
-        <span aria-current="page">Pro terminal</span>
+      <div className={styles.mode} role="group" aria-label="Mode">
+        <button type="button" className={styles.modeButton} aria-pressed={mode === "beginner"} onClick={() => { setMode("beginner"); }}>Beginner</button>
+        <button type="button" className={styles.modeButton} aria-pressed={mode === "pro"} onClick={() => { setMode("pro"); }}>Pro</button>
       </div>
       <StarButton pressed={watched} onToggle={onToggle} />
     </header>
@@ -348,13 +346,12 @@ function TradesCard({ live }: { readonly live: ProLive }) {
 }
 
 export function ProPage({ symbol, initial }: { readonly symbol: string; readonly initial?: ProShell }) {
-  const [, setMode] = useViewMode();
-  const [timeframe, setTimeframe] = useState<ProTimeframe>(initial?.chart.timeframe ?? DEFAULT_TIMEFRAME);
+  const [timeframe, setTimeframe] = useState<ProTimeframe | undefined>(initial?.chart.timeframe);
   const [shell, setShell] = useState<ProShell | undefined>(initial);
   const [live, setLive] = useState<ProLive | undefined>(undefined);
   const [problem, setProblem] = useState<"unknown" | "unavailable" | "error" | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
-  const wanted = useRef<ProTimeframe>(timeframe);
+  const wanted = useRef<ProTimeframe | undefined>(initial?.chart.timeframe);
   const watchlist = useWatchlist(initial?.watched ? [symbol, initial.market.eventTicker] : []);
 
   const refreshShell = () => {
@@ -363,6 +360,10 @@ export function ProPage({ symbol, initial }: { readonly symbol: string; readonly
       if (requested !== wanted.current) return;
       if (result.kind === "ready") {
         setShell(result.shell);
+        if (wanted.current === undefined) {
+          wanted.current = result.shell.chart.timeframe;
+          setTimeframe(result.shell.chart.timeframe);
+        }
         setProblem(null);
         return;
       }
@@ -422,7 +423,6 @@ export function ProPage({ symbol, initial }: { readonly symbol: string; readonly
             onToggle={() => {
               void watchlist.toggle({ eventTicker: market.eventTicker, instrumentSymbol: market.symbol, yesCents: market.yesAskCents });
             }}
-            onSimple={() => { setMode("beginner"); }}
           />
         ) : null}
         {problem !== null ? <p className={styles.banner} role="alert">{problemMessage(problem, errorMessage)}</p> : null}
@@ -443,7 +443,7 @@ export function ProPage({ symbol, initial }: { readonly symbol: string; readonly
             </div>
             <div className={styles.body}>
               {chart !== undefined ? (
-                <CandleChart chart={chart.timeframe === timeframe ? chart : { ...chart, timeframe }} timeframe={timeframe} onTimeframe={chooseTimeframe} spotLabel={spotLabel} />
+                <CandleChart chart={timeframe === undefined || chart.timeframe === timeframe ? chart : { ...chart, timeframe }} timeframe={timeframe ?? chart.timeframe} onTimeframe={chooseTimeframe} spotLabel={spotLabel} />
               ) : null}
               {spot !== null && spot !== undefined ? <SpotPanel spot={spot} /> : null}
               <LadderPanel ladder={shell.ladder} />

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OrderBook } from "@/features/markets";
+import { candlesSchema } from "@/features/markets";
 import type { DecisionLogEntry, PositionView } from "@/shared";
 import { buildBook, slippageForNotional } from "./book";
 import { oddsChangeAfter } from "./feed";
@@ -103,21 +104,14 @@ describe("buildStats", () => {
 
   it("still reports a positive 24h change when Gemini returns newest candles first", () => {
     const now = Date.UTC(2026, 10, 19, 18);
-    const newestFirst = Array.from({ length: 19 }, (_, index) => {
+    const hourly = candlesSchema.parse(Array.from({ length: 19 }, (_, index) => {
       const age = index;
-      const close = index === 18 ? 72 : 89;
-      return {
-        timeMs: now - age * 60 * 60 * 1000,
-        openCents: close,
-        highCents: 94,
-        lowCents: 72,
-        closeCents: close,
-        volume: 10,
-      };
-    });
+      const close = index === 18 ? 0.72 : 0.89;
+      return [now - age * 60 * 60 * 1000, close, 0.94, 0.72, close, 10];
+    }));
     const stats = buildStats({
       prices: { bestBidCents: 90, bestAskCents: 94, lastTradeCents: 89, buyYesCents: 94, buyNoCents: 10, sellYesCents: 90, sellNoCents: 6 },
-      hourly: newestFirst,
+      hourly,
       volume: 46800,
       volume24h: 46800,
       expiryDate: new Date(now + 2 * 60 * 60 * 1000).toISOString(),
@@ -203,7 +197,7 @@ describe("flow, feed, spot, position", () => {
     const items = buildFeed({
       log: [entry],
       symbol: "GEMI-SOL-C200",
-      post: { source: "x-feed", text: "Inflows are up", author: "solanafloor", url: "https://x.com/s/1", why: "keyword" },
+      post: { source: "x-feed", text: "Inflows are up", author: "solanafloor", url: "https://x.com/s/1", why: "keyword", atMs: null },
       candles: [],
       nowMs: Date.parse("2026-11-19T19:00:00.000Z"),
     });
