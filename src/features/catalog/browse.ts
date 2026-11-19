@@ -5,6 +5,7 @@ import {
   formatPayoutFromAsk,
   formatVolumeUsd,
   friendlyEventTitle,
+  uniqueByKey,
 } from "@/shared";
 import type { BrowseCard, BrowsePage, BrowseRow, BrowseSort } from "@/shared";
 import { categoryLabel, categoryQuery, changePercent, WINDOW_MS } from "./format";
@@ -240,7 +241,7 @@ function toCard(event: MarketEvent, now: Date, spots: Map<string, number>, deps:
 }
 
 export async function listBrowse(deps: BrowseDeps, query: BrowseQuery = {}): Promise<BrowseListResult> {
-  const limit = Math.min(Math.max(query.limit ?? PAGE_SIZE, 1), PAGE_SIZE);
+  const limit = Math.min(Math.max(query.limit ?? PAGE_SIZE, 1), WINDOW_CAP);
   const offset = Math.max(query.offset ?? 0, 0);
   const category = query.category;
   const needed = category === "Live" ? Math.min(Math.max(offset + limit, FETCH_SIZE * 2), WINDOW_CAP) : Math.min(offset + limit, WINDOW_CAP);
@@ -266,14 +267,17 @@ export async function listBrowse(deps: BrowseDeps, query: BrowseQuery = {}): Pro
     if (searched.value.events.length < FETCH_SIZE || searched.value.events.length === 0) exhausted = true;
     if (pageOffset >= scanCap) break;
   }
-  const window = collected.slice(0, WINDOW_CAP);
+  const window = uniqueByKey(collected, (event) => event.ticker).slice(0, WINDOW_CAP);
   const now = deps.now();
   const spots = new Map<string, number>();
   const cards = sortEvents(
-    window.map((event) => toCard(event, now, spots, deps)).filter((card): card is BrowseCard => card !== undefined),
+    uniqueByKey(
+      window.map((event) => toCard(event, now, spots, deps)).filter((card): card is BrowseCard => card !== undefined),
+      (card) => card.eventTicker,
+    ),
     query.sort ?? "trending",
   );
-  const slice = cards.slice(offset, offset + limit);
+  const slice = uniqueByKey(cards.slice(offset, offset + limit), (card) => card.eventTicker);
   const moreInWindow = offset + slice.length < cards.length;
   const moreUpstream = !exhausted && pageOffset < total && offset + limit < WINDOW_CAP;
   return {

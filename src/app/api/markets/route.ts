@@ -10,7 +10,7 @@ const query = z.object({
   category: z.string().optional(),
   sort: browseSortSchema.optional(),
   offset: z.coerce.number().int().nonnegative().max(96).optional(),
-  limit: z.coerce.number().int().positive().max(24).optional(),
+  limit: z.coerce.number().int().positive().max(96).optional(),
 });
 
 export function GET(request: Request): Promise<Response> {

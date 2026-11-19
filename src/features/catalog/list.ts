@@ -3,6 +3,7 @@ import type { Policy } from "@/features/guardrails";
 import type { HistoryStore, PriceSnapshot } from "@/features/history";
 import { parseInstrumentSymbol, type Candle, type GeminiMarketsClient, type MarketContract, type MarketEvent } from "@/features/markets";
 import type { CatalogCard, CatalogPage } from "@/shared";
+import { uniqueByKey } from "@/shared";
 import { categoryLabel, categoryQuery, changePercent, downsample, formatEndsIn, smoothSeries, SPARKLINE_POINTS, WINDOW_MS } from "./format";
 
 const FETCH_LIMIT = 40;
@@ -121,7 +122,7 @@ export async function listCatalog(deps: CatalogDeps, query: CatalogQuery = {}): 
   const categories = [...new Set(searched.value.events.map((event) => categoryLabel(event.category)))].sort();
   return {
     ok: true,
-    page: { markets: cards.slice(0, limit), total: searched.value.total, categories },
+    page: { markets: uniqueByKey(cards, (card) => card.instrumentSymbol).slice(0, limit), total: searched.value.total, categories },
   };
 }
 

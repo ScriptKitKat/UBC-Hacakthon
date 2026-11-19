@@ -71,3 +71,4 @@ export { friendlyEventTitle, formatDeadline, formatMarketWhen, assetDisplayName,
 export { buildSparkline, MIN_SPARKLINE_POINTS } from "./sparkline";
 export type { Sparkline, Trend } from "./sparkline";
 export { changeTrend, contrastInk, formatBudgetCents, formatChangePercent, formatPayoutFromAsk, formatPercent, formatResetLabel, formatSignedPercent, formatVolumeUsd, isXUrl, nextUtcMidnight } from "./card-format";
+export { mergeByKeyKeepNewest, uniqueByKey } from "./dedupe";
