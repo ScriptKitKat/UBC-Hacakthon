@@ -11,6 +11,7 @@ const purchaseSchema = z.object({
   atMs: z.number(),
   brief: researchBriefSchema.nullable(),
   receipt: z.object({ signature: z.string(), explorerUrl: z.string(), costCents: z.number() }),
+  yesCents: z.number().nullable().optional(),
 });
 
 const fileSchema = z.object({ version: z.literal(1), purchases: z.array(purchaseSchema) });

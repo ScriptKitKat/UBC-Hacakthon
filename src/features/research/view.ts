@@ -20,6 +20,7 @@ export interface ResearchDeps {
   readonly history: HistoryStore;
   readonly nowMs: () => number;
   readonly postContextFor: (symbol: string) => Promise<ResearchPostContext | undefined>;
+  readonly matchedPostsFor?: (symbol: string) => Promise<readonly ResearchPostContext[]>;
   readonly completeJson?: JsonCompleter;
 }
 
@@ -77,6 +78,8 @@ function marketInfo({ event, contract }: EventAndContract, sameCategory: readonl
       eventStatus: event.status,
       marketState: contract.marketState,
       rulesText: contract.description || event.description,
+      imageUrl: event.imageUrl ?? null,
+      termsLink: event.termsLink ?? null,
       volume: event.volume,
       volume24h: event.volume24h,
       quantityLimits: contract.limits
@@ -106,7 +109,25 @@ function isNotFound(error: MarketsError): boolean {
   return error.kind === "http" && (error.status === 404 || error.status === 400);
 }
 
+function withTimestamp(post: ResearchPostContext | null): ResearchPostContext | null {
+  if (post === null) return null;
+  return { ...post, atMs: post.atMs ?? null };
+}
+
+function uniquePosts(posts: readonly ResearchPostContext[]): ResearchPostContext[] {
+  const seen = new Set<string>();
+  const unique: ResearchPostContext[] = [];
+  for (const post of posts) {
+    const key = `${post.source}:${post.url ?? ""}:${post.text}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(post);
+  }
+  return unique;
+}
+
 export function createResearch(deps: ResearchDeps): Research {
+
   const { markets, history, nowMs } = deps;
   const lastKnown = new Map<string, MarketInfo>();
 
@@ -137,13 +158,14 @@ export function createResearch(deps: ResearchDeps): Research {
     const plan = TIMEFRAME_PLANS[timeframe];
     const eventRequest = markets.getEvent(parsed.eventTicker, { refresh: true });
     const sameCategoryRequest = eventRequest.then((result) => (result.ok ? sameCategoryMarkets(result.value) : []));
-    const [eventResult, chartCandles, hourlyCandles, book, trades, postContext, sameCategory] = await Promise.all([
+    const [eventResult, chartCandles, hourlyCandles, book, trades, postContext, matchedPosts, sameCategory] = await Promise.all([
       eventRequest,
       markets.candles(symbol, plan.candle),
       markets.candles(symbol, INDICATOR_CANDLE),
       markets.orderBook(symbol),
       markets.recentTrades(symbol, TRADE_LIMIT),
       deps.postContextFor(symbol),
+      deps.matchedPostsFor?.(symbol) ?? Promise.resolve([]),
       sameCategoryRequest,
     ]);
     const now = nowMs();
@@ -194,7 +216,11 @@ export function createResearch(deps: ResearchDeps): Research {
         book: { bids: [...cumulativeDepth(bookView.bids, "bids")], asks: [...cumulativeDepth(bookView.asks, "asks")] },
         trades: [...valueOr(trades, [])],
         indicators: computeIndicators(hourlyIndicatorPoints(hourly, snapshots)),
-        postContext: postContext ?? null,
+        postContext: withTimestamp(postContext ?? null),
+        matchedPosts: uniquePosts([
+          ...matchedPosts.map((post) => withTimestamp(post)),
+          ...(postContext ? [withTimestamp(postContext)] : []),
+        ].filter((post): post is ResearchPostContext => post !== null)),
       },
     };
   }

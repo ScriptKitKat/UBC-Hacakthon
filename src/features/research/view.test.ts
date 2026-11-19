@@ -117,7 +117,7 @@ describe("research view", () => {
   });
 
   it("includes the matched post context", async () => {
-    const postContext: ResearchPostContext = { source: "x-feed", text: "Powell signals a hold", author: "@Reuters", url: "https://x.com/a/status/1", why: "Powell hold" };
+    const postContext: ResearchPostContext = { source: "x-feed", text: "Powell signals a hold", author: "@Reuters", url: "https://x.com/a/status/1", why: "Powell hold", atMs: 1_800_000_000_000 };
     const { research } = await setup({ postContext });
     const result = await research.view(SYMBOL, "1D");
     expect(result.kind === "ok" && result.view.postContext).toEqual(postContext);

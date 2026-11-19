@@ -6,6 +6,7 @@ import { usePolling } from "../_desk/use-polling";
 import { loadResearch } from "./api";
 import type { ResearchResult } from "./api";
 import { BeginnerPanel } from "./beginner-panel";
+import { BeginnerView } from "./beginner-view";
 import { PostPanel, RelatedPanel } from "./context-panels";
 import { DeepDiveCard } from "./deep-dive-card";
 import { OrderBookPanel, TradesPanel } from "./depth-panels";
@@ -13,6 +14,7 @@ import { IndicatorsPanel } from "./indicators-panel";
 import { MarketHeader, RulesPanel } from "./market-panels";
 import { PriceChart } from "./price-chart";
 import { useViewMode } from "./use-view-mode";
+import type { ViewMode } from "./use-view-mode";
 import styles from "./research.module.css";
 
 const POLL_INTERVAL_MS = 15_000;
@@ -50,10 +52,10 @@ function dataBanners(view: ResearchView): readonly string[] {
   ].filter((message) => message !== null);
 }
 
-export function ResearchPage({ symbol }: { readonly symbol: string }) {
+export function ResearchPage({ symbol, initialView }: { readonly symbol: string; readonly initialView?: ViewMode }) {
   const [loaded, setLoaded] = useState<Loaded>({ view: null, problem: null });
   const [timeframe, setTimeframe] = useState<ResearchTimeframe>(DEFAULT_TIMEFRAME);
-  const [mode] = useViewMode();
+  const [mode] = useViewMode(initialView);
   const wanted = useRef<ResearchTimeframe>(DEFAULT_TIMEFRAME);
 
   const apply = (result: ResearchResult, requested: ResearchTimeframe) => {
@@ -78,16 +80,22 @@ export function ResearchPage({ symbol }: { readonly symbol: string }) {
 
   const { view, problem } = loaded;
   const pro = mode === "pro";
+  const banners = view === null ? [] : dataBanners(view);
   return (
     <div className={styles.page}>
-      <div className={styles.toolbar}>
-        <p className={styles.symbol}>{symbol}</p>
-      </div>
+      {mode === "pro" ? (
+        <div className={styles.toolbar}>
+          <p className={styles.symbol}>{symbol}</p>
+        </div>
+      ) : null}
       {problem !== null ? <p className={styles.banner} role="alert">{problemMessage(problem)}</p> : null}
       {view === null && problem === null ? <p className={styles.status}>Loading market data…</p> : null}
-      {view !== null ? (
+      {view !== null && mode === "beginner" ? (
+        <BeginnerView view={view} timeframe={timeframe} onTimeframe={chooseTimeframe} banners={banners} />
+      ) : null}
+      {view !== null && mode === "pro" ? (
         <>
-          {dataBanners(view).map((message) => (
+          {banners.map((message) => (
             <p key={message} className={styles.notice} role="status">{message}</p>
           ))}
           <MarketHeader market={view.market} nowMs={Date.parse(view.generatedAt)} />

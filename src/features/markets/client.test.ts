@@ -330,7 +330,7 @@ describe("event detail fields", () => {
     const { client } = setup(() => jsonResponse(raw));
     const result = await client.getEvent("FED261211");
     if (!result.ok) throw new Error("expected ok");
-    expect(result.value).toMatchObject({ volume: 13303.52, volume24h: 0, subcategory: "Economics", description: "Fed decision in December?" });
+    expect(result.value).toMatchObject({ volume: 13303.52, volume24h: 0, subcategory: "Economics", description: "Fed decision in December?", imageUrl: eventFixture.imageUrl, termsLink: eventFixture.termsLink });
     expect(result.value.contracts[0]?.description).toBe("Resolves Yes if the Fed holds. View the full rules");
     expect(result.value.contracts[0]?.expiryDate).toBe("2026-12-11T05:00:00.000Z");
   });

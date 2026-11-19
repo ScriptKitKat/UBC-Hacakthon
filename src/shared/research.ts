@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const RESEARCH_TIMEFRAMES = ["1H", "1D", "1W", "All"] as const;
+export const RESEARCH_TIMEFRAMES = ["1H", "1D", "1W", "1M", "All"] as const;
 export type ResearchTimeframe = (typeof RESEARCH_TIMEFRAMES)[number];
 
 const cents = z.number().nullable();
@@ -41,6 +41,7 @@ const postContext = z.object({
   author: z.string().nullable(),
   url: z.string().nullable(),
   why: z.string().nullable(),
+  atMs: z.number().nullable(),
 });
 
 export const indicatorsSchema = z.object({
@@ -80,6 +81,8 @@ export const researchViewSchema = z.object({
     eventStatus: z.string(),
     marketState: z.string(),
     rulesText: z.string(),
+    imageUrl: z.string().nullable(),
+    termsLink: z.string().nullable(),
     volume: z.number().nullable(),
     volume24h: z.number().nullable(),
     quantityLimits: z.object({ quantityIncrementHundredths: z.number(), quantityMinimumHundredths: z.number() }).nullable(),
@@ -108,6 +111,7 @@ export const researchViewSchema = z.object({
   indicators: indicatorsSchema,
   related: z.object({ sameEvent: z.array(relatedContract), sameCategory: z.array(relatedContract) }),
   postContext: postContext.nullable(),
+  matchedPosts: z.array(postContext),
 });
 
 export type ResearchView = z.output<typeof researchViewSchema>;

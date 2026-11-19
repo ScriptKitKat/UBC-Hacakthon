@@ -6,6 +6,7 @@ import { useState, type ReactNode } from "react";
 import { formatBudgetCents, formatResetLabel } from "@/shared";
 import { usePolling } from "../_desk/use-polling";
 import { useViewMode } from "../_research/use-view-mode";
+import type { ViewMode } from "../_research/use-view-mode";
 import { loadRail } from "./api";
 import type { HomeRail } from "./api";
 import { BriefsIcon, HomeIcon, MarketsIcon, PortfolioIcon, SettingsIcon, WatchlistIcon } from "./icons";
@@ -21,9 +22,9 @@ const LINKS = [
 
 const RAIL_MS = 8000;
 
-export function Shell({ children }: { readonly children: ReactNode }) {
+export function Shell({ children, initialView }: { readonly children: ReactNode; readonly initialView?: ViewMode }) {
   const path = usePathname();
-  const [mode, setMode] = useViewMode();
+  const [mode, setMode] = useViewMode(initialView);
   const [rail, setRail] = useState<HomeRail | undefined>(undefined);
   usePolling(() => { void loadRail().then(setRail); }, RAIL_MS);
   const spent = rail ? Math.min(100, rail.dailyCapCents <= 0 ? 0 : (rail.spentCents / rail.dailyCapCents) * 100) : 0;

@@ -109,3 +109,9 @@ describe("cumulativeDepth", () => {
     expect(cumulativeDepth(many, "asks")).toHaveLength(15);
   });
 });
+
+describe("TIMEFRAME_PLANS", () => {
+  it("maps 1M to 6-hour candles over 30 days", () => {
+    expect(TIMEFRAME_PLANS["1M"]).toEqual({ candle: "6hr", windowMs: 30 * 24 * 60 * 60 * 1000 });
+  });
+});

@@ -642,9 +642,11 @@ describe("desk persistence, positions and research context", () => {
     const post = { id: "ctx-1", text: news.text, author: "@Reuters", url: "https://x.com/Reuters/status/1" };
     const match = await desk.matchPost(post);
     if (match.kind !== "matched") throw new Error("expected a match");
-    expect(await desk.postContextFor(match.market.instrumentSymbol)).toEqual({
+    expect(await desk.postContextFor(match.market.instrumentSymbol)).toMatchObject({
       source: "x-feed", text: news.text, author: "@Reuters", url: "https://x.com/Reuters/status/1", why: match.why,
     });
+    const context = await desk.postContextFor(match.market.instrumentSymbol);
+    expect(context?.atMs).toEqual(expect.any(Number));
     expect(await desk.postContextFor("GEMI-OTHER-X")).toBeUndefined();
   });
 

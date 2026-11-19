@@ -1,5 +1,6 @@
-import { deepDiveResultSchema, researchViewSchema } from "@/shared";
-import type { DeepDiveResult, ResearchTimeframe, ResearchView } from "@/shared";
+import { z } from "zod";
+import { deepDiveResultSchema, researchBriefSchema, researchViewSchema } from "@/shared";
+import type { DecisionLogEntry, DeepDiveResult, ResearchTimeframe, ResearchView } from "@/shared";
 
 export type ResearchResult =
   | { readonly kind: "ready"; readonly view: ResearchView }
@@ -33,5 +34,80 @@ export async function purchaseDeepDive(symbol: string): Promise<PurchaseResult> 
     return parsed.success ? { kind: "done", result: parsed.data } : { kind: "error", message: "The desk sent an unexpected response" };
   } catch {
     return { kind: "error", message: "Could not reach the desk server" };
+  }
+}
+
+
+const storedBriefSchema = z.object({
+  at: z.string(),
+  signature: z.string(),
+  explorerUrl: z.string(),
+  costCents: z.number(),
+  yesCents: z.number().nullable(),
+  brief: researchBriefSchema,
+});
+
+const briefsSchema = z.object({
+  current: storedBriefSchema.nullable(),
+  previous: storedBriefSchema.nullable(),
+});
+
+export type StoredBrief = z.output<typeof storedBriefSchema>;
+
+export type BriefsResult =
+  | { readonly kind: "ready"; readonly current: StoredBrief | null; readonly previous: StoredBrief | null }
+  | { readonly kind: "error" };
+
+export async function loadResearchBriefs(symbol: string): Promise<BriefsResult> {
+  try {
+    const response = await fetch(`/api/research/${encodeURIComponent(symbol)}/briefs`, { cache: "no-store" });
+    if (!response.ok) return { kind: "error" };
+    const parsed = briefsSchema.safeParse(await response.json());
+    return parsed.success ? { kind: "ready", current: parsed.data.current, previous: parsed.data.previous } : { kind: "error" };
+  } catch {
+    return { kind: "error" };
+  }
+}
+
+const decisionEntrySchema = z.object({
+  entryId: z.string(),
+  kind: z.enum(["approve", "needs-approval", "refuse", "execution-failed"]),
+  spokenReason: z.string(),
+  intentId: z.string(),
+  symbol: z.string(),
+  outcome: z.enum(["yes", "no"]).nullable(),
+  notionalCents: z.number(),
+  senderId: z.string(),
+  source: z.enum(["voice", "x", "desk", "feed", "research"]),
+  at: z.string(),
+});
+
+export async function placeDeskTrade(input: {
+  readonly symbol: string;
+  readonly outcome: "yes" | "no";
+  readonly senderId: string;
+  readonly notionalCents: number;
+}): Promise<{ readonly ok: true; readonly entry: DecisionLogEntry } | { readonly ok: false; readonly message: string }> {
+  try {
+    const response = await fetch("/api/desk/propose", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        instrumentSymbol: input.symbol,
+        outcome: input.outcome,
+        notionalCents: input.notionalCents,
+        senderId: input.senderId,
+        source: "desk",
+      }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({ error: "trade-failed" })) as { error?: string };
+      return { ok: false, message: body.error ?? "The trade could not be sent." };
+    }
+    const body = await response.json() as { entry?: unknown };
+    const parsed = decisionEntrySchema.safeParse(body.entry);
+    return parsed.success ? { ok: true, entry: parsed.data } : { ok: false, message: "The desk sent an unexpected response" };
+  } catch {
+    return { ok: false, message: "Could not reach the desk server" };
   }
 }

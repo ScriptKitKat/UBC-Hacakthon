@@ -13,7 +13,7 @@ export function GET(request: Request, context: { readonly params: Promise<{ read
     const timeframe = new URL(request.url).searchParams.get("timeframe") ?? DEFAULT_TIMEFRAME;
     const issues = [
       ...(parseInstrumentSymbol(symbol) ? [] : ["symbol: must look like GEMI-EVENT-CONTRACT"]),
-      ...(isResearchTimeframe(timeframe) ? [] : ["timeframe: must be one of 1H, 1D, 1W, All"]),
+      ...(isResearchTimeframe(timeframe) ? [] : ["timeframe: must be one of 1H, 1D, 1W, 1M, All"]),
     ];
     if (issues.length > 0 || !isResearchTimeframe(timeframe)) return Response.json({ error: "invalid-request", issues }, { status: 400 });
     const result = await research.view(symbol, timeframe);

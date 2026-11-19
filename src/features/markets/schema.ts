@@ -138,6 +138,8 @@ export const eventSchema = z
     isLive: z.boolean().nullish(),
     createdAt: z.string().nullish(),
     startTime: z.string().nullish(),
+    imageUrl: z.string().nullish(),
+    termsLink: z.string().nullish(),
   })
   .transform(
     (raw): MarketEvent => ({
@@ -156,6 +158,8 @@ export const eventSchema = z
       isLive: raw.isLive === true,
       createdAt: raw.createdAt ?? null,
       startTime: raw.startTime ?? null,
+      imageUrl: raw.imageUrl ?? null,
+      termsLink: raw.termsLink ?? null,
     }),
   );
 
