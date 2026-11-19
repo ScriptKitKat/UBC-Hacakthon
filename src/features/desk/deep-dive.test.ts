@@ -448,6 +448,50 @@ describe("buyDeepDive", () => {
       expect(signPayment).toHaveBeenCalledOnce();
     });
 
+    it("recovers a settled payment while reconciliation is still checking another reservation", async () => {
+      const fs = createMemoryFileSystem();
+      const journal = await journalOn(fs, () => START);
+      const held = fixture({ script: { paid: "throw", signature: "sig-held" }, extra: { journal } });
+      await held.desk.buyDeepDive(SYMBOL);
+      await journal.begin({ operationId: "other", kind: "research", notionalCents: 5, symbol: "GEMI-A-ONE", outcome: null, senderId: "research-agent", source: "research" });
+      await journal.attachPayment("other", { signature: "sig-other", blockhash: "hash", lastValidBlockHeight: 123, explorerUrl: "https://explorer.test/tx/sig-other" });
+
+      const checkingOther = Promise.withResolvers<undefined>();
+      const finishOther = Promise.withResolvers<"pending">();
+      const desk = fixture({ script: { recovered: brief }, extra: { journal }, noncePrefix: "retry" });
+      desk.checkSignature.mockImplementation(({ signature }) => {
+        if (signature === "sig-held") return Promise.resolve("landed");
+        checkingOther.resolve(undefined);
+        return finishOther.promise;
+      });
+      const reconciliation = desk.desk.reconcile();
+      await checkingOther.promise;
+      const result = await desk.desk.buyDeepDive(SYMBOL);
+      finishOther.resolve("pending");
+      await reconciliation;
+      expect(result).toMatchObject({ status: "delivered", alreadyPurchased: true, purchase: { signature: "sig-held" } });
+      expect(desk.signPayment).not.toHaveBeenCalled();
+    });
+
+    it("recovers an undelivered brief from the journal when newer purchases fill the cache", async () => {
+      const fs = createMemoryFileSystem();
+      const journal = await journalOn(fs, () => START);
+      const first = fixture({ script: { paid: unreadable }, extra: { journal } });
+      await first.desk.buyDeepDive(SYMBOL);
+
+      const initialPurchases = Array.from({ length: 50 }, (_, index) => ({
+        symbol: `GEMI-OTHER-${String(index)}`,
+        atMs: START + 60_000,
+        brief: null,
+        receipt: { signature: `other-${String(index)}`, explorerUrl: "https://explorer.test/", costCents: 5 },
+      }));
+      const restarted = fixture({ start: START + 60_000, script: { recovered: brief }, extra: { journal, initialPurchases }, noncePrefix: "retry" });
+      expect(await restarted.desk.buyDeepDive(SYMBOL)).toMatchObject({
+        status: "delivered", alreadyPurchased: true, purchase: { signature: "sig-1" },
+      });
+      expect(restarted.signPayment).not.toHaveBeenCalled();
+    });
+
     it("can recover a payment that settled only after a restart's chain check", async () => {
       const fs = createMemoryFileSystem();
       const held = fixture({ script: { paid: "throw", signature: "sig-held" }, extra: { journal: await journalOn(fs, () => START) } });

@@ -533,6 +533,23 @@ describe("used payment store", () => {
     expect(fs.writes).toHaveLength(1);
   });
 
+  it("retains an old settled receipt until the desk releases its recovery protection", async () => {
+    const records = [{ ...claim("old", "recoverable"), status: "settled" }];
+    const fs = createMemoryFileSystem({ "used.json": JSON.stringify({ version: 1, records }) });
+    const protectedSignatures = new Set(["recoverable"]);
+    const options = {
+      fs, path: "used.json",
+      nowMs: () => startMs + 48 * 60 * 60 * 1000,
+      finalizedHeight: () => Promise.resolve(400),
+      protectedSignatures: () => protectedSignatures,
+    };
+
+    expect((await openUsedPayments(options)).find("recoverable")).toMatchObject({ status: "settled" });
+    expect(fs.writes).toHaveLength(0);
+    protectedSignatures.clear();
+    expect((await openUsedPayments(options)).find("recoverable")).toBeUndefined();
+  });
+
   it("compacts atomically after writes cross the threshold, retaining old unresolved claims", async () => {
     const records = Array.from({ length: 1000 }, (_, index) => ({ ...claim(`n-${String(index)}`, `s-${String(index)}`), status: index === 0 ? "claimed" : "settled" }));
     const fs = createMemoryFileSystem({ "used.json": JSON.stringify({ version: 1, records }) });

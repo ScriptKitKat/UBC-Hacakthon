@@ -4,6 +4,8 @@ import type { ResearchBrief } from "@/shared";
 import { createJsonStore } from "@/features/storage";
 import type { FileSystem } from "@/features/storage";
 
+export const UNDELIVERED_RECOVERY_MS = 24 * 60 * 60 * 1000;
+
 const purchaseSchema = z.object({
   symbol: z.string(),
   atMs: z.number(),

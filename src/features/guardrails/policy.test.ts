@@ -163,7 +163,7 @@ describe("trade policy", () => {
     expect(confirm(pending, "desk", market, validated({ ...config, marketCategories: new Set() }), state, now)).toMatchObject({ code: "market-category-not-allowed" });
   });
 
-  it("rolls UTC spend and reservations over while retaining replay protection", () => {
+  it("resets UTC spend while retaining reservations and replay protection", () => {
     const approved = evaluate(intent, market, policy, state, now);
     if (approved.kind !== "approve") throw new Error("Expected approval");
     const updated = applyApproved(state, approved);
@@ -172,9 +172,17 @@ describe("trade policy", () => {
     expect(applyApproved(updated, approved)).toBe(updated);
     const midnight = new Date("2026-11-18T00:00:00Z");
     expect(rollDay({ ...updated, reservedToday: usdCents(400) }, midnight)).toEqual({
-      day: "2026-11-18", spentToday: 0, reservedToday: 0, seenIntentIds: new Set([intent.intentId]),
+      day: "2026-11-18", spentToday: 0, reservedToday: 400, seenIntentIds: new Set([intent.intentId]),
     });
     expect(evaluate(intent, market, policy, updated, midnight)).toMatchObject({ code: "duplicate-intent" });
+  });
+
+  it("still refuses confirmations over the remaining budget when the UTC day rolls over", () => {
+    const pending = evaluate({ ...intent, notional: usdCents(501) }, market, policy, state, now);
+    if (pending.kind !== "needs-approval") throw new Error("Expected pending decision");
+    const reserved = { ...state, reservedToday: usdCents(config.dailyCap) };
+    const midnight = new Date("2026-11-18T00:00:00Z");
+    expect(confirm(pending, "desk", market, policy, reserved, midnight)).toMatchObject({ code: "over-daily-cap" });
   });
 
   it("keeps sequential approvals within the daily cap for varied intent sequences", () => {

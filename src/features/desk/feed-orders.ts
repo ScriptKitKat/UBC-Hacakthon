@@ -1,9 +1,7 @@
 import { z } from "zod";
-import { StoreUnavailableError, createJsonStore, createSerialQueue } from "@/features/storage";
+import { createJsonStore, createSerialQueue } from "@/features/storage";
 import type { FileSystem } from "@/features/storage";
 import { entrySchema } from "./log-store";
-
-const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 const orderSchema = z.object({
   clientOrderId: z.string(),
@@ -23,22 +21,11 @@ export type FeedOrder = z.output<typeof orderSchema>;
 
 type OrderFile = z.output<typeof fileSchema>;
 
-interface RetentionOptions {
-  readonly now: () => Date;
-  readonly isReserved: (intentId: string) => boolean;
-}
-
 export function awaitingPaymentResult(entry: FeedOrder["entry"]): boolean {
   return entry.code === "order-in-progress" || entry.code === "debit-unconfirmed";
 }
 
-function retained(order: FeedOrder, options: RetentionOptions): boolean {
-  return awaitingPaymentResult(order.entry) || options.isReserved(order.entry.intentId)
-    || !(Date.parse(order.entry.at) < options.now().getTime() - RETENTION_MS);
-}
-
 export function createFeedOrders(
-  options: RetentionOptions,
   initial: readonly FeedOrder[] = [],
   save: (file: OrderFile) => Promise<void> = () => Promise.resolve(),
 ) {
@@ -46,11 +33,7 @@ export function createFeedOrders(
   const queue = createSerialQueue();
 
   async function write(order: FeedOrder): Promise<void> {
-    const next = new Map(orders);
-    for (const [id, previous] of next) {
-      if (!retained(previous, options)) next.delete(id);
-    }
-    next.set(order.clientOrderId, order);
+    const next = new Map(orders).set(order.clientOrderId, order);
     await save({ version: 1, orders: [...next.values()] });
     orders = next;
   }
@@ -76,12 +59,7 @@ export function createFeedOrders(
 
 export type FeedOrders = ReturnType<typeof createFeedOrders>;
 
-export async function openFeedOrders(options: RetentionOptions & { readonly fs: FileSystem; readonly path: string }): Promise<FeedOrders> {
+export async function openFeedOrders(options: { readonly fs: FileSystem; readonly path: string }): Promise<FeedOrders> {
   const file = createJsonStore({ ...options, schema: fileSchema, empty: () => ({ version: 1 as const, orders: [] }) });
-  const loaded = await file.load();
-  const orders = loaded.orders.filter((order) => retained(order, options));
-  if (orders.length !== loaded.orders.length) {
-    await file.save({ version: 1, orders }).catch(() => { throw new StoreUnavailableError("unreadable", options.path); });
-  }
-  return createFeedOrders(options, orders, file.save);
+  return createFeedOrders((await file.load()).orders, file.save);
 }

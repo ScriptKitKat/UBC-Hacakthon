@@ -637,10 +637,10 @@ describe("durable feed orders", () => {
   const now = () => new Date("2026-11-17T12:00:00Z");
   const order = { clientOrderId: "first", instrumentSymbol: symbol, outcome: "yes", notionalCents: 100 } as const;
 
-  async function open(fs: ReturnType<typeof createMemoryFileSystem>) {
-    const journal = await openSpendJournal({ fs, path: "journal.json", nowIso: () => now().toISOString() });
-    const feedOrders = await openFeedOrders({ fs, path: "orders.json", now, isReserved: (id) => journal.find(id)?.status === "reserved" });
-    return { journal, feedOrders, now };
+  async function open(fs: ReturnType<typeof createMemoryFileSystem>, clock = now) {
+    const journal = await openSpendJournal({ fs, path: "journal.json", nowIso: () => clock().toISOString() });
+    const feedOrders = await openFeedOrders({ fs, path: "orders.json" });
+    return { journal, feedOrders, now: clock };
   }
 
   it("returns the original result after more orders than the former cache could hold", async () => {
@@ -725,17 +725,26 @@ describe("durable feed orders", () => {
     expect(reopened.debit).not.toHaveBeenCalled();
   });
 
-  it("compacts expired order results, keeps unresolved reservations, and fails closed on corruption", async () => {
+  it("returns old completed orders after other writes and a restart", async () => {
     const fs = createMemoryFileSystem();
-    const extra = await open(fs);
-    const { desk } = await readyDesk({ extra });
+    const { desk, debit } = await readyDesk({ extra: await open(fs) });
     const settled = await desk.buyFromFeed(order);
-    const pending = await desk.buyFromFeed({ ...order, clientOrderId: "pending", notionalCents: 500 });
-    await extra.journal.begin({ operationId: pending.intentId, kind: "trade", notionalCents: 500, symbol, outcome: "yes", senderId: "priscilla", source: "feed" });
-    const options = { fs, path: "orders.json", now: () => new Date("2026-11-25T12:00:00Z"), isReserved: (id: string) => extra.journal.find(id)?.status === "reserved" };
-    const compacted = await openFeedOrders(options);
-    expect(compacted.findIntent(settled.intentId)).toBeUndefined();
-    expect(compacted.findIntent(pending.intentId)?.entry).toEqual(pending);
+    expect(settled.kind).toBe("approve");
+    expect(debit).toHaveBeenCalledOnce();
+
+    const later = () => new Date("2026-11-25T12:00:00Z");
+    const reopened = await readyDesk({ extra: { ...await open(fs, later), idGen: () => "later" } });
+    await reopened.desk.buyFromFeed({ ...order, clientOrderId: "other", notionalCents: 1001 });
+    expect(await reopened.desk.buyFromFeed(order)).toEqual(settled);
+    const restarted = await readyDesk({ extra: await open(fs, later) });
+    expect(await restarted.desk.buyFromFeed(order)).toEqual(settled);
+    expect(reopened.debit).not.toHaveBeenCalled();
+    expect(restarted.debit).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on order store corruption", async () => {
+    const fs = createMemoryFileSystem();
+    const options = { fs, path: "orders.json" };
     await fs.writeTextAtomic("orders.json", "{corrupt");
     const writes = fs.writes.length;
     await expect(openFeedOrders(options)).rejects.toMatchObject({ name: "StoreUnavailableError" });

@@ -19,7 +19,7 @@ import type { Desk } from "./desk";
 import { openFeedOrders } from "./feed-orders";
 import { startReconciliation } from "./reconciliation";
 import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
-import { openPurchaseStore } from "./purchase-store";
+import { UNDELIVERED_RECOVERY_MS, openPurchaseStore } from "./purchase-store";
 
 const GEMINI_MIN_REQUEST_INTERVAL_MS = 500;
 const PAYMENT_TIMEOUT_SECONDS = 120;
@@ -90,12 +90,18 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
       feedOrders: await openFeedOrders({
         fs: nodeFileSystem,
         path: join(dataDirectory, "feed-orders.json"),
-        now: () => new Date(),
-        isReserved: (intentId) => journal.find(intentId)?.status === "reserved",
       }),
       usedPayments: await openUsedPayments({
         fs: nodeFileSystem,
         path: join(dataDirectory, "x402-payments.json"),
+        protectedSignatures() {
+          const cutoff = Date.now() - UNDELIVERED_RECOVERY_MS;
+          return new Set(journal.entries().flatMap((entry) =>
+            entry.kind === "research" && entry.signature !== undefined &&
+            (entry.status === "reserved" || (entry.status === "settled" && Date.parse(entry.resolvedAt ?? entry.reservedAt) > cutoff))
+              ? [entry.signature]
+              : []));
+        },
         async finalizedHeight() {
           if (!connection || !settings.configured || !isExpectedGenesis(settings.cluster, await connection.getGenesisHash())) return undefined;
           return (await connection.getEpochInfo("finalized")).blockHeight;

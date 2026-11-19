@@ -34,6 +34,7 @@ export interface UsedPayments {
 
 interface RetentionOptions {
   readonly nowMs?: () => number;
+  readonly protectedSignatures?: () => ReadonlySet<string>;
   readonly finalizedHeight?: () => Promise<number | undefined>;
 }
 
@@ -47,7 +48,9 @@ async function compact(records: readonly UsedPayment[], options: RetentionOption
   if (!candidates.length) return records;
   const height = await options.finalizedHeight?.().catch(() => undefined);
   if (height === undefined) return records;
-  const expired = new Set(candidates.filter((record) => height > (record.lastValidBlockHeight ?? Infinity) + EXPIRY_MARGIN_BLOCKS));
+  const protectedSignatures = options.protectedSignatures?.();
+  const expired = new Set(candidates.filter((record) =>
+    !protectedSignatures?.has(record.signature) && height > (record.lastValidBlockHeight ?? Infinity) + EXPIRY_MARGIN_BLOCKS));
   return records.filter((record) => !expired.has(record));
 }
 

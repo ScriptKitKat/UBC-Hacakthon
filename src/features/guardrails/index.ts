@@ -132,7 +132,7 @@ export type Decision = ApprovedTrade | PendingApproval | Refusal;
 export function rollDay(state: PolicyState, now: Date): PolicyState {
   const day = now.toISOString().slice(0, 10);
   if (day === state.day) return state;
-  return { ...state, day, spentToday: usdCents(0), reservedToday: usdCents(0) };
+  return { ...state, day, spentToday: usdCents(0) };
 }
 
 function dollars(cents: UsdCents): string {

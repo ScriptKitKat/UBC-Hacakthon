@@ -7,7 +7,7 @@ import type { ApprovedTrade, Decision, Policy, PolicyState } from "@/features/gu
 import { createMemoryHistory } from "@/features/history";
 import type { HistoryStore } from "@/features/history";
 import { createMemoryJournal, reconcileJournal } from "@/features/journal";
-import type { Reconciliation, SpendJournal } from "@/features/journal";
+import type { Reconciliation, SpendEntry, SpendJournal } from "@/features/journal";
 import type { UsdcLedger } from "@/features/ledger";
 import { parseInstrumentSymbol } from "@/features/markets";
 import type { ContractLimits, GeminiMarketsClient, MarketContract } from "@/features/markets";
@@ -22,6 +22,7 @@ import type { DeepDiveSettings } from "./deep-dive";
 import { awaitingPaymentResult, createFeedOrders } from "./feed-orders";
 import type { FeedOrder, FeedOrders } from "./feed-orders";
 import { singleReconciliation } from "./reconciliation";
+import { UNDELIVERED_RECOVERY_MS } from "./purchase-store";
 import type { StoredPurchase } from "./purchase-store";
 import type {
   DecisionLogEntry,
@@ -55,7 +56,6 @@ const HISTORY_LIMIT = 90;
 const MATCH_CACHE_LIMIT = 300;
 const MATCH_CACHE_TTL_MS = 10 * 60 * 1000;
 const PURCHASE_REUSE_MS = 15 * 60 * 1000;
-const UNDELIVERED_RECOVERY_MS = 24 * 60 * 60 * 1000;
 const PURCHASE_LIMIT = 50;
 
 type PendingTrade = Extract<Decision, { kind: "needs-approval" }>;
@@ -259,10 +259,7 @@ export function createDesk(deps: DeskDeps): Desk {
   const pending = new Map<string, PendingRecord>();
   const tickers = new Map<InstrumentSymbol, string>();
   const matchCache = new Map<string, { readonly at: number; readonly post: PostInput; readonly match: Promise<FeedMatch> }>();
-  const feedOrders = deps.feedOrders ?? createFeedOrders({
-    now,
-    isReserved: (intentId) => journal.find(intentId)?.status === "reserved",
-  });
+  const feedOrders = deps.feedOrders ?? createFeedOrders();
   const buying = new Map<string, Promise<DecisionLogEntry>>();
   const confirming = new Map<string, Promise<ConfirmResult>>();
 
@@ -365,9 +362,29 @@ export function createDesk(deps: DeskDeps): Desk {
     return match;
   }
 
+  function journalPurchase(entry: SpendEntry): StoredPurchase | undefined {
+    const { signature, explorerUrl } = entry;
+    if (entry.kind !== "research" || entry.status !== "settled" || signature === undefined || explorerUrl === undefined) return undefined;
+    return {
+      symbol: entry.symbol,
+      atMs: Date.parse(entry.resolvedAt ?? entry.reservedAt),
+      brief: null,
+      receipt: { signature, explorerUrl, costCents: entry.notionalCents },
+    };
+  }
+
   function purchaseFor(symbol: string): StoredPurchase | undefined {
     const nowMs = now().getTime();
-    return purchases.find((purchase) => purchase.symbol === symbol && nowMs - purchase.atMs < (purchase.brief ? PURCHASE_REUSE_MS : UNDELIVERED_RECOVERY_MS));
+    const known = new Set(purchases.map((purchase) => purchase.receipt.signature));
+    const recent = (purchase: StoredPurchase) =>
+      nowMs - purchase.atMs < (purchase.brief ? PURCHASE_REUSE_MS : UNDELIVERED_RECOVERY_MS);
+    const candidates = purchases.filter((purchase) => purchase.symbol === symbol && recent(purchase));
+    for (const entry of journal.entries()) {
+      if (entry.symbol !== symbol) continue;
+      const purchase = journalPurchase(entry);
+      if (purchase && !known.has(purchase.receipt.signature) && recent(purchase)) candidates.push(purchase);
+    }
+    return candidates.sort((a, b) => b.atMs - a.atMs)[0];
   }
 
   function storePurchases(next: readonly StoredPurchase[]): void {
@@ -382,16 +399,6 @@ export function createDesk(deps: DeskDeps): Desk {
       { symbol, atMs: Date.parse(at), brief: result.brief, receipt: { signature, explorerUrl, costCents } },
       ...purchases.filter((purchase) => purchase.receipt.signature !== signature),
     ]);
-  }
-
-  function syncPurchasesWithJournal(): void {
-    const known = new Set(purchases.map((purchase) => purchase.receipt.signature));
-    const missing = journal.entries().flatMap((entry): StoredPurchase[] => {
-      const { signature, explorerUrl } = entry;
-      if (entry.kind !== "research" || entry.status !== "settled" || signature === undefined || explorerUrl === undefined || known.has(signature)) return [];
-      return [{ symbol: entry.symbol, atMs: Date.parse(entry.resolvedAt ?? entry.reservedAt), brief: null, receipt: { signature, explorerUrl, costCents: entry.notionalCents } }];
-    });
-    if (missing.length > 0) storePurchases([...missing, ...purchases].sort((a, b) => b.atMs - a.atMs));
   }
 
   function deliveredFrom(purchase: StoredPurchase, brief: ResearchBrief, note: string): DeepDiveResult {
@@ -419,7 +426,7 @@ export function createDesk(deps: DeskDeps): Desk {
   async function recoverPurchase(purchase: StoredPurchase): Promise<DeepDiveResult> {
     const brief = await deps.research?.resource.recover(purchase.symbol, purchase.receipt.signature);
     if (!brief) return unfinishedResult("You already paid for this brief, but I couldn't fetch it yet. I won't charge you again, so try again in a moment.", purchase);
-    storePurchases(purchases.map((existing) => (existing.receipt.signature === purchase.receipt.signature ? { ...existing, brief } : existing)));
+    storePurchases([{ ...purchase, brief }, ...purchases.filter(({ receipt }) => receipt.signature !== purchase.receipt.signature)]);
     return deliveredFrom(purchase, brief, "I had already paid for this brief, so I fetched it again without paying.");
   }
 
@@ -725,8 +732,6 @@ export function createDesk(deps: DeskDeps): Desk {
     return { ok: true, entry: await execute(confirmed, waiting.intent, quote) };
   }
 
-  syncPurchasesWithJournal();
-
   function budgetView(rolled: PolicyState, config: Policy): FeedPositions["budget"] {
     return {
       dailyCapCents: config.dailyCap,
@@ -819,7 +824,6 @@ export function createDesk(deps: DeskDeps): Desk {
 
     reconcile: singleReconciliation(async () => {
       const result = await reconcileJournal(journal, (payment) => ledger.checkSignature(payment), inFlight, deps.paymentInFlight);
-      syncPurchasesWithJournal();
       for (const order of feedOrders.all()) {
         if (buying.has(order.clientOrderId) || confirming.has(order.entry.intentId)) continue;
         if (!awaitingPaymentResult(order.entry)) continue;
