@@ -242,7 +242,7 @@ describe("rate limiting and caching", () => {
       if (url.includes("/v1/book/")) return jsonResponse(bookFixture);
       return jsonResponse(tradesFixture);
     });
-    const symbol = eventFixture.contracts[0]!.instrumentSymbol;
+    const symbol = "GEMI-FED261211-HIKE25";
     const startMs = clock.nowMs();
     await Promise.all([client.candles(symbol, "15m"), client.candles(symbol, "1hr"), client.orderBook(symbol), client.recentTrades(symbol)]);
     expect(clock.nowMs() - startMs).toBe(4000);
