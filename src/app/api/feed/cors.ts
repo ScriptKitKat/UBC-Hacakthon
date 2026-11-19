@@ -10,10 +10,10 @@ export function isAllowedOrigin(origin: string, env: Readonly<Record<string, str
   return configured ? configured.includes(origin) : EXTENSION_ORIGIN.test(origin);
 }
 
-export function corsHeaders(origin: string): Record<string, string> {
+export function corsHeaders(origin: string, methods = "GET, POST, OPTIONS"): Record<string, string> {
   return {
     "access-control-allow-origin": origin,
-    "access-control-allow-methods": "GET, POST, OPTIONS",
+    "access-control-allow-methods": methods,
     "access-control-allow-headers": "content-type, authorization",
     "access-control-max-age": "600",
     vary: "Origin",

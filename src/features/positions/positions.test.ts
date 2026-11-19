@@ -100,6 +100,13 @@ describe("aggregatePositions", () => {
     expect(view.positions.map((position) => `${position.symbol}:${position.outcome}`)).toEqual([`${A}:no`, `${B}:yes`, `${A}:yes`]);
   });
 
+  it("excludes settled positions from both the open list and its totals", () => {
+    const marks = new Map([[A, mark()], [B, mark({ status: "settled", yesCents: 100 })]]);
+    const view = aggregatePositions([fill(), fill({ symbol: B })], marks, AT, "open");
+    expect(view.positions.map(({ symbol }) => symbol)).toEqual([A]);
+    expect(view.totals).toMatchObject({ costCents: 120, valueCents: 140, pnlCents: 20 });
+  });
+
   it("totals only priced positions toward pnl", () => {
     const fills = [fill({ entryId: "e1" }), fill({ entryId: "e2", symbol: B, costCents: 300, contracts: 5, priceCents: 60 })];
     const view = aggregatePositions(fills, new Map([[A, mark({ yesCents: 50 })]]), AT);

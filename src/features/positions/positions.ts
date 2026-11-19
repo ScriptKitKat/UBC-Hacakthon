@@ -113,12 +113,13 @@ function buildPosition(fills: readonly Fill[], mark: MarketMark | undefined, gen
   };
 }
 
-export function aggregatePositions(fills: readonly Fill[], marks: ReadonlyMap<string, MarketMark>, generatedAt: string): Omit<PositionsView, "researchSpend"> {
+export function aggregatePositions(fills: readonly Fill[], marks: ReadonlyMap<string, MarketMark>, generatedAt: string, status?: PositionStatus): Omit<PositionsView, "researchSpend"> {
   const groups = new Map<string, Fill[]>();
   for (const fill of fills) groups.set(groupKey(fill), [...(groups.get(groupKey(fill)) ?? []), fill]);
   const generatedAtMs = Date.parse(generatedAt);
   const positions = [...groups.values()]
     .map((group) => buildPosition(group, marks.get(group[0]?.symbol ?? ""), generatedAtMs))
+    .filter((position) => status === undefined || position.status === status)
     .sort((a, b) => (b.fills.at(-1)?.at ?? "").localeCompare(a.fills.at(-1)?.at ?? ""));
   const priced = positions.filter((position) => position.valueCents !== null);
   const pricedCostCents = priced.reduce((sum, position) => sum + position.costCents, 0);

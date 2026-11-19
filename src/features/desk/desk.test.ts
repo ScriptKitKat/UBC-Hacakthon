@@ -587,6 +587,16 @@ describe("desk persistence, positions and research context", () => {
     const { positions, totals } = await desk.getPositions();
     expect(positions[0]).toMatchObject({ eventTitle: "Fed decision in December?", status: "open", currentCents: 60, contracts: 3.22 });
     expect(totals.unpricedPositions).toBe(0);
+    expect(await desk.getFeedPositions()).toEqual({
+      positions: [{
+        symbol, eventTitle: "Fed decision in December?", contractLabel: positions[0]?.contractLabel,
+        outcome: "yes", contracts: 3.22, averageEntryCents: 62, currentCents: 60,
+        pnlCents: positions[0]?.pnlCents, pnlPercent: positions[0]?.pnlPercent,
+        explorerUrl: positions[0]?.fills.at(-1)?.explorerUrl, researchPath: `/markets/${symbol}`,
+      }],
+      totals,
+      budget: { dailyCapCents: 2000, spentCents: 200, remainingCents: 1800, researchSpentCents: 0 },
+    });
   });
 
   it("only counts filled entries as positions", async () => {

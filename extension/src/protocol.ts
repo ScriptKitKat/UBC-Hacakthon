@@ -1,3 +1,4 @@
+import type { FeedPositions } from "@/shared";
 import { z } from "zod";
 import type { WireEntry, WireMatch, WireQuote } from "./wire";
 
@@ -11,6 +12,7 @@ export const backgroundRequestSchema = z.discriminatedUnion("type", [
     author: z.string().optional(),
     url: z.string().optional(),
   }),
+  z.object({ type: z.literal("positions") }),
   z.object({ type: z.literal("quote"), symbol: z.string().min(1) }),
   z.object({
     type: z.literal("buy"),
@@ -29,6 +31,7 @@ export type BackgroundRequest = z.output<typeof backgroundRequestSchema>;
 export interface ReplyValues {
   readonly match: WireMatch;
   readonly quote: WireQuote;
+  readonly positions: FeedPositions;
   readonly buy: WireEntry;
   readonly confirm: WireEntry;
 }

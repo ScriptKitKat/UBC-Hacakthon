@@ -28,6 +28,7 @@ import type {
   DeepDiveResult,
   DeskSnapshot,
   FeedMarketView,
+  FeedPositions,
   FeedMatch,
   FeedQuote,
   InstrumentSymbol,
@@ -39,6 +40,7 @@ import type {
   PendingView,
   PolicyView,
   PositionsView,
+  PositionStatus,
   PricePoint,
   ResearchPostContext,
   TradeIntent,
@@ -105,6 +107,7 @@ export interface Desk {
   readonly isCardFor: (postId: string, symbol: string) => Promise<boolean>;
   readonly quote: (symbol: string) => Promise<FeedQuote | undefined>;
   readonly postContextFor: (symbol: string) => Promise<ResearchPostContext | undefined>;
+  readonly getFeedPositions: () => Promise<FeedPositions>;
   readonly getPositions: () => Promise<PositionsView>;
   readonly buyDeepDive: (symbol: string) => Promise<DeepDiveResult>;
   readonly reconcile: () => Promise<Reconciliation>;
@@ -724,6 +727,34 @@ export function createDesk(deps: DeskDeps): Desk {
 
   syncPurchasesWithJournal();
 
+  function budgetView(rolled: PolicyState, config: Policy): FeedPositions["budget"] {
+    return {
+      dailyCapCents: config.dailyCap,
+      spentCents: rolled.spentToday,
+      researchSpentCents: todaysResearchSpendCents(journal.entries(), rolled.day),
+      remainingCents: Math.max(0, config.dailyCap - rolled.spentToday - rolled.reservedToday),
+    };
+  }
+
+  async function readPositions(status?: PositionStatus) {
+    const fills = fillsFromJournal(journal.entries());
+    const byEvent = new Map<string, Set<string>>();
+    for (const { symbol } of fills) {
+      const parsed = parseInstrumentSymbol(symbol);
+      if (parsed) byEvent.set(parsed.eventTicker, (byEvent.get(parsed.eventTicker) ?? new Set()).add(symbol));
+    }
+    await Promise.all(
+      [...byEvent].map(async ([eventTicker, symbols]) => {
+        const result = await markets.getEvent(eventTicker);
+        if (!result.ok) return;
+        for (const contract of result.value.contracts) {
+          if (symbols.has(contract.instrumentSymbol)) lastMarks.set(contract.instrumentSymbol, markFromContract(result.value, contract, now().getTime()));
+        }
+      }),
+    );
+    return aggregatePositions(fills, lastMarks, now().toISOString(), status);
+  }
+
   return {
     async submitNews(news) {
       const match = await matchNews(news, { client: markets, allowlist: allowAll });
@@ -768,22 +799,20 @@ export function createDesk(deps: DeskDeps): Desk {
     },
 
     async getPositions() {
-      const fills = fillsFromJournal(journal.entries());
-      const byEvent = new Map<string, Set<string>>();
-      for (const { symbol } of fills) {
-        const parsed = parseInstrumentSymbol(symbol);
-        if (parsed) byEvent.set(parsed.eventTicker, (byEvent.get(parsed.eventTicker) ?? new Set()).add(symbol));
-      }
-      await Promise.all(
-        [...byEvent].map(async ([eventTicker, symbols]) => {
-          const result = await markets.getEvent(eventTicker);
-          if (!result.ok) return;
-          for (const contract of result.value.contracts) {
-            if (symbols.has(contract.instrumentSymbol)) lastMarks.set(contract.instrumentSymbol, markFromContract(result.value, contract, now().getTime()));
-          }
-        }),
-      );
-      return { ...aggregatePositions(fills, lastMarks, now().toISOString()), researchSpend: summarizeResearchSpend(journal.entries(), now().toISOString()) };
+      return { ...await readPositions(), researchSpend: summarizeResearchSpend(journal.entries(), now().toISOString()) };
+    },
+
+    async getFeedPositions() {
+      const { positions, totals } = await readPositions("open");
+      return {
+        positions: positions.map(({ symbol, outcome, eventTitle, contractLabel, contracts, averageEntryCents, currentCents, pnlCents, pnlPercent, fills }) => ({
+          symbol, outcome, eventTitle, contractLabel, contracts, averageEntryCents, currentCents, pnlCents, pnlPercent,
+          explorerUrl: fills.findLast((fill) => fill.explorerUrl !== null)?.explorerUrl ?? null,
+          researchPath: `/markets/${encodeURIComponent(symbol)}`,
+        })),
+        totals,
+        budget: budgetView(currentState(), policy),
+      };
     },
 
     buyDeepDive: deepDive,
@@ -825,10 +854,7 @@ export function createDesk(deps: DeskDeps): Desk {
       const best = current?.match.kind === "matched" ? await resolveMarket(current.match.best.contract.instrumentSymbol) : undefined;
       const config = policy;
       const policyView: PolicyView = {
-        dailyCapCents: config.dailyCap,
-        spentCents: rolled.spentToday,
-        researchSpentCents: todaysResearchSpendCents(journal.entries(), rolled.day),
-        remainingCents: Math.max(0, config.dailyCap - rolled.spentToday - rolled.reservedToday),
+        ...budgetView(rolled, config),
         autoApproveMaxCents: config.autoApproveMax,
         perTradeMaxCents: config.perTradeMax,
         killSwitch: config.killSwitch,

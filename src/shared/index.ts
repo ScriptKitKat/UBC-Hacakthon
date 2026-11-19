@@ -17,8 +17,8 @@ export type { XBotStatusView, XMessageRole, XMessageView, XOutcomeView, XThreadV
 export type { FeedMarketView, FeedMatch, FeedMatchedBy, FeedQuote, PricePoint } from "./feed";
 export { payoutFor } from "./payout";
 export type { PayoutQuote, PayoutResult } from "./payout";
-export { positionsViewSchema } from "./positions";
-export type { PositionFillView, PositionStatus, PositionView, PositionsView, ResearchPurchaseView } from "./positions";
+export { feedPositionsSchema, positionsViewSchema } from "./positions";
+export type { FeedPositions, PositionFillView, PositionStatus, PositionView, PositionsView, ResearchPurchaseView } from "./positions";
 export {
   BRIEF_SECTION_TITLES,
   RESEARCH_TIMEFRAMES,

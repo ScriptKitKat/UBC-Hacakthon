@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Desk, DeskAccess } from "@/features/desk";
-import type { DecisionLogEntry, FeedMatch } from "@/shared";
+import { feedPositionsSchema } from "@/shared";
+import type { DecisionLogEntry, FeedMatch, FeedPositions } from "@/shared";
 import { OPTIONS as buyOptions, POST as buy } from "./buy/route";
 import { POST as confirm } from "./confirm/route";
 import { OPTIONS as matchOptions, POST as match } from "./match/route";
+import * as positionsRoute from "./positions/route";
 import { MAX_PREWARM_POSTS, POST as prewarm } from "./prewarm/route";
 import { GET as quote } from "./quote/route";
 
@@ -25,7 +27,8 @@ const buyFromFeed = vi.fn<Desk["buyFromFeed"]>();
 const confirmFromFeed = vi.fn<Desk["confirmFromFeed"]>();
 const isCardFor = vi.fn<Desk["isCardFor"]>();
 const feedOrder = vi.fn<Desk["feedOrder"]>();
-const stubDesk = { matchPost, isCardFor, feedOrder, quote: deskQuote, buyFromFeed, confirmFromFeed } as unknown as Desk;
+const getFeedPositions = vi.fn<Desk["getFeedPositions"]>();
+const stubDesk = { getFeedPositions, matchPost, isCardFor, feedOrder, quote: deskQuote, buyFromFeed, confirmFromFeed } as unknown as Desk;
 
 const API_TOKEN = "api-token";
 const CLIENT_ORDER_ID = "8f14e45f-ceea-467f-a0e6-1d0b6f1c6a2e";
@@ -47,6 +50,7 @@ beforeEach(() => {
   feedOrder.mockReset();
   matchPost.mockReset().mockResolvedValue(matched);
   deskQuote.mockReset();
+  getFeedPositions.mockReset();
   buyFromFeed.mockReset().mockResolvedValue(entry);
   confirmFromFeed.mockReset().mockResolvedValue({ ok: true, entry });
   getDesk.mockResolvedValue({ ok: true, desk: stubDesk, research: { view: vi.fn(), brief: vi.fn() }, deepDive: undefined });
@@ -293,5 +297,57 @@ describe("feed prewarm", () => {
   it("leaves match open without the token", async () => {
     vi.stubEnv("FEED_PREWARM_TOKEN", "s3cret");
     expect((await match(post("http://desk.test", { postId: "p1", text: "Fed holds rates" }))).status).toBe(200);
+  });
+});
+
+describe("feed positions", () => {
+  const url = "http://desk.test/api/feed/positions";
+  const authorization = `Bearer ${API_TOKEN}`;
+
+  it.each([undefined, "Bearer wrong"])("requires the feed token before reading positions", async (token) => {
+    const headers = token === undefined ? {} : { authorization: token };
+    const response = await positionsRoute.GET(new Request(url, { headers }));
+    expect(response.status).toBe(401);
+    expect(getFeedPositions).not.toHaveBeenCalled();
+  });
+
+  it("rejects foreign origins and allows the authorized extension preflight", async () => {
+    const foreign = { origin: "https://x.com", authorization };
+    expect((await positionsRoute.GET(new Request(url, { headers: foreign }))).status).toBe(403);
+    expect(positionsRoute.OPTIONS(new Request(url, { method: "OPTIONS", headers: foreign })).status).toBe(403);
+    expect(getFeedPositions).not.toHaveBeenCalled();
+
+    const preflight = positionsRoute.OPTIONS(new Request(url, {
+      method: "OPTIONS",
+      headers: { origin: EXTENSION, "access-control-request-method": "GET", "access-control-request-headers": "authorization" },
+    }));
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-origin")).toBe(EXTENSION);
+    expect(preflight.headers.get("access-control-allow-headers")).toContain("authorization");
+    expect(preflight.headers.get("access-control-allow-methods")).toBe("GET, OPTIONS");
+  });
+
+  it("returns a compact private positions view", async () => {
+    const view: FeedPositions = {
+      positions: [{
+        symbol: "GEMI-FED-HOLD", outcome: "yes", eventTitle: "Fed decision?", contractLabel: "Hold",
+        contracts: 2, averageEntryCents: 50, currentCents: null, pnlCents: null, pnlPercent: null,
+        explorerUrl: "https://explorer.test/tx/latest", researchPath: "/markets/GEMI-FED-HOLD",
+      }],
+      totals: { costCents: 100, pricedCostCents: 0, valueCents: 0, pnlCents: 0, pnlPercent: null, unpricedPositions: 1 },
+      budget: { dailyCapCents: 2000, spentCents: 105, remainingCents: 1895, researchSpentCents: 5 },
+    };
+    getFeedPositions.mockResolvedValue(view);
+    const response = await positionsRoute.GET(new Request(url, { headers: { origin: EXTENSION, authorization } }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe(EXTENSION);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const body: unknown = await response.json();
+    expect(feedPositionsSchema.parse(body)).toEqual(view);
+    expect(body).toEqual(view);
+  });
+
+  it("exports only read and preflight handlers", () => {
+    expect(Object.keys(positionsRoute).sort()).toEqual(["GET", "OPTIONS", "dynamic", "runtime"]);
   });
 });

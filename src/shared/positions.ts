@@ -57,3 +57,29 @@ export type PositionView = z.output<typeof position>;
 export type PositionFillView = z.output<typeof fill>;
 export type PositionStatus = z.output<typeof positionStatus>;
 export type ResearchPurchaseView = z.output<typeof researchPurchase>;
+
+export const feedPositionsSchema = z.object({
+  positions: z.array(position.pick({
+    symbol: true,
+    outcome: true,
+    eventTitle: true,
+    contractLabel: true,
+    contracts: true,
+    averageEntryCents: true,
+    currentCents: true,
+    pnlCents: true,
+    pnlPercent: true,
+  }).extend({
+    explorerUrl: z.string().nullable(),
+    researchPath: z.string().regex(/^\/markets\/[A-Za-z0-9%_-]+$/u),
+  })),
+  totals: positionsViewSchema.shape.totals,
+  budget: z.object({
+    dailyCapCents: z.number(),
+    spentCents: z.number(),
+    remainingCents: z.number(),
+    researchSpentCents: z.number(),
+  }),
+});
+
+export type FeedPositions = z.output<typeof feedPositionsSchema>;

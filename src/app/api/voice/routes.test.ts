@@ -43,6 +43,7 @@ const stubDesk: Desk = {
   feedOrder: vi.fn(),
   quote: vi.fn(),
   postContextFor: vi.fn(),
+  getFeedPositions: vi.fn<Desk["getFeedPositions"]>(),
   getPositions: vi.fn(),
   reconcile: vi.fn(),
   buyDeepDive: vi.fn(),

@@ -63,6 +63,7 @@ await mkdir(`${dist}/icons`, { recursive: true });
 const shared = { define: { __DEFAULT_DESK_TOKEN__: JSON.stringify("") }, bundle: true, minify: true, target: "chrome120", logLevel: "info", tsconfig: `${root}tsconfig.json` };
 await build({ ...shared, entryPoints: [`${root}src/content.ts`], outfile: `${dist}/content.js`, format: "iife" });
 await build({ ...shared, entryPoints: [`${root}src/options.ts`], outfile: `${dist}/options.js`, format: "iife" });
+await build({ ...shared, entryPoints: [`${root}src/popup.ts`], outfile: `${dist}/popup.js`, format: "iife" });
 const deskToken = await defaultDeskToken();
 await build({
   ...shared,
@@ -75,4 +76,5 @@ console.log(deskToken === "" ? "Desk token: none baked in (set it in the extensi
 
 await copyFile(`${root}manifest.json`, `${dist}/manifest.json`);
 await copyFile(`${root}options.html`, `${dist}/options.html`);
+await copyFile(`${root}popup.html`, `${dist}/popup.html`);
 await Promise.all(ICON_SIZES.map((size) => writeFile(`${dist}/icons/icon-${String(size)}.png`, iconPng(size))));
