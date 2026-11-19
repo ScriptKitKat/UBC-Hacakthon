@@ -3,6 +3,7 @@ import type { BackgroundReply, BackgroundRequest, ReplyValues } from "./protocol
 import { entryResponseSchema, feedMatchSchema, feedQuoteSchema } from "./wire";
 import type { WireEntry } from "./wire";
 import { parseDeskUrl } from "./settings";
+import { tradeBudgetFrom } from "./trade-budget";
 
 interface CallInit {
   readonly method: "GET" | "POST";
@@ -42,13 +43,15 @@ function callFor(request: BackgroundRequest): Call {
         const parsed = feedMatchSchema.safeParse(body);
         return parsed.success ? parsed.data : undefined;
       });
+    case "budget":
     case "positions":
       return {
         path: "/api/feed/positions",
         init: { method: "GET", cache: "no-store" },
         parse: (body) => {
           const parsed = feedPositionsSchema.safeParse(body);
-          return parsed.success ? parsed.data : undefined;
+          if (!parsed.success) return undefined;
+          return request.type === "budget" ? tradeBudgetFrom(parsed.data.budget) : parsed.data;
         },
       };
     case "quote":
@@ -96,11 +99,11 @@ export async function callDesk<K extends BackgroundRequest["type"]>(
   request: Extract<BackgroundRequest, { type: K }>,
   fetchImpl: typeof fetch,
 ): Promise<BackgroundReply<ReplyValues[K]>> {
-  if (request.type === "positions" && desk.token === "") return { ok: false, error: "Set a desk token in the extension options." };
+  if ((request.type === "positions" || request.type === "budget") && desk.token === "") return { ok: false, error: "Set a desk token in the extension options." };
   const url = parseDeskUrl(desk.url);
   if (url === undefined) return { ok: false, error: "Set a valid desk URL in the extension options." };
   const base = callFor(request);
-  const call = request.type === "buy" || request.type === "confirm" || request.type === "positions" ? authorized(base, desk.token) : base;
+  const call = request.type === "buy" || request.type === "confirm" || request.type === "positions" || request.type === "budget" ? authorized(base, desk.token) : base;
   let response: Response;
   try {
     response = await fetchImpl(`${url}${call.path}`, { ...call.init, redirect: "error" });

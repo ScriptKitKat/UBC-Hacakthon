@@ -3,7 +3,6 @@ import type { CardHandle } from "./card-view";
 import { MIN_TEXT_LENGTH, TWEET_SELECTOR, extractPost, isTopLevelTweet, ownElements } from "./post-extraction";
 import type { Sender } from "./protocol";
 import { researchUrl } from "./settings";
-import { tradeBudgetFrom } from "./trade-budget";
 import type { TradeBudget } from "./trade-budget";
 
 const DEFAULT_DWELL_MS = 350;
@@ -97,8 +96,8 @@ export function createFeedController(deps: ControllerDeps): FeedController {
 
   function refreshBudget(): Promise<void> {
     if (budgetRefresh) return budgetRefresh;
-    budgetRefresh = send({ type: "positions" }).then((reply) => {
-      if (reply.ok) applyBudget(tradeBudgetFrom(reply.value.budget));
+    budgetRefresh = send({ type: "budget" }).then((reply) => {
+      if (reply.ok) applyBudget(reply.value);
     }).finally(() => { budgetRefresh = undefined; });
     return budgetRefresh;
   }

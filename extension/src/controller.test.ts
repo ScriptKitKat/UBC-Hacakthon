@@ -242,19 +242,16 @@ describe("feed controller", () => {
   });
 
   it("loads the desk budget and blocks trades the guardrails would refuse", async () => {
-    const positions = {
-      positions: [],
-      totals: { costCents: 0, pricedCostCents: 0, valueCents: 0, pnlCents: 0, pnlPercent: null, unpricedPositions: 0 },
-      budget: { dailyCapCents: 2000, spentCents: 200, remainingCents: 1800, researchSpentCents: 0, perTradeMaxCents: 1000, autoApproveMaxCents: 200 },
-    };
+    const budget = { remainingCents: 1800, perTradeMaxCents: 1000, autoApproveMaxCents: 200 };
     const { controller, articles, show, requests } = setup((request) => (
-      request.type === "positions" ? { ok: true, value: positions } : defaultReply(request)
+      request.type === "budget" ? { ok: true, value: { ...budget } } : defaultReply(request)
     ));
     controller.start();
     show(0);
     await vi.advanceTimersByTimeAsync(400);
     await settle();
-    expect(requests.some((request) => request.type === "positions")).toBe(true);
+    expect(requests.some((request) => request.type === "budget")).toBe(true);
+    expect(requests.some((request) => request.type === "positions")).toBe(false);
     const root = articles()[0]?.querySelector("[data-ntd-card]")?.shadowRoot;
     if (!root) throw new Error("missing card");
     const typeAmount = (value: string) => {
@@ -272,5 +269,10 @@ describe("feed controller", () => {
     typeAmount("5.00");
     expect(trade()?.disabled).toBe(false);
     expect(root.textContent).toContain("Needs approval");
+    budget.remainingCents = 300;
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(trade()?.disabled).toBe(true);
+    expect(root.textContent).toContain("Over your limit: max 10 USDC per trade (3 USDC left today)");
+    controller.stop();
   });
 });
