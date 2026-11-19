@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createMemoryHistory } from "@/features/history";
 import { instrumentSymbol } from "@/shared";
 import type { Candle, MarketEvent } from "@/features/markets";
-import { listCatalog } from "./list";
+import { enrichSparklines, listCatalog } from "./list";
 
 function contract(label: string, symbol: string, yes: number, no: number, expiry: string) {
   return {
@@ -88,22 +88,23 @@ describe("listCatalog", () => {
       volume: 1,
     }));
     const candlesFn = vi.fn(() => Promise.resolve({ ok: true as const, value: candles }));
-    const result = await listCatalog(
-      {
-        markets: {
-          searchEvents: () => Promise.resolve({ ok: true, value: { events: [fed], total: 1 } }),
-          candles: candlesFn,
-        },
-        history,
-        now: () => now,
+    const deps = {
+      markets: {
+        searchEvents: () => Promise.resolve({ ok: true as const, value: { events: [fed], total: 1 } }),
+        candles: candlesFn,
       },
-      { sort: "moving" },
-    );
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+      history,
+      now: () => now,
+    };
+    const first = await listCatalog(deps, { sort: "moving" });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(candlesFn).not.toHaveBeenCalled();
+    expect(first.page.markets[0]?.sparkline.length ?? 0).toBeLessThan(2);
+    const enriched = await enrichSparklines(deps, first.page.markets);
     expect(candlesFn).toHaveBeenCalledWith("GEMI-FED-YES", "15m");
-    expect(result.page.markets[0]?.sparkline.length).toBeGreaterThan(1);
-    expect(result.page.markets[0]?.changePercent).not.toBeNull();
+    expect(enriched[0]?.sparkline.length).toBeGreaterThan(1);
+    expect(enriched[0]?.changePercent).not.toBeNull();
   });
 
   it("reports unavailability when Gemini search fails", async () => {

@@ -21,6 +21,7 @@ export const catalogPageSchema = z.object({
   markets: z.array(catalogCardSchema),
   total: z.number().int().nonnegative(),
   categories: z.array(z.string()),
+  stale: z.boolean().optional(),
 });
 
 export const homeRailSchema = z.object({

@@ -5,7 +5,7 @@ import { requestGrokJson } from "@/features/grok";
 import { createSampler, openHistoryStore } from "@/features/history";
 import { createSolanaLedger, createUnconfiguredLedger, isExpectedGenesis } from "@/features/ledger";
 import type { UsdcLedger } from "@/features/ledger";
-import { cardsForSymbols, createBrowseCache, listBrowse, listCatalog, loadSpotPrices, openWatchlist } from "@/features/catalog";
+import { cardsForSymbols, createBrowseCache, createListCache, listBrowse, listCatalog, loadSpotPrices, openWatchlist, sparklineUpdates } from "@/features/catalog";
 import type { BrowseListResult, BrowseQuery, CatalogListResult, CatalogQuery, Watchlist } from "@/features/catalog";
 import type { CatalogCard } from "@/shared";
 import { createGeminiMarketsClient } from "@/features/markets";
@@ -25,6 +25,7 @@ import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
 import { UNDELIVERED_RECOVERY_MS, openPurchaseStore } from "./purchase-store";
 
 const browseCache = createBrowseCache(20_000);
+const listCache = createListCache(20_000);
 const PAYMENT_TIMEOUT_SECONDS = 120;
 let homeCatalog: HomeCatalog | undefined;
 const NONCE_BYTES = 16;
@@ -38,6 +39,7 @@ export interface HomeCatalog {
   readonly list: (query?: CatalogQuery) => Promise<CatalogListResult>;
   readonly browse: (query?: BrowseQuery) => Promise<BrowseListResult>;
   readonly spots: (assets: readonly string[]) => Promise<Readonly<Record<string, string>>>;
+  readonly sparklines: (symbols: readonly string[]) => Promise<Readonly<Record<string, { readonly sparkline: readonly number[]; readonly changePercent: number | null }>>>;
   readonly cardsFor: (symbols: readonly string[]) => Promise<readonly CatalogCard[]>;
   readonly watchlist: Watchlist;
 }
@@ -193,7 +195,17 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   createSampler({ history, markets, nowMs: () => Date.now() }).start();
   const catalogDeps = { markets, history, now: () => new Date(), policy: config.value.policy };
   homeCatalog = {
-    list: (query) => listCatalog(catalogDeps, query),
+    list: async (query = {}) => {
+      const cached = listCache.get(query);
+      if (cached) return cached;
+      const result = await listCache.takeInFlight(query, () => listCatalog(catalogDeps, query));
+      if (result.ok) return result;
+      const stale = listCache.getStale(query);
+      if (stale?.ok) return { ok: true, page: { ...stale.page, stale: true } };
+      return result;
+    },
+    sparklines: (symbols) => sparklineUpdates(catalogDeps, symbols),
+
     browse: async (query = {}) => {
       const cached = browseCache.get(query);
       if (cached) return cached;

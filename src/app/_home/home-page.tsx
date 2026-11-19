@@ -1,43 +1,127 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { isXUrl } from "@/shared";
 import type { HomeView } from "@/shared";
 import { usePolling } from "../_desk/use-polling";
-import { loadHome, matchQuery } from "../_shell/api";
+import { loadHome, loadSparklines, matchQuery } from "../_shell/api";
 import { ChevronIcon, MicIcon, RefreshIcon, SubmitIcon } from "../_shell/icons";
+import { CHIP_CATEGORIES, FILTERS, PREFETCH_CATEGORIES, categoryKey } from "./category";
 import { MarketCard } from "./market-card";
 import styles from "./home.module.css";
 
-const CHIP_CATEGORIES = ["Crypto", "Sports", "Politics", "Economy"] as const;
-const FILTERS = ["All", "Crypto", "Sports", "Politics"] as const;
 const POLL_MS = 30_000;
 
-export function HomePage() {
+function SkeletonGrid() {
+  return (
+    <div className={styles.grid} aria-hidden="true">
+      {Array.from({ length: 6 }, (_, index) => (
+        <div key={index} className={styles.skeletonCard}>
+          <div className={[styles.skeletonLine, styles.skeletonTitle].join(" ")} />
+          <div className={styles.skeletonLine} />
+          <div className={[styles.skeletonLine, styles.skeletonChart].join(" ")} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function applySparklines(view: HomeView, updates: Readonly<Record<string, { readonly sparkline: readonly number[]; readonly changePercent: number | null }>>): HomeView {
+  const markets = view.markets.map((card) => {
+    const update = updates[card.instrumentSymbol];
+    if (update === undefined) return card;
+    return { ...card, sparkline: [...update.sparkline], changePercent: update.changePercent };
+  });
+  const sorted = [...markets].sort((left, right) => {
+    const leftMove = left.changePercent === null ? -1 : Math.abs(left.changePercent);
+    const rightMove = right.changePercent === null ? -1 : Math.abs(right.changePercent);
+    return rightMove - leftMove;
+  });
+  return { ...view, markets: sorted };
+}
+
+async function fillSparklines(view: HomeView): Promise<HomeView> {
+  const symbols = view.markets.filter((card) => card.sparkline.length < 2).map((card) => card.instrumentSymbol);
+  if (symbols.length === 0) return view;
+  const updates = await loadSparklines(symbols);
+  if (Object.keys(updates).length === 0) return view;
+  return applySparklines(view, updates);
+}
+
+export function HomePage({ initialView }: { readonly initialView?: HomeView } = {}) {
   const [search, setSearch] = useState("");
   const [submitted, setSubmitted] = useState("");
   const [chip, setChip] = useState<string | undefined>(undefined);
   const [filter, setFilter] = useState("All");
-  const [view, setView] = useState<HomeView | undefined>(undefined);
+  const [view, setView] = useState<HomeView | undefined>(initialView);
+  const [cache, setCache] = useState<Readonly<Record<string, HomeView>>>(initialView === undefined ? {} : { All: initialView });
   const [error, setError] = useState<string | null>(null);
   const [matchMessage, setMatchMessage] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
   const category = filter === "All" ? chip : filter;
+  const activeKey = categoryKey(filter, chip);
+  const requestKey = useRef(activeKey);
+  requestKey.current = activeKey;
+
+  const remember = (key: string, next: HomeView) => {
+    setCache((current) => ({ ...current, [key]: next }));
+    if (requestKey.current === key) setView(next);
+  };
+
+  const prefetchCategories = () => {
+    void Promise.all(PREFETCH_CATEGORIES.map(async (name) => {
+      const prefetched = await loadHome({ sort: "moving", limit: 6, category: name });
+      if (prefetched.kind !== "ok") return;
+      setCache((current) => (current[name] === undefined ? { ...current, [name]: prefetched.view } : current));
+      if (requestKey.current === name) setView(prefetched.view);
+      const ready = await fillSparklines(prefetched.view);
+      remember(name, ready);
+    }));
+  };
+
   usePolling(() => {
-    void loadHome({ sort: "moving", limit: 6, ...(submitted ? { search: submitted } : {}), ...(category ? { category } : {}) }).then((result) => {
-      if (result.kind === "ok") {
-        setView(result.view);
-        setError(null);
-      } else {
-        setError(result.message);
+    const key = activeKey;
+    const queryCategory = category;
+    const querySearch = submitted;
+    if (key === "All" && querySearch === "") prefetchCategories();
+    void loadHome({ sort: "moving", limit: 6, ...(querySearch ? { search: querySearch } : {}), ...(queryCategory ? { category: queryCategory } : {}) }).then(async (result) => {
+      if (result.kind !== "ok") {
+        if (requestKey.current === key) setError(result.message);
+        return;
       }
+      setError(null);
+      remember(key, result.view);
+      const filled = await fillSparklines(result.view);
+      remember(key, filled);
+    }).catch(() => {
+      if (requestKey.current === key) setError("Live markets are unavailable right now.");
     });
   }, POLL_MS + tick);
 
   const pending = view?.rail.pendingCount ?? 0;
   const markets = view?.markets ?? [];
+
+  const selectFilter = (name: string) => {
+    setFilter(name);
+    setChip(undefined);
+    const key = categoryKey(name, undefined);
+    const cached = cache[key];
+    setView(cached);
+    setTick((value) => value + 1);
+  };
+
+  const selectChip = (name: string) => {
+    const next = chip === name ? undefined : name;
+    setFilter("All");
+    setChip(next);
+    const key = categoryKey("All", next);
+    const cached = cache[key];
+    if (cached !== undefined) setView(cached);
+    else setView(undefined);
+    setTick((value) => value + 1);
+  };
 
   const onSearch = () => {
     const text = search.trim();
@@ -58,6 +142,7 @@ export function HomePage() {
       return;
     }
     setSubmitted(text);
+    setView(undefined);
     setTick((value) => value + 1);
   };
 
@@ -88,7 +173,7 @@ export function HomePage() {
               type="button"
               className={styles.chip}
               aria-pressed={chip === name && filter === "All"}
-              onClick={() => { setFilter("All"); setChip((current) => current === name ? undefined : name); setTick((value) => value + 1); }}
+              onClick={() => { selectChip(name); }}
             >
               {name}
             </button>
@@ -109,7 +194,7 @@ export function HomePage() {
                 type="button"
                 className={styles.filter}
                 aria-pressed={filter === name}
-                onClick={() => { setFilter(name); if (name !== "All") setChip(undefined); setTick((value) => value + 1); }}
+                onClick={() => { selectFilter(name); }}
               >
                 {name}
               </button>
@@ -118,7 +203,13 @@ export function HomePage() {
           </div>
         </div>
         {error ? <p className={styles.error} role="alert">{error}</p> : null}
-        {error === null && view === undefined ? <p className={styles.empty}>Loading live markets…</p> : null}
+        {view?.stale === true ? <p className={styles.empty} role="status">Showing recent markets while Gemini cools down.</p> : null}
+        {error === null && view === undefined ? (
+          <>
+            <p className={styles.empty}>Loading live markets…</p>
+            <SkeletonGrid />
+          </>
+        ) : null}
         {error === null && view !== undefined && markets.length === 0 ? <p className={styles.empty}>No live markets match that search right now.</p> : null}
         {markets.length > 0 ? (
           <div className={styles.grid}>
