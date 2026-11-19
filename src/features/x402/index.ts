@@ -1,5 +1,5 @@
 export { createNonceCodec, parsePaymentMemo, paymentMemo } from "./nonce";
-export type { NonceCodec } from "./nonce";
+export type { NonceCodec, PaymentTerms } from "./nonce";
 export { inspectPayment } from "./inspect";
 export type { PaymentExpectation } from "./inspect";
 export { createUsedPayments, openUsedPayments } from "./store";

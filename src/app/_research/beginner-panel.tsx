@@ -9,6 +9,7 @@ import { Tip } from "./tip";
 import styles from "./research.module.css";
 
 type Prices = ResearchView["market"]["prices"];
+type Limits = ResearchView["market"]["quantityLimits"];
 
 const DEFAULT_STAKE = "10";
 
@@ -21,6 +22,7 @@ function PayoutCell({ side, price, result }: { readonly side: "yes" | "no"; read
       </h3>
       {result.kind === "no-price" ? <p className={styles.warning}>Gemini has no live {label} price, so this can't be calculated.</p> : null}
       {result.kind === "invalid-stake" ? <p className={styles.empty}>Enter a dollar amount.</p> : null}
+      {result.kind === "below-minimum" ? <p className={styles.warning}>That stake buys less than the smallest order of {String(result.minimumContracts)} contracts.</p> : null}
       {result.kind === "quote" ? (
         <dl className={styles.payoutFacts}>
           <div>
@@ -41,7 +43,7 @@ function PayoutCell({ side, price, result }: { readonly side: "yes" | "no"; read
           </div>
           <div>
             <dt>If wrong</dt>
-            <dd><Tip text="You lose what you paid.">{formatDollarsFromCents(-result.stakeCents)}</Tip></dd>
+            <dd><Tip text="You lose what you paid.">{formatDollarsFromCents(-result.costCents)}</Tip></dd>
           </div>
           <div>
             <dt>Break-even chance</dt>
@@ -53,13 +55,13 @@ function PayoutCell({ side, price, result }: { readonly side: "yes" | "no"; read
   );
 }
 
-export function BeginnerPanel({ prices }: { readonly prices: Prices }) {
+export function BeginnerPanel({ prices, limits }: { readonly prices: Prices; readonly limits: Limits }) {
   const [stakeText, setStakeText] = useState(DEFAULT_STAKE);
   const stakeCents = parseDollarsToCents(stakeText);
   const yes = prices.buyYesCents;
   const no = prices.buyNoCents;
-  const yesResult = payoutFor(yes, stakeCents ?? 0);
-  const noResult = payoutFor(no, stakeCents ?? 0);
+  const yesResult = limits ? payoutFor(yes, stakeCents ?? 0, limits) : payoutFor(yes, stakeCents ?? 0);
+  const noResult = limits ? payoutFor(no, stakeCents ?? 0, limits) : payoutFor(no, stakeCents ?? 0);
   return (
     <section className={styles.panelWide} aria-labelledby="beginner-heading">
       <h2 id="beginner-heading" className={styles.panelTitle}>New to prediction markets?</h2>

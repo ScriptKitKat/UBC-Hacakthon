@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { instrumentSymbol, usdCents } from "@/shared";
 import type { TradeIntent } from "@/shared";
-import { DEFAULT_MARKET_CATEGORIES, applyApproved, confirm, createPolicy, evaluate, evaluateResearch, marketPolicyRefusal, remainingBudget, restorePolicyState, rollDay } from "./index";
+import { DEFAULT_MARKET_CATEGORIES, applyApproved, confirm, createPolicy, evaluate, evaluateResearch, marketPolicyRefusal, policyStateFromSpends, remainingBudget, rollDay } from "./index";
 import type { PolicyConfig, PolicyState } from "./index";
 
 const now = new Date("2026-11-17T23:59:59Z");
@@ -221,21 +221,23 @@ describe("research spend", () => {
   });
 });
 
-describe("restoring the daily budget", () => {
-  const entries = [
-    { kind: "approve", at: "2026-11-17T10:00:00.000Z", notionalCents: 200 },
-    { kind: "approve", at: "2026-11-17T11:00:00.000Z", notionalCents: 5 },
-    { kind: "refuse", at: "2026-11-17T11:30:00.000Z", notionalCents: 900 },
-    { kind: "execution-failed", at: "2026-11-17T11:40:00.000Z", notionalCents: 700 },
-    { kind: "needs-approval", at: "2026-11-17T11:50:00.000Z", notionalCents: 600 },
-    { kind: "approve", at: "2026-11-16T23:59:59.000Z", notionalCents: 1000 },
+describe("deriving the daily budget from the spend journal", () => {
+  const spends = [
+    { operationId: "a", status: "settled", notionalCents: 200, resolvedAt: "2026-11-17T10:00:00.000Z" },
+    { operationId: "b", status: "settled", notionalCents: 5, resolvedAt: "2026-11-17T11:00:00.000Z" },
+    { operationId: "c", status: "failed", notionalCents: 900, resolvedAt: "2026-11-17T11:30:00.000Z" },
+    { operationId: "d", status: "reserved", notionalCents: 600 },
+    { operationId: "e", status: "settled", notionalCents: 1000, resolvedAt: "2026-11-16T23:59:59.000Z" },
   ] as const;
 
-  it("sums only today's filled entries, bets and research alike", () => {
-    expect(restorePolicyState(entries, now)).toMatchObject({ day: "2026-11-17", spentToday: 205, reservedToday: 0 });
+  it("sums today's settled spend and every unresolved reservation, and remembers every operation id", () => {
+    const state = policyStateFromSpends(spends, now);
+    expect(state).toMatchObject({ day: "2026-11-17", spentToday: 205, reservedToday: 600 });
+    expect([...state.seenIntentIds].sort()).toEqual(["a", "b", "c", "d", "e"]);
   });
 
-  it("starts the next UTC day at zero", () => {
-    expect(restorePolicyState(entries, new Date("2026-11-18T00:00:00Z"))).toMatchObject({ day: "2026-11-18", spentToday: 0 });
+  it("keeps an unresolved reservation counted across the UTC midnight rollover while yesterday's settled spend drops out", () => {
+    const state = policyStateFromSpends(spends, new Date("2026-11-18T00:00:00Z"));
+    expect(state).toMatchObject({ day: "2026-11-18", spentToday: 0, reservedToday: 600 });
   });
 });

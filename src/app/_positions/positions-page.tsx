@@ -36,6 +36,12 @@ function Pnl({ cents, percent }: { readonly cents: number | null; readonly perce
   );
 }
 
+const STALE_MARK_SECONDS = 60;
+
+function formatMarkAge(seconds: number): string {
+  return seconds < 3600 ? `${String(Math.round(seconds / 60))} min` : `${String(Math.round(seconds / 3600))} h`;
+}
+
 function PositionRows({ position }: { readonly position: PositionView }) {
   const [expanded, setExpanded] = useState(false);
   const panelId = `fills-${position.symbol}-${position.outcome}`;
@@ -54,8 +60,13 @@ function PositionRows({ position }: { readonly position: PositionView }) {
         <td className={styles.num}>{position.contracts}</td>
         <td className={styles.num}>{formatPriceCents(position.averageEntryCents)}</td>
         <td className={styles.num}>{formatDollarsFromCents(position.costCents)}</td>
-        <td className={styles.num}>{formatPriceCents(position.currentCents)}</td>
-        <td className={styles.num}>{position.valueCents === null ? "n/a" : formatDollarsFromCents(position.valueCents)}</td>
+        <td className={styles.num}>
+          {position.currentCents === null ? "no bid" : formatPriceCents(position.currentCents)}
+          {position.markAgeSeconds !== null && position.markAgeSeconds > STALE_MARK_SECONDS ? (
+            <span className={styles.muted}> stale, {formatMarkAge(position.markAgeSeconds)} old</span>
+          ) : null}
+        </td>
+        <td className={styles.num}>{position.valueCents === null ? "no bid" : formatDollarsFromCents(position.valueCents)}</td>
         <td className={styles.num}>
           <Pnl cents={position.pnlCents} percent={position.pnlPercent} />
         </td>
@@ -136,7 +147,7 @@ function PositionsTable({ view }: { readonly view: PositionsView }) {
               <Pnl cents={totals.pricedCostCents === 0 ? null : totals.pnlCents} percent={totals.pnlPercent} />
             </td>
             <td colSpan={2}>
-              {totals.unpricedPositions > 0 ? <span className={styles.muted}>{totals.unpricedPositions} without a live price</span> : null}
+              {totals.unpricedPositions > 0 ? <span className={styles.muted}>{totals.unpricedPositions} without a bid (left out of profit and loss)</span> : null}
             </td>
           </tr>
         </tfoot>

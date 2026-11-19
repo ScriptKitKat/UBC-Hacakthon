@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { SpendEntry } from "@/features/journal";
 import type { MarketContract, MarketEvent } from "@/features/markets";
 import { instrumentSymbol } from "@/shared";
-import type { DecisionLogEntry } from "@/shared";
-import { aggregatePositions, fillsFromLog, markFromContract } from "./positions";
+import { aggregatePositions, fillsFromJournal, markFromContract, summarizeResearchSpend, todaysResearchSpendCents } from "./positions";
 import type { Fill, MarketMark } from "./positions";
 
 const A = "GEMI-FED261211-MAINTAIN";
@@ -29,6 +29,7 @@ const mark = (overrides: Partial<MarketMark> = {}): MarketMark => ({
   status: "open",
   yesCents: 70,
   noCents: 28,
+  markedAtMs: Date.parse("2026-11-18T00:00:00.000Z"),
   ...overrides,
 });
 
@@ -64,6 +65,14 @@ describe("aggregatePositions", () => {
     const view = aggregatePositions([fill({ outcome: "no" })], new Map([[A, mark({ noCents: null })]]), AT);
     expect(view.positions[0]).toMatchObject({ currentCents: null, valueCents: null, pnlCents: null, pnlPercent: null, status: "open" });
     expect(view.totals).toMatchObject({ costCents: 120, pricedCostCents: 0, valueCents: 0, pnlCents: 0, pnlPercent: null, unpricedPositions: 1 });
+  });
+
+  it("reports the age of the mark and ignores marks older than ten minutes", () => {
+    const aged = (seconds: number) => new Map([[A, mark({ markedAtMs: Date.parse(AT) - seconds * 1000 })]]);
+    expect(aggregatePositions([fill()], aged(90), AT).positions[0]).toMatchObject({ markAgeSeconds: 90, currentCents: 70 });
+    const expired = aggregatePositions([fill()], aged(601), AT);
+    expect(expired.positions[0]).toMatchObject({ markAgeSeconds: 601, currentCents: null, valueCents: null });
+    expect(expired.totals.unpricedPositions).toBe(1);
   });
 
   it("marks positions without a market as unavailable", () => {
@@ -117,52 +126,79 @@ describe("aggregatePositions", () => {
   });
 });
 
-function entry(overrides: Partial<DecisionLogEntry> = {}): DecisionLogEntry {
+function entry(overrides: Partial<SpendEntry> = {}): SpendEntry {
   return {
-    entryId: "e1",
-    kind: "approve",
-    spokenReason: "ok",
-    intentId: "i1",
+    operationId: "e1",
+    kind: "trade",
+    status: "settled",
+    notionalCents: 100,
     symbol: A,
     outcome: "yes",
-    notionalCents: 100,
     senderId: "priscilla",
     source: "feed",
+    reservedAt: "2026-11-17T11:59:00.000Z",
+    resolvedAt: "2026-11-17T12:00:00.000Z",
     signature: "sig",
     explorerUrl: "https://explorer.test/tx/sig",
     ticket: { ticketId: "t1", symbol: A, outcome: "yes", quantity: "1.61", price: "0.62", mode: "paper" },
-    at: "2026-11-17T12:00:00.000Z",
     ...overrides,
   };
 }
 
-function omit(source: DecisionLogEntry, key: "ticket" | "signature" | "explorerUrl"): DecisionLogEntry {
+function omit(source: SpendEntry, key: "ticket" | "signature" | "explorerUrl"): SpendEntry {
   const copy = structuredClone(source);
   Reflect.deleteProperty(copy, key);
   return copy;
 }
 
-describe("fillsFromLog", () => {
-  it("turns filled entries into fills with cents prices", () => {
-    expect(fillsFromLog([entry()])).toEqual([
+describe("fillsFromJournal", () => {
+  it("turns settled trades into fills with cents prices, stamped when the payment settled", () => {
+    expect(fillsFromJournal([entry()])).toEqual([
       { entryId: "e1", at: "2026-11-17T12:00:00.000Z", symbol: A, outcome: "yes", contracts: 1.61, costCents: 100, priceCents: 62, signature: "sig", explorerUrl: "https://explorer.test/tx/sig" },
     ]);
   });
 
-  it("ignores refusals, failures, pending approvals and approvals without a ticket", () => {
-    const withoutTicket = omit(entry(), "ticket");
-    const log = [entry({ kind: "refuse" }), entry({ kind: "execution-failed" }), entry({ kind: "needs-approval" }), withoutTicket];
-    expect(fillsFromLog(log)).toEqual([]);
+  it("ignores reserved and failed payments, research purchases and trades without a ticket", () => {
+    const journal = [entry({ status: "reserved" }), entry({ status: "failed" }), entry({ kind: "research", outcome: null }), omit(entry(), "ticket")];
+    expect(fillsFromJournal(journal)).toEqual([]);
   });
 
   it("skips tickets with unreadable quantities or prices", () => {
     const bad = (quantity: string, price: string) => entry({ ticket: { ticketId: "t", symbol: A, outcome: "yes", quantity, price, mode: "paper" } });
-    expect(fillsFromLog([bad("abc", "0.62"), bad("1", "x"), bad("0", "0.5"), bad("1", "0")])).toEqual([]);
+    expect(fillsFromJournal([bad("abc", "0.62"), bad("1", "x"), bad("0", "0.5"), bad("1", "0")])).toEqual([]);
   });
 
   it("uses null proof fields when the ledger gave none", () => {
     const unsigned = omit(omit(entry(), "signature"), "explorerUrl");
-    expect(fillsFromLog([unsigned])[0]).toMatchObject({ signature: null, explorerUrl: null });
+    expect(fillsFromJournal([unsigned])[0]).toMatchObject({ signature: null, explorerUrl: null });
+  });
+
+  it("keeps every settled fill no matter how many other operations the journal holds", () => {
+    const noise = Array.from({ length: 1500 }, (_, index) => entry({ operationId: `r${String(index)}`, status: "failed" }));
+    expect(fillsFromJournal([...noise, entry()])).toHaveLength(1);
+  });
+});
+
+function omitResolved(source: SpendEntry): SpendEntry {
+  const copy = structuredClone(source);
+  Reflect.deleteProperty(copy, "resolvedAt");
+  return copy;
+}
+
+describe("research spend", () => {
+  const research = (overrides: Partial<SpendEntry>) => omit(entry({ kind: "research", outcome: null, symbol: A, notionalCents: 5, ...overrides }), "ticket");
+
+  it("sums today's settled research only and lists newest purchases first", () => {
+    const journal = [
+      research({ operationId: "old", resolvedAt: "2026-11-17T10:00:00.000Z" }),
+      research({ operationId: "new", resolvedAt: "2026-11-18T10:00:00.000Z" }),
+      omitResolved(research({ operationId: "held", status: "reserved" })),
+      entry(),
+    ];
+    const summary = summarizeResearchSpend(journal, "2026-11-18T12:00:00.000Z");
+    expect(summary.todayCents).toBe(5);
+    expect(summary.purchases.map((purchase) => purchase.entryId)).toEqual(["new", "old"]);
+    expect(todaysResearchSpendCents(journal, "2026-11-17")).toBe(5);
   });
 });
 
@@ -186,27 +222,25 @@ const event = (status = "active"): MarketEvent => ({
 
 describe("markFromContract", () => {
   it("values at the sell prices of an open market", () => {
-    expect(markFromContract(event(), contract())).toEqual({ eventTitle: "Fed decision", contractLabel: "Maintain", status: "open", yesCents: 60, noCents: 38 });
+    expect(markFromContract(event(), contract(), 5)).toEqual({ eventTitle: "Fed decision", contractLabel: "Maintain", status: "open", yesCents: 60, noCents: 38, markedAtMs: 5 });
   });
 
-  it("falls back from the yes sell price to the best bid and then the last trade, never inventing a no price", () => {
+  it("never falls back to the best bid or last trade when a sell quote is missing", () => {
     const noSell = contract({ prices: { ...contract().prices, sellYesCents: null, sellNoCents: null } });
-    expect(markFromContract(event(), noSell)).toMatchObject({ yesCents: 58, noCents: null });
-    const noBid = contract({ prices: { ...noSell.prices, bestBidCents: null } });
-    expect(markFromContract(event(), noBid)).toMatchObject({ yesCents: 61, noCents: null });
+    expect(markFromContract(event(), noSell, 0)).toMatchObject({ yesCents: null, noCents: null });
+  });
+
+  it("leaves a settled contract with unknown resolution unpriced", () => {
+    expect(markFromContract(event("settled"), contract(), 0)).toMatchObject({ status: "settled", yesCents: null, noCents: null });
   });
 
   it("reports closed markets", () => {
-    expect(markFromContract(event(), contract({ marketState: "closed" })).status).toBe("closed");
-    expect(markFromContract(event("closed"), contract()).status).toBe("closed");
+    expect(markFromContract(event(), contract({ marketState: "closed" }), 0).status).toBe("closed");
+    expect(markFromContract(event("closed"), contract(), 0).status).toBe("closed");
   });
 
   it("settles to the resolution side", () => {
-    expect(markFromContract(event("settled"), contract({ status: "settled", marketState: "closed", resolutionSide: "no" }))).toMatchObject({ status: "settled", yesCents: 0, noCents: 100 });
-    expect(markFromContract(event("settled"), contract({ status: "settled", marketState: "closed", resolutionSide: "yes" }))).toMatchObject({ yesCents: 100, noCents: 0 });
-  });
-
-  it("reports settled without inventing a payout when the side is unknown", () => {
-    expect(markFromContract(event("settled"), contract({ status: "settled", marketState: "closed" }))).toMatchObject({ status: "settled", yesCents: 60, noCents: 38 });
+    expect(markFromContract(event("settled"), contract({ status: "settled", marketState: "closed", resolutionSide: "no" }), 0)).toMatchObject({ status: "settled", yesCents: 0, noCents: 100 });
+    expect(markFromContract(event("settled"), contract({ status: "settled", marketState: "closed", resolutionSide: "yes" }), 0)).toMatchObject({ yesCents: 100, noCents: 0 });
   });
 });

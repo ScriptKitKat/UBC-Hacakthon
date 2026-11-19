@@ -66,7 +66,7 @@ export function voiceFixture(options: { readonly senders?: readonly string[] } =
     policy: policy.value,
     markets,
     feed: { operatorId: "priscilla", grok: { apiKey: undefined, model: "grok-test" } },
-    ledger: { debit, signPayment: vi.fn(), balance: vi.fn() },
+    ledger: { debit, signPayment: vi.fn(), checkSignature: vi.fn(), balance: vi.fn() },
     ledgerView: { configured: true, cluster: "localnet", authority: "Authority1", mint: "Mint1", recipient: "Recipient1" },
     now: () => new Date("2026-11-17T12:00:00Z"),
     idGen: () => `id-${String(++ids)}`,

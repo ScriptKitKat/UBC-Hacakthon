@@ -5,6 +5,7 @@ import { createMemoryFileSystem } from "@/features/storage";
 import { instrumentSymbol } from "@/shared";
 import { createSampler } from "./sampler";
 import { createMemoryHistory, openHistoryStore } from "./store";
+import type { HistoryStore } from "./store";
 
 const PATH = "/data/price-history.json";
 const A = "GEMI-FED261211-MAINTAIN";
@@ -13,12 +14,37 @@ const C = "GEMI-NBA-2611190030-CHI-BKN-S-CHI27";
 
 const snap = (atMs: number, yesCents: number, bidCents: number | null = null, askCents: number | null = null) => ({ atMs, yesCents, bidCents, askCents });
 
+function recordWatched(store: HistoryStore, symbol: string, snapshot: ReturnType<typeof snap>): void {
+  store.watch(symbol);
+  store.record(symbol, snapshot);
+}
+
 describe("history store", () => {
+  it("ignores records for symbols that are not watched and never changes recency", () => {
+    const store = createMemoryHistory({ maxWatched: 2 });
+    store.watch(A);
+    store.watch(B);
+    store.record(A, snap(1_000_000, 60));
+    store.record(C, snap(1_000_000, 10));
+    expect(store.watched()).toEqual([A, B]);
+    expect(store.series(C)).toEqual([]);
+    expect(store.series(A)).toHaveLength(1);
+  });
+
+  it("does not re-add a symbol that a newer watch evicted", () => {
+    const store = createMemoryHistory({ maxWatched: 1 });
+    store.watch(A);
+    store.watch(B);
+    store.record(A, snap(1_000_000, 60));
+    expect(store.watched()).toEqual([B]);
+    expect(store.series(A)).toEqual([]);
+  });
+
   it("records points per symbol in order and marks them watched", async () => {
     const store = await openHistoryStore({ fs: createMemoryFileSystem(), path: PATH });
-    store.record(A, snap(1_000_000, 60, 58, 60));
-    store.record(A, snap(1_040_000, 62, 60, 62));
-    store.record(B, snap(1_000_000, 30));
+    recordWatched(store, A, snap(1_000_000, 60, 58, 60));
+    recordWatched(store, A, snap(1_040_000, 62, 60, 62));
+    recordWatched(store, B, snap(1_000_000, 30));
     expect(store.series(A)).toEqual([snap(1_000_000, 60, 58, 60), snap(1_040_000, 62, 60, 62)]);
     expect(store.series("GEMI-X-Y")).toEqual([]);
     expect(store.watched()).toEqual([A, B]);
@@ -26,24 +52,24 @@ describe("history store", () => {
 
   it("drops points that arrive within the minimum gap", async () => {
     const store = await openHistoryStore({ fs: createMemoryFileSystem(), path: PATH, limits: { minGapMs: 10_000 } });
-    store.record(A, snap(100_000, 60));
-    store.record(A, snap(105_000, 61));
-    store.record(A, snap(110_000, 62));
+    recordWatched(store, A, snap(100_000, 60));
+    recordWatched(store, A, snap(105_000, 61));
+    recordWatched(store, A, snap(110_000, 62));
     expect(store.series(A).map((point) => point.yesCents)).toEqual([60, 62]);
   });
 
   it("bounds the points kept per symbol to the newest", async () => {
     const store = await openHistoryStore({ fs: createMemoryFileSystem(), path: PATH, limits: { maxPoints: 3, minGapMs: 1 } });
-    for (let index = 0; index < 6; index += 1) store.record(A, snap(index * 1000, index));
+    for (let index = 0; index < 6; index += 1) recordWatched(store, A, snap(index * 1000, index));
     expect(store.series(A).map((point) => point.yesCents)).toEqual([3, 4, 5]);
   });
 
   it("evicts the least recently watched symbol beyond the bound", async () => {
     const store = await openHistoryStore({ fs: createMemoryFileSystem(), path: PATH, limits: { maxWatched: 2 } });
-    store.record(A, snap(1000, 10));
-    store.record(B, snap(1000, 20));
+    recordWatched(store, A, snap(1000, 10));
+    recordWatched(store, B, snap(1000, 20));
     store.watch(A);
-    store.record(C, snap(1000, 30));
+    recordWatched(store, C, snap(1000, 30));
     expect(store.watched()).toEqual([A, C]);
     expect(store.series(B)).toEqual([]);
     expect(store.series(A)).toHaveLength(1);
@@ -59,8 +85,8 @@ describe("history store", () => {
   it("persists on flush and survives a restart", async () => {
     const fs = createMemoryFileSystem();
     const store = await openHistoryStore({ fs, path: PATH });
-    store.record(A, snap(1_000_000, 60, 58, 60));
-    store.record(B, snap(1_000_000, 30, null, 31));
+    recordWatched(store, A, snap(1_000_000, 60, 58, 60));
+    recordWatched(store, B, snap(1_000_000, 30, null, 31));
     await store.flush();
     const restarted = await openHistoryStore({ fs, path: PATH });
     expect(restarted.watched()).toEqual([A, B]);
@@ -73,7 +99,7 @@ describe("history store", () => {
     const store = await openHistoryStore({ fs, path: PATH });
     await store.flush();
     expect(fs.writes).toHaveLength(0);
-    store.record(A, snap(1_000_000, 60));
+    recordWatched(store, A, snap(1_000_000, 60));
     await store.flush();
     await store.flush();
     expect(fs.writes).toHaveLength(1);
@@ -83,7 +109,7 @@ describe("history store", () => {
     const fs = createMemoryFileSystem({ [PATH]: "}{" });
     const store = await openHistoryStore({ fs, path: PATH });
     expect(store.watched()).toEqual([]);
-    store.record(A, snap(1_000_000, 60));
+    recordWatched(store, A, snap(1_000_000, 60));
     await store.flush();
     expect((await openHistoryStore({ fs, path: PATH })).series(A)).toHaveLength(1);
   });
@@ -98,7 +124,7 @@ describe("history store", () => {
     let failing = true;
     const fs = { ...memory, writeTextAtomic: (path: string, text: string) => (failing ? Promise.reject(new Error("disk full")) : memory.writeTextAtomic(path, text)) };
     const store = await openHistoryStore({ fs, path: PATH });
-    store.record(A, snap(1_000_000, 60));
+    recordWatched(store, A, snap(1_000_000, 60));
     await expect(store.flush()).rejects.toThrow("disk full");
     failing = false;
     await store.flush();
@@ -108,7 +134,7 @@ describe("history store", () => {
   it("trims persisted data beyond the configured bounds on load", async () => {
     const fs = createMemoryFileSystem();
     const first = await openHistoryStore({ fs, path: PATH, limits: { minGapMs: 1 } });
-    for (let index = 0; index < 5; index += 1) first.record(A, snap(index * 1000, index));
+    for (let index = 0; index < 5; index += 1) recordWatched(first, A, snap(index * 1000, index));
     await first.flush();
     const second = await openHistoryStore({ fs, path: PATH, limits: { maxPoints: 2 } });
     expect(second.series(A).map((point) => point.yesCents)).toEqual([3, 4]);
@@ -135,7 +161,7 @@ function event(ticker: string, contracts: MarketContract[]): MarketEvent {
 describe("memory history", () => {
   it("records and flushes without touching disk", async () => {
     const store = createMemoryHistory();
-    store.record(A, snap(1_000_000, 60));
+    recordWatched(store, A, snap(1_000_000, 60));
     await store.flush();
     expect(store.series(A)).toHaveLength(1);
   });

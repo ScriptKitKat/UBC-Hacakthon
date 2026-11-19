@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { resolveDataDirectory } from "./data-dir";
 import { createMemoryFileSystem, nodeFileSystem } from "./file-system";
-import { createJsonStore } from "./json-store";
+import { StoreUnavailableError, createJsonStore } from "./json-store";
+import { createSerialQueue } from "./serial-queue";
 
 const schema = z.object({ items: z.array(z.number()) });
 const empty = () => ({ items: [] as number[] });
@@ -23,22 +24,31 @@ describe("createJsonStore with a memory file system", () => {
     expect(await createJsonStore({ fs, path: "/d/a.json", schema, empty }).load()).toEqual({ items: [1, 2] });
   });
 
-  it("ignores a corrupted file and rebuilds on the next save", async () => {
+  it("refuses a corrupted file, keeps a timestamped copy, and leaves the original so every start refuses until it is fixed", async () => {
     const fs = createMemoryFileSystem({ "/d/a.json": "{not json" });
-    const store = createJsonStore({ fs, path: "/d/a.json", schema, empty });
-    expect(await store.load()).toEqual({ items: [] });
-    await store.save({ items: [3] });
-    expect(await store.load()).toEqual({ items: [3] });
+    const store = createJsonStore({ fs, path: "/d/a.json", schema, empty, nowMs: () => 42 });
+    await expect(store.load()).rejects.toMatchObject({ name: "StoreUnavailableError", problem: "corrupt", preservedAt: "/d/a.json.corrupt-42" });
+    expect(fs.files.get("/d/a.json.corrupt-42")).toBe("{not json");
+    expect(fs.files.get("/d/a.json")).toBe("{not json");
+    await expect(store.load()).rejects.toBeInstanceOf(StoreUnavailableError);
   });
 
-  it("ignores a file that fails schema validation", async () => {
-    const fs = createMemoryFileSystem({ "/d/a.json": JSON.stringify({ items: ["x"] }) });
-    expect(await createJsonStore({ fs, path: "/d/a.json", schema, empty }).load()).toEqual({ items: [] });
+  it("refuses a file that fails schema validation and preserves it", async () => {
+    const contents = JSON.stringify({ items: ["x"] });
+    const fs = createMemoryFileSystem({ "/d/a.json": contents });
+    await expect(createJsonStore({ fs, path: "/d/a.json", schema, empty, nowMs: () => 7 }).load()).rejects.toBeInstanceOf(StoreUnavailableError);
+    expect(fs.files.get("/d/a.json.corrupt-7")).toBe(contents);
   });
 
-  it("returns the empty value when reading throws", async () => {
+  it("refuses to start empty when reading throws", async () => {
     const fs = { ...createMemoryFileSystem(), readText: () => Promise.reject(new Error("EIO")) };
-    expect(await createJsonStore({ fs, path: "/d/a.json", schema, empty }).load()).toEqual({ items: [] });
+    await expect(createJsonStore({ fs, path: "/d/a.json", schema, empty }).load()).rejects.toMatchObject({ problem: "unreadable" });
+  });
+
+  it("still refuses when the corrupt file cannot be moved aside", async () => {
+    const memory = createMemoryFileSystem({ "/d/a.json": "garbage" });
+    const fs = { ...memory, preserveCopy: () => Promise.reject(new Error("EPERM")) };
+    await expect(createJsonStore({ fs, path: "/d/a.json", schema, empty }).load()).rejects.toMatchObject({ problem: "corrupt", preservedAt: undefined });
   });
 
   it("coalesces saves issued while a write is in flight and keeps the latest", async () => {
@@ -113,16 +123,36 @@ describe("nodeFileSystem", () => {
     expect(await readFile(path, "utf8")).toBe("good");
   });
 
-  it("survives a restart through the json store, including a corrupted file", async () => {
+  it("survives a restart through the json store and, for a corrupted file on disk, refuses on every start while keeping a copy", async () => {
     const path = join(directory, "store.json");
     const first = createJsonStore({ fs: nodeFileSystem, path, schema, empty });
     await first.save({ items: [7, 8] });
     expect(await createJsonStore({ fs: nodeFileSystem, path, schema, empty }).load()).toEqual({ items: [7, 8] });
     await writeFile(path, "garbage", "utf8");
-    const restarted = createJsonStore({ fs: nodeFileSystem, path, schema, empty });
-    expect(await restarted.load()).toEqual({ items: [] });
-    await restarted.save({ items: [9] });
-    expect(await restarted.load()).toEqual({ items: [9] });
+    const restarted = createJsonStore({ fs: nodeFileSystem, path, schema, empty, nowMs: () => 99 });
+    await expect(restarted.load()).rejects.toBeInstanceOf(StoreUnavailableError);
+    expect(await readFile(`${path}.corrupt-99`, "utf8")).toBe("garbage");
+    await expect(createJsonStore({ fs: nodeFileSystem, path, schema, empty }).load()).rejects.toBeInstanceOf(StoreUnavailableError);
+    expect(await readFile(path, "utf8")).toBe("garbage");
+  });
+});
+
+describe("createSerialQueue", () => {
+  it("runs tasks one at a time in submission order, even when one fails", async () => {
+    const queue = createSerialQueue();
+    const order: string[] = [];
+    const slow = queue.run(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      order.push("slow");
+      throw new Error("boom");
+    });
+    const fast = queue.run(() => {
+      order.push("fast");
+      return Promise.resolve("ok");
+    });
+    await expect(slow).rejects.toThrow("boom");
+    expect(await fast).toBe("ok");
+    expect(order).toEqual(["slow", "fast"]);
   });
 });
 

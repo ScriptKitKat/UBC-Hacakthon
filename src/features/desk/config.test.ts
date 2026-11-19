@@ -63,6 +63,20 @@ describe("loadDeskConfig", () => {
     expect(loadDeskConfig({ ...base, SOLANA_CLUSTER: "mainnet-beta" })).toMatchObject({ ok: false });
   });
 
+describe("research public origin", () => {
+  it("defaults to the local desk and normalizes a configured origin", () => {
+    const plain = loadDeskConfig(base);
+    const custom = loadDeskConfig({ ...base, DESK_PUBLIC_ORIGIN: "https://Desk.Example.com:8443/some/path?x=1" });
+    if (!plain.ok || !custom.ok) throw new Error("expected ok");
+    expect(plain.value.research.publicOrigin).toBe("http://localhost:3000");
+    expect(custom.value.research.publicOrigin).toBe("https://desk.example.com:8443");
+  });
+
+  it("rejects a malformed origin", () => {
+    expect(loadDeskConfig({ ...base, DESK_PUBLIC_ORIGIN: "not a url" })).toMatchObject({ ok: false });
+  });
+});
+
 describe("market policy and feed settings", () => {
   it("defaults the market categories and makes the allowlist optional", () => {
     const withoutAllowlist = Object.fromEntries(Object.entries(base).filter(([name]) => name !== "MARKET_ALLOWLIST"));

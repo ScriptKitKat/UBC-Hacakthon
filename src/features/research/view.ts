@@ -79,6 +79,12 @@ function marketInfo({ event, contract }: EventAndContract, sameCategory: readonl
       rulesText: contract.description || event.description,
       volume: event.volume,
       volume24h: event.volume24h,
+      quantityLimits: contract.limits
+        ? {
+            quantityIncrementHundredths: Number(contract.limits.quantityIncrementHundredths),
+            quantityMinimumHundredths: Number(contract.limits.quantityMinimumHundredths),
+          }
+        : null,
       prices: {
         buyYesCents: contract.prices.buyYesCents,
         buyNoCents: contract.prices.buyNoCents,
@@ -145,6 +151,7 @@ export function createResearch(deps: ResearchDeps): Research {
       if (!contract) return { kind: "unknown-symbol" };
       info = marketInfo({ event: eventResult.value, contract }, await sameCategoryMarkets(eventResult.value));
       remember(symbol, info);
+      history.watch(symbol);
       if (contract.prices.buyYesCents !== null) {
         history.record(symbol, {
           atMs: now,

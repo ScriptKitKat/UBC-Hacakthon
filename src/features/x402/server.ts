@@ -1,23 +1,24 @@
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { Transaction, VersionedTransaction } from "@solana/web3.js";
 import type { Connection, PublicKey } from "@solana/web3.js";
-import { isExpectedGenesis } from "@/features/ledger";
+import { inspectTokenDestination, isExpectedGenesis } from "@/features/ledger";
 import { inspectPayment } from "./inspect";
 import type { InspectedPayment } from "./inspect";
 import { paymentMemo, parsePaymentMemo } from "./nonce";
-import type { NonceCodec } from "./nonce";
+import type { NonceCodec, PaymentTerms } from "./nonce";
 import { X402_VERSION, decodeHeader, paymentPayloadSchema } from "./schema";
 import type { PaymentErrorCode, PaymentRequired, X402Network } from "./schema";
 import type { UsedPayments } from "./store";
 
 const CONFIRM_COMMITMENT = "confirmed";
-const BLOCKHASH_VALIDITY_BLOCKS = 150;
+const LANDING_POLL_ATTEMPTS = 80;
+const LANDING_POLL_MS = 500;
 const PARSED_TRANSACTION_ATTEMPTS = 5;
 const PARSED_TRANSACTION_RETRY_MS = 300;
 
 export type SettlementConnection = Pick<
   Connection,
-  "getBlockHeight" | "getGenesisHash" | "getParsedTransaction" | "confirmTransaction" | "sendRawTransaction" | "simulateTransaction"
+  "getAccountInfo" | "getGenesisHash" | "getParsedTransaction" | "getSignatureStatuses" | "isBlockhashValid" | "sendRawTransaction" | "simulateTransaction"
 >;
 
 export interface X402ServerConfig {
@@ -27,6 +28,7 @@ export interface X402ServerConfig {
   readonly priceBaseUnits: bigint;
   readonly maxTimeoutSeconds: number;
   readonly mimeType: string;
+  readonly resourceFor: (symbol: string) => string;
 }
 
 export interface X402ServerDeps {
@@ -53,10 +55,13 @@ export interface Settlement {
 }
 
 export interface X402Server {
-  readonly requirements: (symbol: string, resource: string, description: string, error: string) => PaymentRequired;
+  readonly requirements: (symbol: string, description: string, error: string) => PaymentRequired;
   readonly verify: (paymentHeader: string, symbol: string) => Promise<Result<VerifiedPayment>>;
   readonly settle: (verified: VerifiedPayment) => Promise<Result<Settlement>>;
+  readonly recover: (symbol: string, signature: string) => Promise<Result<Settlement>>;
 }
+
+type Landing = "landed" | "failed" | "expired" | "unconfirmed";
 
 const fail = (error: PaymentErrorCode): { readonly ok: false; readonly error: PaymentErrorCode } => ({ ok: false, error });
 
@@ -77,6 +82,41 @@ export function createX402Server(deps: X402ServerDeps): X402Server {
     return networkVerified;
   }
 
+  function termsFor(symbol: string): PaymentTerms {
+    return {
+      symbol,
+      resource: config.resourceFor(symbol),
+      amount: config.priceBaseUnits.toString(),
+      asset: config.mint.toBase58(),
+      payTo: config.payTo.toBase58(),
+      network: config.network,
+    };
+  }
+
+  async function destinationIsPayee(): Promise<boolean> {
+    try {
+      return await inspectTokenDestination(connection, destination, { mint: config.mint, owner: config.payTo }) === "ok";
+    } catch {
+      return false;
+    }
+  }
+
+  async function awaitLanding(signature: string, blockhash: string): Promise<Landing> {
+    for (let attempt = 0; attempt < LANDING_POLL_ATTEMPTS; attempt += 1) {
+      const validity = await connection.isBlockhashValid(blockhash, { commitment: CONFIRM_COMMITMENT });
+      const { value } = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
+      const status = value[0];
+      if (status) {
+        if (status.err !== null) return "failed";
+        if (status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized") return "landed";
+      } else if (!validity.value) {
+        return "expired";
+      }
+      await sleep(LANDING_POLL_MS);
+    }
+    return "unconfirmed";
+  }
+
   async function paidAmountMatches(signature: string): Promise<boolean> {
     for (let attempt = 0; attempt < PARSED_TRANSACTION_ATTEMPTS; attempt += 1) {
       const parsed = await connection.getParsedTransaction(signature, { commitment: CONFIRM_COMMITMENT, maxSupportedTransactionVersion: 0 });
@@ -94,8 +134,9 @@ export function createX402Server(deps: X402ServerDeps): X402Server {
   }
 
   return {
-    requirements(symbol, resource, description, error) {
-      const nonce = nonces.issue(symbol, nowMs());
+    requirements(symbol, description, error) {
+      const terms = termsFor(symbol);
+      const nonce = nonces.issue(terms, nowMs());
       return {
         x402Version: X402_VERSION,
         error,
@@ -106,7 +147,7 @@ export function createX402Server(deps: X402ServerDeps): X402Server {
             maxAmountRequired: config.priceBaseUnits.toString(),
             asset: config.mint.toBase58(),
             payTo: config.payTo.toBase58(),
-            resource,
+            resource: terms.resource,
             description,
             mimeType: config.mimeType,
             maxTimeoutSeconds: config.maxTimeoutSeconds,
@@ -124,7 +165,7 @@ export function createX402Server(deps: X402ServerDeps): X402Server {
       if (!inspected.ok) return inspected;
       const memo = parsePaymentMemo(inspected.value.memo);
       if (!memo || memo.symbol !== symbol) return fail("memo_mismatch");
-      const nonceCheck = nonces.check(memo.nonce, symbol, nowMs());
+      const nonceCheck = nonces.check(memo.nonce, termsFor(symbol), nowMs());
       if (nonceCheck !== "ok") return fail(nonceCheck);
       const reused = used.reuse(memo.nonce, inspected.value.signature);
       if (reused) return fail(reused);
@@ -138,21 +179,43 @@ export function createX402Server(deps: X402ServerDeps): X402Server {
       return { ok: true, value: { symbol, nonce: memo.nonce, payment: inspected.value } };
     },
 
-    async settle({ nonce, payment }) {
-      const claimError = await used.claim(nonce, payment.signature, nowMs());
+    async settle({ symbol, nonce, payment }) {
+      const expiry = nonces.check(nonce, termsFor(symbol), nowMs());
+      if (expiry !== "ok") return fail(expiry);
+      if (!await destinationIsPayee()) return fail("wrong_recipient");
+      const claimError = await used.claim({ nonce, signature: payment.signature, atMs: nowMs(), symbol, payer: payment.payer });
       if (claimError) return fail(claimError);
       try {
         const signature = await connection.sendRawTransaction(payment.rawTransaction, { preflightCommitment: CONFIRM_COMMITMENT });
-        if (signature !== payment.signature) return fail("settlement_failed");
+        if (signature !== payment.signature) return fail("settlement_unconfirmed");
         const blockhash = Transaction.from(payment.rawTransaction).recentBlockhash;
-        if (!blockhash) return fail("settlement_failed");
-        const lastValidBlockHeight = (await connection.getBlockHeight(CONFIRM_COMMITMENT)) + BLOCKHASH_VALIDITY_BLOCKS;
-        const { value } = await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, CONFIRM_COMMITMENT);
-        if (value.err) return fail("settlement_failed");
+        if (!blockhash) return fail("settlement_unconfirmed");
+        const landing = await awaitLanding(signature, blockhash);
+        if (landing === "failed" || landing === "expired") return fail("settlement_failed");
+        if (landing === "unconfirmed") return fail("settlement_unconfirmed");
         if (!await paidAmountMatches(signature)) return fail("settlement_mismatch");
+        await used.markSettled(signature);
         return { ok: true, value: { signature, payer: payment.payer, network: config.network } };
       } catch {
-        return fail("settlement_failed");
+        return fail("settlement_unconfirmed");
+      }
+    },
+
+    async recover(symbol, signature) {
+      const record = used.find(signature);
+      if (record?.symbol !== symbol) return fail("unknown_payment");
+      const settlement = { signature, payer: record.payer, network: config.network };
+      if (record.status === "settled") return { ok: true, value: settlement };
+      try {
+        const { value } = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
+        const status = value[0];
+        const landed = status !== null && status !== undefined && status.err === null
+          && (status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized");
+        if (!landed || !await paidAmountMatches(signature)) return fail("settlement_unconfirmed");
+        await used.markSettled(signature);
+        return { ok: true, value: settlement };
+      } catch {
+        return fail("settlement_unconfirmed");
       }
     },
   };

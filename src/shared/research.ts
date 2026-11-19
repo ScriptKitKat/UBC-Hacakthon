@@ -82,6 +82,7 @@ export const researchViewSchema = z.object({
     rulesText: z.string(),
     volume: z.number().nullable(),
     volume24h: z.number().nullable(),
+    quantityLimits: z.object({ quantityIncrementHundredths: z.number(), quantityMinimumHundredths: z.number() }).nullable(),
     prices: z.object({
       buyYesCents: cents,
       buyNoCents: cents,

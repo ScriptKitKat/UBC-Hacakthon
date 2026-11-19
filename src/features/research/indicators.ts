@@ -21,6 +21,7 @@ const MIN_AVERAGE_POINTS = 5;
 const MIN_VOLUME_HISTORY = 6;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
+const MAX_REFERENCE_AGE_RATIO = 1.5;
 const BIG_MOVE_CENTS = 5;
 const CALM_MOVE_CENTS = 1;
 const OVERBOUGHT = 70;
@@ -142,9 +143,9 @@ function jumpiness(prices: readonly number[]): ResearchIndicators["jumpiness"] {
     };
   }
   if (deviation < CALM_MOVE_CENTS) {
-    return { ...base, reading: `Odds are calm: they have moved less than 1¢ from their average lately.` };
+    return { ...base, reading: `Odds are calm: typical variation around their average is under 1¢.` };
   }
-  return { ...base, reading: `Odds are jumpy: prices swing about ${formatCents(deviation)} around their average. The latest price is inside its usual range.` };
+  return { ...base, reading: `Odds are jumpy: typical variation around their average is about ${formatCents(deviation)}. The latest price is inside its usual range.` };
 }
 
 function onBalanceVolumeTrend(points: readonly IndicatorPoint[]): "up" | "down" | "flat" {
@@ -176,14 +177,15 @@ function volumeSpike(points: readonly IndicatorPoint[]): ResearchIndicators["vol
       : { ratio: null, obvTrend: null, reading: `${NOT_ENOUGH} to compare volume.` };
   }
   const ratio = round(last.volume / usual);
+  const quietPercent = Math.round(ratio * 100);
   const label =
-    ratio === 0
+    last.volume === 0
       ? "No trades in the latest hour, which is quieter than usual."
       : ratio >= SPIKE_RATIO
-      ? `Volume is ${String(round(ratio, 1))}× its usual level.`
-      : ratio <= QUIET_RATIO
-        ? `Volume is quiet: about ${String(Math.round(ratio * 100))}% of its usual level.`
-        : "Volume is about its usual level.";
+        ? `Volume is ${String(round(ratio, 1))}× its usual level.`
+        : ratio <= QUIET_RATIO
+          ? `Volume is quiet: ${quietPercent === 0 ? "under 1%" : `about ${String(quietPercent)}%`} of its usual level.`
+          : "Volume is about its usual level.";
   return { ratio, obvTrend, reading: `${label}${pressure}` };
 }
 
@@ -191,7 +193,8 @@ function changeOver(points: readonly IndicatorPoint[], spanMs: number): number |
   const latest = points.at(-1);
   if (latest === undefined) return null;
   const reference = [...points].reverse().find((point) => point.t <= latest.t - spanMs);
-  return reference === undefined ? null : round(latest.cents - reference.cents);
+  if (reference === undefined || latest.t - reference.t > spanMs * MAX_REFERENCE_AGE_RATIO) return null;
+  return round(latest.cents - reference.cents);
 }
 
 function recentMove(points: readonly IndicatorPoint[]): ResearchIndicators["recentMove"] {

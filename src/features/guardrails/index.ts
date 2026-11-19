@@ -1,5 +1,5 @@
 import { usdCents } from "@/shared";
-import type { DecisionLogEntry, InstrumentSymbol, TradeIntent, UsdCents } from "@/shared";
+import type { InstrumentSymbol, TradeIntent, UsdCents } from "@/shared";
 
 export interface PolicyConfig {
   readonly dailyCap: UsdCents;
@@ -314,10 +314,20 @@ export function remainingBudget(policy: Policy, state: PolicyState, now: Date): 
   return remainingToday(policy, rollDay(state, now));
 }
 
-export function restorePolicyState(log: readonly Pick<DecisionLogEntry, "kind" | "at" | "notionalCents">[], now: Date): PolicyState {
+export interface SpendRecord {
+  readonly operationId: string;
+  readonly status: "reserved" | "settled" | "failed";
+  readonly notionalCents: number;
+  readonly resolvedAt?: string | undefined;
+}
+
+export function policyStateFromSpends(spends: readonly SpendRecord[], now: Date): PolicyState {
   const day = now.toISOString().slice(0, 10);
-  const spent = log
-    .filter((entry) => entry.kind === "approve" && entry.at.slice(0, 10) === day)
-    .reduce((total, entry) => total + entry.notionalCents, 0);
-  return { day, spentToday: usdCents(spent), reservedToday: usdCents(0), seenIntentIds: new Set() };
+  const total = (matches: (spend: SpendRecord) => boolean) => spends.filter(matches).reduce((sum, spend) => sum + spend.notionalCents, 0);
+  return {
+    day,
+    spentToday: usdCents(total((spend) => spend.status === "settled" && spend.resolvedAt?.slice(0, 10) === day)),
+    reservedToday: usdCents(total((spend) => spend.status === "reserved")),
+    seenIntentIds: new Set(spends.map((spend) => spend.operationId)),
+  };
 }

@@ -21,6 +21,7 @@ const position = z.object({
   averageEntryCents: z.number(),
   costCents: z.number(),
   currentCents: z.number().nullable(),
+  markAgeSeconds: z.number().nullable(),
   valueCents: z.number().nullable(),
   pnlCents: z.number().nullable(),
   pnlPercent: z.number().nullable(),

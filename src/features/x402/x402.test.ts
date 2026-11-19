@@ -1,9 +1,10 @@
-import { createTransferCheckedInstruction, createTransferInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { AccountLayout, AccountState, TOKEN_PROGRAM_ID, createTransferCheckedInstruction, createTransferInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { ComputeBudgetProgram, Keypair, PublicKey, Transaction, TransactionInstruction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { describe, expect, it, vi } from "vitest";
 import { createMemoryFileSystem } from "@/features/storage";
 import { createNonceCodec, paymentMemo } from "./nonce";
+import type { PaymentTerms } from "./nonce";
 import { createX402Server } from "./server";
 import type { SettlementConnection } from "./server";
 import { encodeHeader, paymentHeaderFor } from "./schema";
@@ -64,15 +65,45 @@ function balances(owner: PublicKey, amount: string) {
   return [{ accountIndex: 1, mint: mint.toBase58(), owner: owner.toBase58(), uiTokenAmount: { amount, decimals: 6, uiAmount: null, uiAmountString: "" } }];
 }
 
-function fixture(options: { simulateError?: unknown; confirmError?: unknown; paid?: bigint; parsedMissing?: boolean } = {}) {
+function tokenAccount(owner: PublicKey) {
+  const data = Buffer.alloc(AccountLayout.span);
+  AccountLayout.encode(
+    {
+      mint, owner, amount: 0n, delegateOption: 0, delegate: PublicKey.default, state: AccountState.Initialized,
+      isNativeOption: 0, isNative: 0n, delegatedAmount: 0n, closeAuthorityOption: 0, closeAuthority: PublicKey.default,
+    },
+    data,
+  );
+  return { data, executable: false, lamports: 1, owner: TOKEN_PROGRAM_ID };
+}
+
+const termsFor = (forSymbol: string): PaymentTerms => ({
+  symbol: forSymbol,
+  resource: `http://desk.test/api/research/${forSymbol}/deep`,
+  amount: price.toString(),
+  asset: mint.toBase58(),
+  payTo: payTo.toBase58(),
+  network: "solana-localnet",
+});
+
+type Landing = "landed" | "failed" | "pending" | "expired";
+
+function fixture(options: { simulateError?: unknown; landing?: Landing; paid?: bigint; parsedMissing?: boolean; destinationOwner?: PublicKey } = {}) {
   let nowMs = startMs;
   let counter = 0;
   const connection = {
     getGenesisHash: vi.fn(() => Promise.resolve(Keypair.generate().publicKey.toBase58())),
     simulateTransaction: vi.fn(() => Promise.resolve({ context: { slot: 1 }, value: { err: options.simulateError ?? null, logs: [], accounts: null, unitsConsumed: 0, returnData: null } })),
     sendRawTransaction: vi.fn((raw: Buffer) => Promise.resolve(paymentSignature(raw.toString("base64")))),
-    getBlockHeight: vi.fn(() => Promise.resolve(500)),
-    confirmTransaction: vi.fn(() => Promise.resolve({ context: { slot: 2 }, value: { err: options.confirmError ?? null } })),
+    getAccountInfo: vi.fn(() => Promise.resolve(tokenAccount(options.destinationOwner ?? payTo))),
+    isBlockhashValid: vi.fn(() => Promise.resolve({ context: { slot: 1 }, value: options.landing !== "expired" })),
+    getSignatureStatuses: vi.fn(() => {
+      const landing = options.landing ?? "landed";
+      const status = landing === "landed"
+        ? { slot: 2, confirmations: 1, err: null, confirmationStatus: "confirmed" }
+        : landing === "failed" ? { slot: 2, confirmations: 1, err: { InstructionError: [1, "Custom"] }, confirmationStatus: "confirmed" } : null;
+      return Promise.resolve({ context: { slot: 2 }, value: [status] });
+    }),
     getParsedTransaction: vi.fn(() =>
       Promise.resolve(
         options.parsedMissing
@@ -85,7 +116,7 @@ function fixture(options: { simulateError?: unknown; confirmError?: unknown; pai
   const used = createUsedPayments([], persist);
   const nonces = createNonceCodec({ secret: "test-secret-test-secret", ttlMs: 120_000, randomHex: () => `r${String(++counter)}` });
   const server = createX402Server({
-    config: { network: "solana-localnet", mint, payTo, priceBaseUnits: price, maxTimeoutSeconds: 120, mimeType: "application/json" },
+    config: { network: "solana-localnet", mint, payTo, priceBaseUnits: price, maxTimeoutSeconds: 120, mimeType: "application/json", resourceFor: (forSymbol) => termsFor(forSymbol).resource },
     connection: connection as unknown as SettlementConnection,
     used,
     nonces,
@@ -93,7 +124,7 @@ function fixture(options: { simulateError?: unknown; confirmError?: unknown; pai
     sleep: () => Promise.resolve(),
   });
   const nonce = () => {
-    const [requirement] = server.requirements(symbol, "http://desk.test/api/research/x/deep", "d", "e").accepts;
+    const [requirement] = server.requirements(symbol, "d", "e").accepts;
     if (!requirement) throw new Error("no requirement");
     return requirement.extra.nonce;
   };
@@ -109,18 +140,18 @@ function fixture(options: { simulateError?: unknown; confirmError?: unknown; pai
 describe("payment requirements", () => {
   it("quotes the configured price, mint, recipient and a memo binding a fresh nonce to the symbol", () => {
     const { server } = fixture();
-    const required = server.requirements(symbol, "http://desk.test/api/research/s/deep", "Deep dive", "payment_required");
+    const required = server.requirements(symbol, "Deep dive", "payment_required");
     expect(required).toMatchObject({
       x402Version: 1,
       error: "payment_required",
       accepts: [{
         scheme: "exact", network: "solana-localnet", maxAmountRequired: "50000", asset: mint.toBase58(), payTo: payTo.toBase58(),
-        resource: "http://desk.test/api/research/s/deep", mimeType: "application/json", maxTimeoutSeconds: 120,
+        resource: `http://desk.test/api/research/${symbol}/deep`, mimeType: "application/json", maxTimeoutSeconds: 120,
       }],
     });
     const [requirement] = required.accepts;
     expect(requirement?.extra.memo).toBe(paymentMemo(symbol, requirement?.extra.nonce ?? ""));
-    const second = server.requirements(symbol, "u", "d", "e").accepts[0]?.extra.nonce;
+    const second = server.requirements(symbol, "d", "e").accepts[0]?.extra.nonce;
     expect(second).not.toBe(requirement?.extra.nonce);
   });
 });
@@ -139,8 +170,8 @@ describe("verify and settle", () => {
     expect(result).toEqual({ ok: true, value: { signature: paymentSignature(transaction), payer: payer.publicKey.toBase58(), network: "solana-localnet" } });
     expect(f.connection.simulateTransaction).toHaveBeenCalledOnce();
     expect(f.connection.sendRawTransaction).toHaveBeenCalledOnce();
-    expect(f.connection.confirmTransaction).toHaveBeenCalledWith(expect.objectContaining({ signature: paymentSignature(transaction), blockhash }), "confirmed");
-    expect(f.persist).toHaveBeenCalledOnce();
+    expect(f.connection.isBlockhashValid).toHaveBeenCalledWith(blockhash, { commitment: "confirmed" });
+    expect(f.persist).toHaveBeenCalledTimes(2);
   });
 
   it.each([
@@ -168,7 +199,7 @@ describe("verify and settle", () => {
 
   it("rejects a nonce that was issued for a different symbol", async () => {
     const f = fixture();
-    const foreign = f.nonces.issue(otherSymbol, startMs);
+    const foreign = f.nonces.issue(termsFor(otherSymbol), startMs);
     const result = await pay(f, buildPayment(foreign, { memo: paymentMemo(symbol, foreign) }));
     expect(result).toEqual({ ok: false, error: "nonce_invalid" });
   });
@@ -256,11 +287,29 @@ describe("verify and settle", () => {
     expect(f.connection.sendRawTransaction).not.toHaveBeenCalled();
   });
 
-  it("reports settlement_failed when the confirmed transaction errored, and keeps the nonce burned", async () => {
-    const f = fixture({ confirmError: { InstructionError: [1, "Custom"] } });
+  it("reports settlement_failed when the transaction landed with an error, and keeps the nonce burned", async () => {
+    const f = fixture({ landing: "failed" });
     const nonce = f.nonce();
     expect(await pay(f, buildPayment(nonce))).toEqual({ ok: false, error: "settlement_failed" });
     expect(await pay(f, buildPayment(nonce))).toEqual({ ok: false, error: "nonce_reused" });
+  });
+
+  it("reports settlement_failed only once the signed blockhash has actually expired without the payment landing", async () => {
+    const f = fixture({ landing: "expired" });
+    expect(await pay(f, buildPayment(f.nonce()))).toEqual({ ok: false, error: "settlement_failed" });
+    expect(f.connection.isBlockhashValid).toHaveBeenCalledWith(blockhash, expect.anything());
+  });
+
+  it("reports settlement_unconfirmed, not failure, while the payment may still land", async () => {
+    const f = fixture({ landing: "pending" });
+    expect(await pay(f, buildPayment(f.nonce()))).toEqual({ ok: false, error: "settlement_unconfirmed" });
+    expect(f.connection.getSignatureStatuses.mock.calls.length).toBeGreaterThan(10);
+  });
+
+  it("reports settlement_unconfirmed when the submission itself throws", async () => {
+    const f = fixture();
+    f.connection.sendRawTransaction.mockRejectedValueOnce(new Error("rpc down"));
+    expect(await pay(f, buildPayment(f.nonce()))).toEqual({ ok: false, error: "settlement_unconfirmed" });
   });
 
   it("rejects settlement when the recipient's balance did not rise by exactly the price", async () => {
@@ -280,6 +329,23 @@ describe("verify and settle", () => {
     expect(f.connection.sendRawTransaction).not.toHaveBeenCalled();
   });
 
+  it("refuses to broadcast when the payee's token account is no longer controlled by the payee", async () => {
+    const f = fixture({ destinationOwner: Keypair.generate().publicKey });
+    expect(await pay(f, buildPayment(f.nonce()))).toEqual({ ok: false, error: "wrong_recipient" });
+    expect(f.connection.sendRawTransaction).not.toHaveBeenCalled();
+    expect(f.persist).not.toHaveBeenCalled();
+  });
+
+  it("refuses to broadcast when the nonce expired between verification and settlement", async () => {
+    const f = fixture();
+    const verified = await f.server.verify(f.header(buildPayment(f.nonce())), symbol);
+    if (!verified.ok) throw new Error("should verify");
+    f.advance(120_001);
+    expect(await f.server.settle(verified.value)).toEqual({ ok: false, error: "expired" });
+    expect(f.connection.sendRawTransaction).not.toHaveBeenCalled();
+    expect(f.persist).not.toHaveBeenCalled();
+  });
+
   it("lets only one of two concurrent settlements of the same nonce through", async () => {
     const f = fixture();
     const nonce = f.nonce();
@@ -292,9 +358,50 @@ describe("verify and settle", () => {
   });
 });
 
+describe("recovering a paid brief without paying again", () => {
+  async function paid(f: ReturnType<typeof fixture>) {
+    const transaction = buildPayment(f.nonce());
+    const verified = await f.server.verify(f.header(transaction), symbol);
+    if (!verified.ok) throw new Error("should verify");
+    const settled = await f.server.settle(verified.value);
+    return { settled, signature: paymentSignature(transaction) };
+  }
+
+  it("returns the original receipt for a settled signature and symbol", async () => {
+    const f = fixture();
+    const { signature } = await paid(f);
+    const sends = f.connection.sendRawTransaction.mock.calls.length;
+    expect(await f.server.recover(symbol, signature)).toEqual({ ok: true, value: { signature, payer: payer.publicKey.toBase58(), network: "solana-localnet" } });
+    expect(f.connection.sendRawTransaction.mock.calls.length).toBe(sends);
+  });
+
+  it("settles a claimed payment that confirmed after the first request gave up, once the chain shows it landed for exactly the price", async () => {
+    const f = fixture({ landing: "pending" });
+    const { settled, signature } = await paid(f);
+    expect(settled).toEqual({ ok: false, error: "settlement_unconfirmed" });
+    f.connection.getSignatureStatuses.mockResolvedValue({ context: { slot: 9 }, value: [{ slot: 9, confirmations: 1, err: null, confirmationStatus: "confirmed" }] });
+    expect(await f.server.recover(symbol, signature)).toMatchObject({ ok: true, value: { signature } });
+  });
+
+  it("stays unconfirmed while the chain does not show the payment", async () => {
+    const f = fixture({ landing: "pending" });
+    const { signature } = await paid(f);
+    expect(await f.server.recover(symbol, signature)).toEqual({ ok: false, error: "settlement_unconfirmed" });
+  });
+
+  it("knows nothing about signatures it never claimed or ones claimed for another symbol", async () => {
+    const f = fixture();
+    const { signature } = await paid(f);
+    expect(await f.server.recover(symbol, "never-seen")).toEqual({ ok: false, error: "unknown_payment" });
+    expect(await f.server.recover(otherSymbol, signature)).toEqual({ ok: false, error: "unknown_payment" });
+  });
+});
+
 describe("used payment store", () => {
+  const claim = (nonce: string, signature: string, atMs = startMs) => ({ nonce, signature, atMs, symbol, payer: "payer" });
+
   it("flags a signature that was already used under any nonce", () => {
-    const store = createUsedPayments([{ nonce: "old", signature: "sig", atMs: startMs }], () => Promise.resolve());
+    const store = createUsedPayments([{ ...claim("old", "sig"), status: "claimed" }], () => Promise.resolve());
     expect(store.reuse("fresh", "sig")).toBe("signature_reused");
     expect(store.reuse("old", "other")).toBe("nonce_reused");
     expect(store.reuse("fresh", "other")).toBeUndefined();
@@ -303,27 +410,82 @@ describe("used payment store", () => {
   it("survives a restart so a replay is still rejected", async () => {
     const fs = createMemoryFileSystem();
     const first = await openUsedPayments({ fs, path: "used.json" });
-    expect(await first.claim("nonce-1", "sig-1", startMs)).toBeUndefined();
+    expect(await first.claim(claim("nonce-1", "sig-1"))).toBeUndefined();
     const restarted = await openUsedPayments({ fs, path: "used.json" });
     expect(restarted.reuse("nonce-1", "other")).toBe("nonce_reused");
-    expect(await restarted.claim("nonce-2", "sig-1", startMs)).toBe("signature_reused");
+    expect(await restarted.claim(claim("nonce-2", "sig-1"))).toBe("signature_reused");
+  });
+
+  it("a failed persist leaves no claim behind and never erases a later claim", async () => {
+    const memory = createMemoryFileSystem();
+    let writes = 0;
+    const fs = {
+      ...memory,
+      writeTextAtomic: async (path: string, contents: string) => {
+        writes += 1;
+        if (writes === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          throw new Error("EIO");
+        }
+        return memory.writeTextAtomic(path, contents);
+      },
+    };
+    const store = await openUsedPayments({ fs, path: "used.json" });
+    const first = store.claim(claim("n1", "s1"));
+    const second = store.claim(claim("n2", "s2"));
+    expect(await first).toBe("store_unavailable");
+    expect(await second).toBeUndefined();
+    expect(store.reuse("n2", "x")).toBe("nonce_reused");
+    expect(store.reuse("n1", "s1")).toBeUndefined();
+    expect((await openUsedPayments({ fs, path: "used.json" })).reuse("n2", "x")).toBe("nonce_reused");
+  });
+
+  it("lets exactly one of two concurrent claims for the same nonce win", async () => {
+    const store = createUsedPayments([], () => Promise.resolve());
+    const results = await Promise.all([store.claim(claim("n", "a")), store.claim(claim("n", "b"))]);
+    expect(results.filter((result) => result === undefined)).toHaveLength(1);
+  });
+
+  it("marks a claim settled and remembers it across a restart", async () => {
+    const fs = createMemoryFileSystem();
+    const store = await openUsedPayments({ fs, path: "used.json" });
+    await store.claim(claim("n", "s"));
+    await store.markSettled("s");
+    expect((await openUsedPayments({ fs, path: "used.json" })).find("s")).toMatchObject({ status: "settled", symbol, payer: "payer" });
+  });
+
+  it("refuses to open a corrupt replay store instead of starting empty", async () => {
+    const fs = createMemoryFileSystem({ "used.json": "{broken" });
+    await expect(openUsedPayments({ fs, path: "used.json" })).rejects.toMatchObject({ name: "StoreUnavailableError" });
+    expect([...fs.files.keys()].some((name) => name.startsWith("used.json.corrupt-"))).toBe(true);
   });
 });
 
 describe("nonce codec", () => {
   const codec = createNonceCodec({ secret: "another-secret-value", ttlMs: 1000, randomHex: () => "ab12" });
 
-  it("accepts its own nonce for the same symbol until it expires", () => {
-    const nonce = codec.issue(symbol, 5000);
-    expect(codec.check(nonce, symbol, 5999)).toBe("ok");
-    expect(codec.check(nonce, symbol, 6000)).toBe("expired");
+  it("accepts its own nonce for the same terms until it expires", () => {
+    const nonce = codec.issue(termsFor(symbol), 5000);
+    expect(codec.check(nonce, termsFor(symbol), 5999)).toBe("ok");
+    expect(codec.check(nonce, termsFor(symbol), 6000)).toBe("expired");
   });
 
   it("rejects other symbols, other secrets and tampering", () => {
-    const nonce = codec.issue(symbol, 5000);
-    expect(codec.check(nonce, otherSymbol, 5100)).toBe("nonce_invalid");
-    expect(createNonceCodec({ secret: "different-secret-value", ttlMs: 1000, randomHex: () => "ab12" }).check(nonce, symbol, 5100)).toBe("nonce_invalid");
-    expect(codec.check(nonce.replace("6000", "9000"), symbol, 5100)).toBe("nonce_invalid");
-    expect(codec.check("garbage", symbol, 5100)).toBe("nonce_invalid");
+    const nonce = codec.issue(termsFor(symbol), 5000);
+    expect(codec.check(nonce, termsFor(otherSymbol), 5100)).toBe("nonce_invalid");
+    expect(createNonceCodec({ secret: "different-secret-value", ttlMs: 1000, randomHex: () => "ab12" }).check(nonce, termsFor(symbol), 5100)).toBe("nonce_invalid");
+    expect(codec.check(nonce.replace("6000", "9000"), termsFor(symbol), 5100)).toBe("nonce_invalid");
+    expect(codec.check("garbage", termsFor(symbol), 5100)).toBe("nonce_invalid");
+  });
+
+  it.each([
+    ["resource", { resource: "http://other.test/api/research/x/deep" }],
+    ["amount", { amount: "50001" }],
+    ["asset", { asset: Keypair.generate().publicKey.toBase58() }],
+    ["payTo", { payTo: Keypair.generate().publicKey.toBase58() }],
+    ["network", { network: "solana-devnet" }],
+  ] as const)("binds the nonce to the %s so another deployment sharing the secret cannot accept it", (_field, change) => {
+    const nonce = codec.issue(termsFor(symbol), 5000);
+    expect(codec.check(nonce, { ...termsFor(symbol), ...change }, 5100)).toBe("nonce_invalid");
   });
 });

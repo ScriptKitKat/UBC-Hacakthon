@@ -94,4 +94,6 @@ export type PaymentErrorCode =
   | "simulation_failed"
   | "store_unavailable"
   | "settlement_failed"
-  | "settlement_mismatch";
+  | "settlement_unconfirmed"
+  | "settlement_mismatch"
+  | "unknown_payment";

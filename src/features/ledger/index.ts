@@ -1,6 +1,8 @@
 import {
+  TOKEN_PROGRAM_ID,
   createTransferCheckedInstruction,
   getAssociatedTokenAddressSync,
+  unpackAccount,
 } from "@solana/spl-token";
 import { Connection, PublicKey, Transaction, TransactionInstruction } from "@solana/web3.js";
 import bs58 from "bs58";
@@ -35,7 +37,7 @@ export interface DebitReceipt {
 
 export type LedgerError =
   | {
-      readonly code: "notional-overflow" | "unsafe-ledger-network" | "invalid-notional" | "invalid-recipient" | "debit-preparation-failed" | "debit-rejected" | "balance-failed" | "ledger-not-configured" | "recipient-ata-missing";
+      readonly code: "notional-overflow" | "unsafe-ledger-network" | "invalid-notional" | "invalid-recipient" | "debit-preparation-failed" | "debit-rejected" | "balance-failed" | "ledger-not-configured" | "recipient-ata-missing" | "destination-invalid" | "pre-broadcast-failed";
     }
   | { readonly code: "debit-unconfirmed"; readonly signature: string };
 
@@ -47,14 +49,26 @@ export interface PaymentRequest {
 
 export interface SignedPayment {
   readonly signature: string;
+  readonly blockhash: string;
   readonly transaction: string;
   readonly payer: string;
   readonly explorerUrl: string;
 }
 
+export interface PreparedPayment {
+  readonly signature: string;
+  readonly blockhash: string;
+  readonly explorerUrl: string;
+}
+
+export type BeforeBroadcast = (payment: PreparedPayment) => Promise<boolean>;
+
+export type SignatureOutcome = "landed" | "failed" | "pending";
+
 export interface UsdcLedger {
-  debit(intentId: string, notional: UsdCents, memo: string): Promise<Result<DebitReceipt, LedgerError>>;
+  debit(intentId: string, notional: UsdCents, memo: string, beforeBroadcast: BeforeBroadcast): Promise<Result<DebitReceipt, LedgerError>>;
   signPayment(payment: PaymentRequest): Promise<Result<SignedPayment, LedgerError>>;
+  checkSignature(payment: Pick<PreparedPayment, "signature" | "blockhash">): Promise<SignatureOutcome>;
   balance(): Promise<Result<{ baseUnits: bigint }, LedgerError>>;
 }
 
@@ -67,6 +81,7 @@ export function createUnconfiguredLedger(): UsdcLedger {
   return {
     debit: () => Promise.resolve(notConfigured),
     signPayment: () => Promise.resolve(notConfigured),
+    checkSignature: () => Promise.resolve("pending"),
     balance: () => Promise.resolve(notConfigured),
   };
 }
@@ -96,6 +111,25 @@ export function isLocalLedgerRpc(rpcUrl: string): boolean {
 export function isExpectedGenesis(cluster: LedgerNetwork["cluster"], hash: string): boolean {
   if (cluster === "devnet") return hash === devnetGenesis;
   return hash !== mainnetGenesis && hash !== devnetGenesis && hash !== testnetGenesis;
+}
+
+export type DestinationCheck = "ok" | "missing" | "invalid";
+
+export async function inspectTokenDestination(
+  connection: Pick<Connection, "getAccountInfo">,
+  destination: PublicKey,
+  expected: { readonly mint: PublicKey; readonly owner: PublicKey },
+): Promise<DestinationCheck> {
+  const info = await connection.getAccountInfo(destination, commitment);
+  if (info === null) return "missing";
+  if (!info.owner.equals(TOKEN_PROGRAM_ID)) return "invalid";
+  try {
+    const account = unpackAccount(destination, info, TOKEN_PROGRAM_ID);
+    const usable = account.mint.equals(expected.mint) && account.owner.equals(expected.owner) && account.isInitialized && !account.isFrozen;
+    return usable && account.delegate === null && account.closeAuthority === null ? "ok" : "invalid";
+  } catch {
+    return "invalid";
+  }
 }
 
 export function explorerUrl(signature: string, network: LedgerNetwork): string {
@@ -131,6 +165,7 @@ export async function createSolanaLedger(config: LedgerConfig): Promise<Configur
 
   async function prepareTransfer(
     to: PublicKey,
+    owner: PublicKey,
     notional: UsdCents,
     memo: string,
   ): Promise<Result<{ readonly blockhash: string; readonly lastValidBlockHeight: number; readonly signature: string; readonly bytes: Buffer }, LedgerError>> {
@@ -140,9 +175,9 @@ export async function createSolanaLedger(config: LedgerConfig): Promise<Configur
       if (!isExpectedGenesis(network.cluster, await connection.getGenesisHash())) {
         return { ok: false, error: { code: "unsafe-ledger-network" } };
       }
-      if (await connection.getAccountInfo(to, commitment) === null) {
-        return { ok: false, error: { code: "recipient-ata-missing" } };
-      }
+      const destinationCheck = await inspectTokenDestination(connection, to, { mint, owner });
+      if (destinationCheck === "missing") return { ok: false, error: { code: "recipient-ata-missing" } };
+      if (destinationCheck === "invalid") return { ok: false, error: { code: "destination-invalid" } };
       const block = await connection.getLatestBlockhash(commitment);
       const transaction = new Transaction({
         feePayer: authority.publicKey,
@@ -181,28 +216,49 @@ export async function createSolanaLedger(config: LedgerConfig): Promise<Configur
       if (!payee) return { ok: false, error: { code: "invalid-recipient" } };
       const payeeAta = getAssociatedTokenAddressSync(mint, payee);
       if (payeeAta.equals(source)) return { ok: false, error: { code: "invalid-recipient" } };
-      const prepared = await prepareTransfer(payeeAta, notional, memo);
+      const prepared = await prepareTransfer(payeeAta, payee, notional, memo);
       if (!prepared.ok) return prepared;
       return {
         ok: true,
         value: {
           signature: prepared.value.signature,
+          blockhash: prepared.value.blockhash,
           transaction: prepared.value.bytes.toString("base64"),
           payer: authority.publicKey.toBase58(),
           explorerUrl: explorerUrl(prepared.value.signature, network),
         },
       };
     },
-    async debit(intentId, notional, memo) {
+    async checkSignature({ signature, blockhash }) {
+      try {
+        const validity = await connection.isBlockhashValid(blockhash, { commitment: "finalized" });
+        const { value } = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
+        const status = value[0];
+        if (status) {
+          if (status.err !== null) return "failed";
+          return status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized" ? "landed" : "pending";
+        }
+        return validity.value ? "pending" : "failed";
+      } catch {
+        return "pending";
+      }
+    },
+    async debit(intentId, notional, memo, beforeBroadcast) {
       if (!Number.isSafeInteger(notional) || notional <= 0) {
         return { ok: false, error: { code: "invalid-notional" } };
       }
       if (!memo.startsWith(`${intentId}|`) || !memo.endsWith(`|${String(notional)}`)) {
         return { ok: false, error: { code: "debit-preparation-failed" } };
       }
-      const prepared = await prepareTransfer(destination, notional, memo);
+      const prepared = await prepareTransfer(destination, recipient, notional, memo);
       if (!prepared.ok) return prepared;
       const { bytes, ...confirmation } = prepared.value;
+      const recorded = await beforeBroadcast({
+        signature: confirmation.signature,
+        blockhash: confirmation.blockhash,
+        explorerUrl: explorerUrl(confirmation.signature, network),
+      }).catch(() => false);
+      if (!recorded) return { ok: false, error: { code: "pre-broadcast-failed" } };
       try {
         await connection.sendRawTransaction(bytes, { preflightCommitment: commitment });
         const { value } = await connection.confirmTransaction(confirmation, commitment);

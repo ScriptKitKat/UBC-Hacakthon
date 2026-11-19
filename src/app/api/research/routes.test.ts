@@ -20,7 +20,7 @@ const sampleView: ResearchView = {
   timeframe: "1D",
   market: {
     eventTicker: "FED261211", eventTitle: "Fed decision in December?", contractLabel: "Fed maintains rate", category: "Economics", subcategory: null,
-    expiryDate: null, eventStatus: "active", marketState: "open", rulesText: "", volume: null, volume24h: null,
+    expiryDate: null, eventStatus: "active", marketState: "open", rulesText: "", volume: null, volume24h: null, quantityLimits: null,
     prices: { buyYesCents: 62, buyNoCents: 40, sellYesCents: 60, sellNoCents: 38, bestBidCents: 60, bestAskCents: 62, lastTradeCents: 61 },
   },
   data: { event: "live", candles: "live", book: "live", trades: "live" },
@@ -45,13 +45,14 @@ const emptyPositions: PositionsView = {
   totals: { costCents: 0, pricedCostCents: 0, valueCents: 0, pnlCents: 0, pnlPercent: null, unpricedPositions: 0 },
 };
 
-const call = (symbol: string, query = "", headers: Record<string, string> = {}) =>
+const SAME_ORIGIN = { "sec-fetch-site": "same-origin" };
+const call = (symbol: string, query = "", headers: Record<string, string> = { "sec-fetch-site": "same-origin" }) =>
   research(new Request(`http://localhost:3000/api/research/${symbol}${query}`, { headers }), { params: Promise.resolve({ symbol }) });
 
 beforeEach(() => {
   view.mockReset().mockResolvedValue({ kind: "ok", view: sampleView });
   getPositions.mockReset().mockResolvedValue(emptyPositions);
-  getDesk.mockReset().mockResolvedValue({ ok: true, desk: { getPositions } as unknown as Desk, research: { view, brief: vi.fn() }, payments: undefined });
+  getDesk.mockReset().mockResolvedValue({ ok: true, desk: { getPositions } as unknown as Desk, research: { view, brief: vi.fn() }, deepDive: undefined });
 });
 
 describe("GET /api/research/[symbol]", () => {
@@ -110,13 +111,27 @@ describe("GET /api/research/[symbol]", () => {
   it("allows same-origin reads", async () => {
     expect((await call(SYMBOL, "", { origin: "http://localhost:3000" })).status).toBe(200);
   });
+
+  it("refuses reads with no origin and no same-origin fetch metadata, a different scheme, or a cross-site fetch", async () => {
+    for (const headers of [{}, { origin: "https://localhost:3000" }, { "sec-fetch-site": "cross-site" }, { "sec-fetch-site": "none" }]) {
+      expect((await call(SYMBOL, "", headers)).status).toBe(403);
+    }
+    expect(view).not.toHaveBeenCalled();
+  });
 });
 
 describe("GET /api/positions", () => {
   it("returns the positions view", async () => {
-    const response = await positions(new Request("http://localhost:3000/api/positions"));
+    const response = await positions(new Request("http://localhost:3000/api/positions", { headers: SAME_ORIGIN }));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(emptyPositions);
+  });
+
+  it("refuses reads with no origin, a different scheme, or a cross-site fetch", async () => {
+    for (const headers of [{}, { origin: "https://localhost:3000" }, { "sec-fetch-site": "cross-site" }]) {
+      expect((await positions(new Request("http://localhost:3000/api/positions", { headers }))).status).toBe(403);
+    }
+    expect(getPositions).not.toHaveBeenCalled();
   });
 
   it("refuses cross-origin browser reads", async () => {
@@ -127,6 +142,6 @@ describe("GET /api/positions", () => {
 
   it("returns 503 when the desk is not configured", async () => {
     getDesk.mockResolvedValue({ ok: false, issues: ["x"] });
-    expect((await positions(new Request("http://localhost:3000/api/positions"))).status).toBe(503);
+    expect((await positions(new Request("http://localhost:3000/api/positions", { headers: SAME_ORIGIN }))).status).toBe(503);
   });
 });

@@ -59,11 +59,25 @@ function excerpt(text: string, limit: number): string {
   return flat.length <= limit ? flat : `${flat.slice(0, limit).trimEnd()}…`;
 }
 
+function momentumInWords(zone: ResearchView["indicators"]["momentum"]["zone"]): string {
+  switch (zone) {
+    case "overbought": return "odds have mostly risen recently";
+    case "oversold": return "odds have mostly fallen recently";
+    case "neutral":
+    case null: return "no strong push up or down";
+    default: {
+      const exhaustive: never = zone;
+      return exhaustive;
+    }
+  }
+}
+
 function headline(view: ResearchView): string {
   const { market } = view;
   const price = market.prices.buyYesCents;
   const stance = price === null ? "has no live price right now" : `is priced at ${cents(price)} for YES`;
-  return `${market.eventTitle}: ${market.contractLabel} ${stance}`;
+  const title = market.eventTitle.trim().replace(/[?!.:;,\s]+$/u, "");
+  return `${title}: ${market.contractLabel} ${stance}`;
 }
 
 function thinks(view: ResearchView): string {
@@ -82,7 +96,7 @@ function changed(view: ResearchView): string {
   parts.push(
     momentum.value === null
       ? "Momentum can't be measured yet."
-      : `Momentum reads ${String(round(momentum.value, 0))} out of 100, which is ${momentum.zone ?? "neutral"}.`,
+      : `Momentum reads ${String(round(momentum.value, 0))} out of 100: ${momentumInWords(momentum.zone)}.`,
   );
   if (volumeSpike.ratio !== null) {
     parts.push(`Latest-hour volume is ${String(round(volumeSpike.ratio))} times its usual level${volumeSpike.obvTrend === null ? "" : `, with volume flowing ${volumeSpike.obvTrend === "flat" ? "evenly" : volumeSpike.obvTrend}`}.`);

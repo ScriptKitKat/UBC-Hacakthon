@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createJsonStore } from "@/features/storage";
+import { StoreUnavailableError, createJsonStore } from "@/features/storage";
 import type { FileSystem } from "@/features/storage";
 
 export const MAX_WATCHED_SYMBOLS = 24;
@@ -73,8 +73,8 @@ function buildHistoryStore(loaded: HistoryFile, persist: (file: HistoryFile) => 
   return {
     watch,
     record(symbol, snapshot) {
-      watch(symbol);
-      const series = points.get(symbol) ?? [];
+      const series = points.get(symbol);
+      if (series === undefined) return;
       const last = series.at(-1);
       if (last !== undefined && snapshot.atMs - last.atMs < limits.minGapMs) return;
       series.push(snapshot);
@@ -108,7 +108,11 @@ function buildHistoryStore(loaded: HistoryFile, persist: (file: HistoryFile) => 
 
 export async function openHistoryStore(options: OpenHistoryOptions): Promise<HistoryStore> {
   const file = createJsonStore({ fs: options.fs, path: options.path, schema: fileSchema, empty: emptyFile });
-  return buildHistoryStore(await file.load(), file.save, options.limits);
+  const loaded = await file.load().catch((error: unknown) => {
+    if (error instanceof StoreUnavailableError) return emptyFile();
+    throw error;
+  });
+  return buildHistoryStore(loaded, file.save, options.limits);
 }
 
 export function createMemoryHistory(limits?: Partial<HistoryLimits>): HistoryStore {

@@ -135,6 +135,7 @@ describe("jumpiness and bands", () => {
     expect(result.outsideBand).toBe(false);
     expect(result.value).toBeGreaterThan(1);
     expect(result.reading).toContain("jumpy");
+    expect(result.reading).toContain("typical variation");
   });
 
   it("clamps the band to 0..100", () => {
@@ -196,6 +197,12 @@ describe("volumeSpike", () => {
     expect(result.reading).toContain("price falls");
   });
 
+  it("does not say no trades when a small volume rounds to a zero ratio", () => {
+    const reading = indicatorsFor(flat(40, 13), [...flat(10_000, 12), 1]).volumeSpike.reading;
+    expect(reading).not.toContain("No trades");
+    expect(reading).toContain("under 1%");
+  });
+
   it("is flat when volume only trades at an unchanged price", () => {
     expect(indicatorsFor(flat(40, 13), flat(10, 13)).volumeSpike.obvTrend).toBe("flat");
   });
@@ -242,6 +249,13 @@ describe("recentMove", () => {
     expect(result.reading).toBe("Odds are calm: they moved less than 1¢ in the last day.");
   });
 
+  it("does not call an old observation a one-hour move", () => {
+    const points = [{ t: 0, cents: 40, volume: null }, { t: 10 * 3_600_000, cents: 55, volume: null }];
+    const result = computeIndicators(points).recentMove;
+    expect(result.hourCents).toBeNull();
+    expect(result.reading).toContain("Not enough trading yet");
+  });
+
   it("does not sign a zero move", () => {
     const prices = [...flat(40, 5), ...ramp(40, 0.1, 24), 42.3];
     expect(indicatorsFor(prices).recentMove.reading).toBe("Odds moved 0¢ in the last hour and +2.3¢ over the last day.");
@@ -260,11 +274,19 @@ describe("recentMove", () => {
     expect(result.reading).toBe("Odds moved +1¢ in the last hour.");
   });
 
-  it("measures against the nearest point at least an hour old when candles are sparse", () => {
+  it("measures against the nearest point at least an hour old when it is close enough to the stated hour", () => {
+    const points: IndicatorPoint[] = [
+      { t: START, cents: 30, volume: 0 },
+      { t: START + 1.4 * HOUR, cents: 38, volume: 0 },
+    ];
+    expect(computeIndicators(points).recentMove.hourCents).toBe(8);
+  });
+
+  it("refuses to call a five-hour gap an hourly move", () => {
     const points: IndicatorPoint[] = [
       { t: START, cents: 30, volume: 0 },
       { t: START + 5 * HOUR, cents: 38, volume: 0 },
     ];
-    expect(computeIndicators(points).recentMove.hourCents).toBe(8);
+    expect(computeIndicators(points).recentMove.hourCents).toBeNull();
   });
 });

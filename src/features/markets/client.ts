@@ -1,14 +1,17 @@
 import type { z } from "zod";
 import { systemClock, type Clock } from "./clock";
-import { createRateLimiter } from "./rate-limiter";
+import { createRateLimiter, RateLimiterBusyError } from "./rate-limiter";
 import { candlesSchema, eventSchema, eventsPageSchema, orderBookSchema, recentTradesSchema } from "./schema";
 import { fail, ok, type MarketsResult } from "./result";
+import { parseInstrumentSymbol } from "./symbol";
 import { createTtlCache } from "./ttl-cache";
 import type { Candle, CandleTimeframe, EventsPage, MarketEvent, OrderBook, RecentTrade } from "./types";
 
 const DEFAULT_MIN_REQUEST_INTERVAL_MS = 1000;
 const CACHE_TTL_MS = 5000;
 const REQUEST_TIMEOUT_MS = 10_000;
+const MAX_QUEUED_REQUESTS = 12;
+const MAX_CACHED_RESPONSES = 200;
 const DEFAULT_LIMIT = 20;
 const DEFAULT_TRADE_LIMIT = 30;
 
@@ -37,8 +40,8 @@ export interface GeminiMarketsClientOptions {
 
 export function createGeminiMarketsClient(options: GeminiMarketsClientOptions): GeminiMarketsClient {
   const clock = options.clock ?? systemClock;
-  const limit = createRateLimiter(clock, options.minRequestIntervalMs ?? DEFAULT_MIN_REQUEST_INTERVAL_MS);
-  const cache = createTtlCache<unknown>(clock, CACHE_TTL_MS);
+  const limit = createRateLimiter(clock, options.minRequestIntervalMs ?? DEFAULT_MIN_REQUEST_INTERVAL_MS, MAX_QUEUED_REQUESTS);
+  const cache = createTtlCache<unknown>(clock, CACHE_TTL_MS, MAX_CACHED_RESPONSES);
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
 
   async function getJson<S extends z.ZodType>(url: string, schema: S, refresh = false): Promise<MarketsResult<z.output<S>>> {
@@ -48,9 +51,10 @@ export function createGeminiMarketsClient(options: GeminiMarketsClientOptions): 
     }
     let response: Response;
     try {
-      response = await limit(() => options.fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }));
-    } catch {
-      return fail({ kind: "network" });
+      const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+      response = await limit(() => options.fetch(url, { headers: { accept: "application/json" }, signal }), signal);
+    } catch (error) {
+      return fail(error instanceof RateLimiterBusyError ? { kind: "busy" } : { kind: "network" });
     }
     if (!response.ok) return fail({ kind: "http", status: response.status });
     let body: unknown;
@@ -65,6 +69,19 @@ export function createGeminiMarketsClient(options: GeminiMarketsClientOptions): 
     }
     cache.set(url, parsed.data);
     return ok(parsed.data);
+  }
+
+  async function withKnownContract<T>(symbol: string, load: () => Promise<MarketsResult<T>>): Promise<MarketsResult<T>> {
+    const parsed = parseInstrumentSymbol(symbol);
+    if (!parsed) return fail({ kind: "http", status: 404 });
+    const event = await getEvent(parsed.eventTicker);
+    if (!event.ok) return event;
+    if (!event.value.contracts.some((contract) => contract.instrumentSymbol === symbol)) return fail({ kind: "http", status: 404 });
+    return load();
+  }
+
+  function getEvent(ticker: string, options?: { readonly refresh?: boolean }): Promise<MarketsResult<MarketEvent>> {
+    return getJson(`${baseUrl}/v1/prediction-markets/events/${encodeURIComponent(ticker)}`, eventSchema, options?.refresh);
   }
 
   return {
@@ -84,11 +101,11 @@ export function createGeminiMarketsClient(options: GeminiMarketsClientOptions): 
       }
       return getJson(`${baseUrl}/v1/prediction-markets/events?${params.toString()}`, eventsPageSchema);
     },
-    getEvent: (ticker, options) =>
-      getJson(`${baseUrl}/v1/prediction-markets/events/${encodeURIComponent(ticker)}`, eventSchema, options?.refresh),
-    candles: (symbol, timeframe) => getJson(`${baseUrl}/v2/candles/${encodeURIComponent(symbol)}/${timeframe}`, candlesSchema),
-    orderBook: (symbol) => getJson(`${baseUrl}/v1/book/${encodeURIComponent(symbol)}`, orderBookSchema),
+    getEvent,
+    candles: (symbol, timeframe) =>
+      withKnownContract(symbol, () => getJson(`${baseUrl}/v2/candles/${encodeURIComponent(symbol)}/${timeframe}`, candlesSchema)),
+    orderBook: (symbol) => withKnownContract(symbol, () => getJson(`${baseUrl}/v1/book/${encodeURIComponent(symbol)}`, orderBookSchema)),
     recentTrades: (symbol, limit = DEFAULT_TRADE_LIMIT) =>
-      getJson(`${baseUrl}/v1/trades/${encodeURIComponent(symbol)}?limit_trades=${String(limit)}`, recentTradesSchema),
+      withKnownContract(symbol, () => getJson(`${baseUrl}/v1/trades/${encodeURIComponent(symbol)}?limit_trades=${String(limit)}`, recentTradesSchema)),
   };
 }

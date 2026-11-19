@@ -1,6 +1,6 @@
 import type { ApprovedTrade } from "@/features/guardrails";
 import type { ContractLimits } from "@/features/markets";
-import type { DebitReceipt, LedgerError, UsdcLedger } from "@/features/ledger";
+import type { BeforeBroadcast, DebitReceipt, LedgerError, UsdcLedger } from "@/features/ledger";
 import type { InstrumentSymbol, Outcome, UsdCents } from "@/shared";
 
 export type TRADING_MODE = "paper";
@@ -24,7 +24,7 @@ export interface PaperOrderTicket {
 
 export type OrderBuildError = { readonly code: "invalid-limit-price" | "quantity-below-minimum" };
 
-export type ExecutionError = OrderBuildError | LedgerError;
+export type ExecutionError = OrderBuildError | LedgerError | { readonly code: "journal-unavailable" };
 
 type Result<Value, Error> = { readonly ok: true; readonly value: Value } | { readonly ok: false; readonly error: Error };
 
@@ -47,6 +47,8 @@ interface ExecutionDeps {
   readonly idGen: () => string;
   readonly limitPrice: UsdCents;
   readonly limits?: ContractLimits | null;
+  readonly reserve: (ticket: PaperOrderTicket) => Promise<boolean>;
+  readonly beforeBroadcast: BeforeBroadcast;
 }
 
 const HUNDREDTHS_PER_UNIT = 100n;
@@ -100,19 +102,12 @@ export async function executeApproved(approved: ApprovedTrade, deps: ExecutionDe
   const order = buildGeminiOrderPayload(approved, limitPrice, { limits: deps.limits ?? null });
   if (!order.ok) return { ...trade, kind: "execution-failed", error: order.error };
 
+  const ticket: PaperOrderTicket = { ticketId: deps.idGen(), payload: order.value, mode: "paper", createdAt: deps.now() };
+  if (!await deps.reserve(ticket)) return { ...trade, kind: "execution-failed", error: { code: "journal-unavailable" } };
+
   const memo = [intentId, instrumentSymbol, outcome, String(notional)].join("|");
-  const debit = await deps.ledger.debit(intentId, notional, memo);
+  const debit = await deps.ledger.debit(intentId, notional, memo, deps.beforeBroadcast);
   if (!debit.ok) return { ...trade, kind: "execution-failed", error: debit.error };
 
-  return {
-    ...trade,
-    kind: "paper-order",
-    debit: debit.value,
-    ticket: {
-      ticketId: deps.idGen(),
-      payload: order.value,
-      mode: "paper",
-      createdAt: deps.now(),
-    },
-  };
+  return { ...trade, kind: "paper-order", debit: debit.value, ticket };
 }

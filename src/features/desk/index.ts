@@ -5,3 +5,4 @@ export type { ConfirmResult, Desk, DeskDeps, FeedBuyRequest, ProposeRequest } fr
 export { loadDeskConfig } from "./config";
 export type { FeedSettings } from "./config";
 export type { StoredPurchase } from "./purchase-store";
+export type { DeepDiveResource } from "./deep-dive-resource";

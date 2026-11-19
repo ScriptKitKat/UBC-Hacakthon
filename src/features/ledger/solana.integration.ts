@@ -31,7 +31,7 @@ it("debits 2 of 20 test USDC on localnet and records the trade memo", async () =
     const ledger = await createSolanaLedger({ network, mint, testMint: mint, recipient: recipient.publicKey, keypairPath });
     expect(await ledger.balance()).toEqual({ ok: true, value: { baseUnits: 20_000_000n } });
     const memo = "local-trade|RATE-DEC|yes|200";
-    const debit = await ledger.debit("local-trade", usdCents(200), memo);
+    const debit = await ledger.debit("local-trade", usdCents(200), memo, () => Promise.resolve(true));
     if (!debit.ok) throw new Error(debit.error.code);
     expect(await ledger.balance()).toEqual({ ok: true, value: { baseUnits: 18_000_000n } });
     expect((await getAccount(connection, destination.address, "confirmed")).amount).toBe(2_000_000n);

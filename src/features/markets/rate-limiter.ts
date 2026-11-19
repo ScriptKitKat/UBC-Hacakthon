@@ -1,16 +1,38 @@
 import type { Clock } from "./clock";
 
-export type RateLimiter = <T>(task: () => Promise<T>) => Promise<T>;
+export type RateLimiter = <T>(task: () => Promise<T>, signal: AbortSignal) => Promise<T>;
 
-export function createRateLimiter(clock: Clock, minIntervalMs: number): RateLimiter {
+export class RateLimiterBusyError extends Error {
+  constructor() {
+    super("rate limiter queue is full");
+  }
+}
+
+export class RateLimiterTimeoutError extends Error {
+  constructor() {
+    super("request timed out while queued");
+  }
+}
+
+export function createRateLimiter(clock: Clock, minIntervalMs: number, maxQueued: number): RateLimiter {
   let nextSlotMs = 0;
-  return async (task) => {
+  let queued = 0;
+  return async (task, signal) => {
     const now = clock.nowMs();
     const startAt = Math.max(now, nextSlotMs);
-    nextSlotMs = startAt + minIntervalMs;
     if (startAt > now) {
-      await clock.sleep(startAt - now);
+      if (queued >= maxQueued) throw new RateLimiterBusyError();
+      nextSlotMs = startAt + minIntervalMs;
+      queued += 1;
+      try {
+        await clock.sleep(startAt - now);
+      } finally {
+        queued -= 1;
+      }
+    } else {
+      nextSlotMs = startAt + minIntervalMs;
     }
+    if (signal.aborted) throw new RateLimiterTimeoutError();
     return task();
   };
 }

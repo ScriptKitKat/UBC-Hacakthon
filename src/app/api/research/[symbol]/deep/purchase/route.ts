@@ -10,6 +10,6 @@ export function POST(request: Request, context: { readonly params: Promise<{ rea
     if (!parseInstrumentSymbol(symbol)) {
       return Response.json({ error: "invalid-request", issues: ["symbol: must look like GEMI-EVENT-CONTRACT"] }, { status: 400 });
     }
-    return Response.json(await desk.buyDeepDive(symbol, new URL(request.url).origin));
+    return Response.json(await desk.buyDeepDive(symbol));
   });
 }

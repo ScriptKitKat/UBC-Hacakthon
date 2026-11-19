@@ -1,5 +1,6 @@
+import type { SpendEntry } from "@/features/journal";
 import type { MarketContract, MarketEvent } from "@/features/markets";
-import type { DecisionLogEntry, Outcome, PositionStatus, PositionView, PositionsView, ResearchPurchaseView } from "@/shared";
+import type { Outcome, PositionStatus, PositionView, PositionsView, ResearchPurchaseView } from "@/shared";
 
 export interface Fill {
   readonly entryId: string;
@@ -19,7 +20,10 @@ export interface MarketMark {
   readonly status: PositionStatus;
   readonly yesCents: number | null;
   readonly noCents: number | null;
+  readonly markedAtMs: number;
 }
+
+const MARK_EXPIRY_MS = 10 * 60 * 1000;
 
 const CENTS_PER_DOLLAR = 100;
 
@@ -28,17 +32,17 @@ function round(value: number, places: number): number {
   return Math.round(value * factor) / factor;
 }
 
-export function fillsFromLog(log: readonly DecisionLogEntry[]): readonly Fill[] {
-  return log.flatMap((entry): Fill[] => {
+export function fillsFromJournal(entries: readonly SpendEntry[]): readonly Fill[] {
+  return entries.flatMap((entry): Fill[] => {
     const { ticket } = entry;
-    if (entry.kind !== "approve" || ticket === undefined || entry.outcome === null) return [];
+    if (entry.kind !== "trade" || entry.status !== "settled" || ticket === undefined || entry.outcome === null) return [];
     const contracts = Number(ticket.quantity);
     const priceCents = Number(ticket.price) * CENTS_PER_DOLLAR;
     if (!Number.isFinite(contracts) || contracts <= 0 || !Number.isFinite(priceCents) || priceCents <= 0) return [];
     return [
       {
-        entryId: entry.entryId,
-        at: entry.at,
+        entryId: entry.operationId,
+        at: entry.resolvedAt ?? entry.reservedAt,
         symbol: entry.symbol,
         outcome: entry.outcome,
         contracts,
@@ -56,28 +60,31 @@ function statusOf(event: MarketEvent, contract: MarketContract): PositionStatus 
   return event.status === "active" && contract.marketState === "open" ? "open" : "closed";
 }
 
-export function markFromContract(event: MarketEvent, contract: MarketContract): MarketMark {
+export function markFromContract(event: MarketEvent, contract: MarketContract, markedAtMs: number): MarketMark {
   const status = statusOf(event, contract);
-  const { sellYesCents, sellNoCents, bestBidCents, lastTradeCents } = contract.prices;
-  const base = { eventTitle: event.title, contractLabel: contract.label, status };
-  if (status === "settled" && contract.resolutionSide !== undefined) {
+  const { sellYesCents, sellNoCents } = contract.prices;
+  const base = { eventTitle: event.title, contractLabel: contract.label, status, markedAtMs };
+  if (status === "settled") {
+    if (contract.resolutionSide === undefined) return { ...base, yesCents: null, noCents: null };
     return { ...base, yesCents: contract.resolutionSide === "yes" ? 100 : 0, noCents: contract.resolutionSide === "no" ? 100 : 0 };
   }
-  return { ...base, yesCents: sellYesCents ?? bestBidCents ?? lastTradeCents, noCents: sellNoCents };
+  return { ...base, yesCents: sellYesCents, noCents: sellNoCents };
 }
 
 function groupKey(fill: Fill): string {
   return `${fill.symbol}|${fill.outcome}`;
 }
 
-function buildPosition(fills: readonly Fill[], mark: MarketMark | undefined): PositionView {
+function buildPosition(fills: readonly Fill[], mark: MarketMark | undefined, generatedAtMs: number): PositionView {
   const ordered = [...fills].sort((a, b) => a.at.localeCompare(b.at));
   const [first] = ordered;
   if (first === undefined) throw new Error("A position needs at least one fill");
   const contracts = ordered.reduce((sum, fill) => sum + fill.contracts, 0);
   const costCents = ordered.reduce((sum, fill) => sum + fill.costCents, 0);
   const entrySpend = ordered.reduce((sum, fill) => sum + fill.contracts * fill.priceCents, 0);
-  const currentCents = mark === undefined ? null : first.outcome === "yes" ? mark.yesCents : mark.noCents;
+  const markAgeMs = mark === undefined ? null : Math.max(0, generatedAtMs - mark.markedAtMs);
+  const expired = markAgeMs !== null && markAgeMs > MARK_EXPIRY_MS;
+  const currentCents = mark === undefined || expired ? null : first.outcome === "yes" ? mark.yesCents : mark.noCents;
   const valueCents = currentCents === null ? null : round(contracts * currentCents, 2);
   const pnlCents = valueCents === null ? null : round(valueCents - costCents, 2);
   return {
@@ -89,6 +96,7 @@ function buildPosition(fills: readonly Fill[], mark: MarketMark | undefined): Po
     averageEntryCents: round(entrySpend / contracts, 2),
     costCents,
     currentCents,
+    markAgeSeconds: markAgeMs === null ? null : Math.floor(markAgeMs / 1000),
     valueCents,
     pnlCents,
     pnlPercent: pnlCents === null || costCents === 0 ? null : round((pnlCents / costCents) * 100, 2),
@@ -108,8 +116,9 @@ function buildPosition(fills: readonly Fill[], mark: MarketMark | undefined): Po
 export function aggregatePositions(fills: readonly Fill[], marks: ReadonlyMap<string, MarketMark>, generatedAt: string): Omit<PositionsView, "researchSpend"> {
   const groups = new Map<string, Fill[]>();
   for (const fill of fills) groups.set(groupKey(fill), [...(groups.get(groupKey(fill)) ?? []), fill]);
+  const generatedAtMs = Date.parse(generatedAt);
   const positions = [...groups.values()]
-    .map((group) => buildPosition(group, marks.get(group[0]?.symbol ?? "")))
+    .map((group) => buildPosition(group, marks.get(group[0]?.symbol ?? ""), generatedAtMs))
     .sort((a, b) => (b.fills.at(-1)?.at ?? "").localeCompare(a.fills.at(-1)?.at ?? ""));
   const priced = positions.filter((position) => position.valueCents !== null);
   const pricedCostCents = priced.reduce((sum, position) => sum + position.costCents, 0);
@@ -131,24 +140,26 @@ export function aggregatePositions(fills: readonly Fill[], marks: ReadonlyMap<st
 
 const RESEARCH_PURCHASE_LIMIT = 20;
 
-function paidResearch(log: readonly DecisionLogEntry[]): readonly DecisionLogEntry[] {
-  return log.filter((entry) => entry.source === "research" && entry.kind === "approve");
+function paidResearch(entries: readonly SpendEntry[]): readonly SpendEntry[] {
+  return entries
+    .filter((entry) => entry.kind === "research" && entry.status === "settled")
+    .sort((a, b) => (b.resolvedAt ?? b.reservedAt).localeCompare(a.resolvedAt ?? a.reservedAt));
 }
 
-export function todaysResearchSpendCents(log: readonly DecisionLogEntry[], day: string): number {
-  return paidResearch(log)
-    .filter((entry) => entry.at.slice(0, 10) === day)
+export function todaysResearchSpendCents(entries: readonly SpendEntry[], day: string): number {
+  return paidResearch(entries)
+    .filter((entry) => (entry.resolvedAt ?? entry.reservedAt).slice(0, 10) === day)
     .reduce((total, entry) => total + entry.notionalCents, 0);
 }
 
-export function summarizeResearchSpend(log: readonly DecisionLogEntry[], nowIso: string): PositionsView["researchSpend"] {
-  const purchases: ResearchPurchaseView[] = paidResearch(log).slice(0, RESEARCH_PURCHASE_LIMIT).map((entry) => ({
-    entryId: entry.entryId,
-    at: entry.at,
+export function summarizeResearchSpend(entries: readonly SpendEntry[], nowIso: string): PositionsView["researchSpend"] {
+  const purchases: ResearchPurchaseView[] = paidResearch(entries).slice(0, RESEARCH_PURCHASE_LIMIT).map((entry) => ({
+    entryId: entry.operationId,
+    at: entry.resolvedAt ?? entry.reservedAt,
     symbol: entry.symbol,
     costCents: entry.notionalCents,
     signature: entry.signature ?? null,
     explorerUrl: entry.explorerUrl ?? null,
   }));
-  return { todayCents: todaysResearchSpendCents(log, nowIso.slice(0, 10)), purchases };
+  return { todayCents: todaysResearchSpendCents(entries, nowIso.slice(0, 10)), purchases };
 }

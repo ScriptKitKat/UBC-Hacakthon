@@ -132,6 +132,7 @@ describe("research view", () => {
 
   it("falls back to desk snapshots when Gemini candles are unavailable", async () => {
     const { research, history } = await setup({ candles: down, orderBook: down, recentTrades: down });
+    history.watch(SYMBOL);
     history.record(SYMBOL, { atMs: NOW - 120_000, yesCents: 58, bidCents: 56, askCents: 58 });
     const result = await research.view(SYMBOL, "1H");
     if (result.kind !== "ok") throw new Error(result.kind);
@@ -173,6 +174,7 @@ describe("research view", () => {
     const { research, history } = await setup({ getEvent: () => (healthy ? Promise.resolve(ok(fedEvent())) : down()), candles: () => (healthy ? Promise.resolve(ok<readonly Candle[]>(hourlyCandles)) : down()) });
     await research.view(SYMBOL, "1D");
     healthy = false;
+    history.watch(SYMBOL);
     history.record(SYMBOL, { atMs: NOW - 60_000, yesCents: 59, bidCents: null, askCents: null });
     const result = await research.view(SYMBOL, "1D");
     if (result.kind !== "ok") throw new Error(result.kind);

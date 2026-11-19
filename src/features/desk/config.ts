@@ -45,6 +45,7 @@ const envSchema = z.object({
   RESEARCH_RECIPIENT: publicKey.optional(),
   RESEARCH_PRICE_USD: dollarAmount.default(usdCents(5)),
   RESEARCH_PAYMENT_SECRET: z.string().min(16).optional(),
+  DESK_PUBLIC_ORIGIN: z.url().transform((text) => new URL(text).origin).default("http://localhost:3000"),
   SOLANA_TEST_MINT: publicKey.optional(),
 });
 
@@ -69,6 +70,7 @@ export interface ResearchSettings {
   readonly recipient: PublicKey | undefined;
   readonly priceCents: UsdCents;
   readonly paymentSecret: string | undefined;
+  readonly publicOrigin: string;
 }
 
 export interface DeskConfig {
@@ -123,6 +125,7 @@ export function loadDeskConfig(env: Readonly<Record<string, string | undefined>>
     recipient: values.RESEARCH_RECIPIENT ?? values.VAULT_RECIPIENT,
     priceCents: values.RESEARCH_PRICE_USD,
     paymentSecret: values.RESEARCH_PAYMENT_SECRET,
+    publicOrigin: values.DESK_PUBLIC_ORIGIN,
   };
   return { ok: true, value: { policy: policy.value, research, feed, geminiBaseUrl: values.GEMINI_API_BASE, ledger: ledgerSettings(values) } };
 }

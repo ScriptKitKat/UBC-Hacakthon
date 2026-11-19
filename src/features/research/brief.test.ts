@@ -13,7 +13,7 @@ const view: ResearchView = {
   market: {
     eventTicker: "FED261211", eventTitle: "Fed decision in December?", contractLabel: "Fed maintains rate", category: "Economics", subcategory: null,
     expiryDate: "2026-12-11T19:00:00Z", eventStatus: "active", marketState: "open", rulesText: "Resolves YES if the Fed holds the target range at the December meeting.",
-    volume: 12345, volume24h: 678,
+    volume: 12345, volume24h: 678, quantityLimits: null,
     prices: { buyYesCents: 62, buyNoCents: 40, sellYesCents: 60, sellNoCents: 38, bestBidCents: 60, bestAskCents: 62, lastTradeCents: 61 },
   },
   data: { event: "live", candles: "live", book: "live", trades: "live" },
@@ -74,7 +74,7 @@ function dataNumbers(source: ResearchView): Set<string> {
 describe("composeBrief", () => {
   it("has the headline and the six titled sections in order", () => {
     const brief = composeBrief(view);
-    expect(brief.headline).toBe("Fed decision in December?: Fed maintains rate is priced at 62¢ for YES");
+    expect(brief.headline).toBe("Fed decision in December: Fed maintains rate is priced at 62¢ for YES");
     expect(brief.sections.map((section) => section.title)).toEqual([...BRIEF_SECTION_TITLES]);
     expect(brief.polishedBy).toBe("template");
     expect(brief.sections.every((section) => section.body.length > 0)).toBe(true);
@@ -85,7 +85,7 @@ describe("composeBrief", () => {
     expect(bodies["What the market thinks"]).toContain("Buying YES costs 62¢");
     expect(bodies["What the market thinks"]).toContain("last trade was at 61¢");
     expect(bodies["What changed recently"]).toContain("Last hour: +3¢; last day: -2¢");
-    expect(bodies["What changed recently"]).toContain("Momentum reads 71 out of 100, which is overbought");
+    expect(bodies["What changed recently"]).toContain("Momentum reads 71 out of 100: odds have mostly risen recently");
     expect(bodies["Crowd and liquidity"]).toContain("12,345 contracts");
     expect(bodies["Crowd and liquidity"]).toContain("400 contracts bid against 100 contracts offered");
     expect(bodies["Crowd and liquidity"]).toContain("Of the last 3 trades, 2 were buys and 1 were sells");
@@ -106,6 +106,7 @@ describe("composeBrief", () => {
     const brief = composeBrief(emptyView);
     const text = brief.sections.map((section) => section.body).join(" ");
     expect(brief.headline).toContain("has no live price right now");
+    expect(brief.headline).not.toMatch(/[?!.]:/u);
     expect(text).toContain("no live YES price");
     expect(text).toContain("not enough history to measure");
     expect(text).toContain("Momentum can't be measured yet.");

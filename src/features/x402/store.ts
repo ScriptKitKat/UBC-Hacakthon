@@ -1,24 +1,35 @@
 import { z } from "zod";
-import { createJsonStore } from "@/features/storage";
+import { createJsonStore, createSerialQueue } from "@/features/storage";
 import type { FileSystem } from "@/features/storage";
 import type { PaymentErrorCode } from "./schema";
 
 const RETENTION_MS = 24 * 60 * 60 * 1000;
 
-const recordSchema = z.object({ nonce: z.string(), signature: z.string(), atMs: z.number() });
+const recordSchema = z.object({
+  nonce: z.string(),
+  signature: z.string(),
+  atMs: z.number(),
+  symbol: z.string().default(""),
+  payer: z.string().default(""),
+  status: z.enum(["claimed", "settled"]).default("claimed"),
+});
 const fileSchema = z.object({ version: z.literal(1), records: z.array(recordSchema) });
 
-type UsedPayment = z.output<typeof recordSchema>;
+export type UsedPayment = z.output<typeof recordSchema>;
+export type NewUsedPayment = Pick<UsedPayment, "nonce" | "signature" | "atMs" | "symbol" | "payer">;
 
 export type ReuseError = Extract<PaymentErrorCode, "nonce_reused" | "signature_reused" | "store_unavailable">;
 
 export interface UsedPayments {
   readonly reuse: (nonce: string, signature: string) => ReuseError | undefined;
-  readonly claim: (nonce: string, signature: string, atMs: number) => Promise<ReuseError | undefined>;
+  readonly claim: (payment: NewUsedPayment) => Promise<ReuseError | undefined>;
+  readonly markSettled: (signature: string) => Promise<void>;
+  readonly find: (signature: string) => UsedPayment | undefined;
 }
 
 export function createUsedPayments(initial: readonly UsedPayment[], persist: (records: readonly UsedPayment[]) => Promise<void>): UsedPayments {
   let records: readonly UsedPayment[] = [...initial];
+  const queue = createSerialQueue();
 
   function reuse(nonce: string, signature: string): ReuseError | undefined {
     if (records.some((record) => record.nonce === nonce)) return "nonce_reused";
@@ -28,19 +39,25 @@ export function createUsedPayments(initial: readonly UsedPayment[], persist: (re
 
   return {
     reuse,
-    async claim(nonce, signature, atMs) {
-      const already = reuse(nonce, signature);
-      if (already) return already;
-      const before = records;
-      records = [...records.filter((record) => atMs - record.atMs < RETENTION_MS), { nonce, signature, atMs }];
-      try {
-        await persist(records);
+    claim: (payment) =>
+      queue.run(async () => {
+        const already = reuse(payment.nonce, payment.signature);
+        if (already) return already;
+        const next = [...records.filter((record) => payment.atMs - record.atMs < RETENTION_MS), { ...payment, status: "claimed" as const }];
+        try {
+          await persist(next);
+        } catch {
+          return "store_unavailable";
+        }
+        records = next;
         return undefined;
-      } catch {
-        records = before;
-        return "store_unavailable";
-      }
-    },
+      }),
+    markSettled: (signature) =>
+      queue.run(async () => {
+        records = records.map((record) => (record.signature === signature ? { ...record, status: "settled" as const } : record));
+        await persist(records).catch(() => undefined);
+      }),
+    find: (signature) => records.find((record) => record.signature === signature),
   };
 }
 

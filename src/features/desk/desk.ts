@@ -1,22 +1,24 @@
 import { executeApproved } from "@/features/execution";
-import type { ExecutionError, TradeRecord } from "@/features/execution";
+import type { ExecutionError, PaperOrderTicket } from "@/features/execution";
 import { CARD_CATEGORIES, createPostMatcher } from "@/features/grok";
 import type { PostCandidate, PostInput } from "@/features/grok";
-import { confirm, evaluate, evaluateResearch, marketPolicyRefusal, remainingBudget, restorePolicyState, rollDay } from "@/features/guardrails";
-import type { ApprovedResearch, ApprovedTrade, Decision, Policy, PolicyState } from "@/features/guardrails";
+import { confirm, evaluate, evaluateResearch, marketPolicyRefusal, policyStateFromSpends, remainingBudget } from "@/features/guardrails";
+import type { ApprovedTrade, Decision, Policy, PolicyState } from "@/features/guardrails";
 import { createMemoryHistory } from "@/features/history";
 import type { HistoryStore } from "@/features/history";
+import { createMemoryJournal, reconcileJournal } from "@/features/journal";
+import type { Reconciliation, SpendJournal } from "@/features/journal";
 import type { UsdcLedger } from "@/features/ledger";
 import { parseInstrumentSymbol } from "@/features/markets";
 import type { ContractLimits, GeminiMarketsClient, MarketContract } from "@/features/markets";
 import { allowAll, matchNews } from "@/features/matcher";
 import type { MatchCandidate, MatchResult, NewsItem } from "@/features/matcher";
-import { aggregatePositions, fillsFromLog, markFromContract, summarizeResearchSpend, todaysResearchSpendCents } from "@/features/positions";
+import { aggregatePositions, fillsFromJournal, markFromContract, summarizeResearchSpend, todaysResearchSpendCents } from "@/features/positions";
 import type { MarketMark } from "@/features/positions";
 import { instrumentSymbol, usdCents } from "@/shared";
 import type { FeedSettings } from "./config";
 import { buyDeepDive } from "./deep-dive";
-import type { DeepDiveSettings, SpendOutcome } from "./deep-dive";
+import type { DeepDiveSettings } from "./deep-dive";
 import type { StoredPurchase } from "./purchase-store";
 import type {
   DecisionLogEntry,
@@ -38,6 +40,7 @@ import type {
   ResearchPostContext,
   TradeIntent,
   TradeSource,
+  ResearchBrief,
   UsdCents,
 } from "@/shared";
 
@@ -48,6 +51,7 @@ const MATCH_CACHE_LIMIT = 300;
 const MATCH_CACHE_TTL_MS = 10 * 60 * 1000;
 const ORDER_MEMORY_LIMIT = 500;
 const PURCHASE_REUSE_MS = 15 * 60 * 1000;
+const UNDELIVERED_RECOVERY_MS = 24 * 60 * 60 * 1000;
 const PURCHASE_LIMIT = 50;
 
 type PendingTrade = Extract<Decision, { kind: "needs-approval" }>;
@@ -64,6 +68,7 @@ export interface DeskDeps {
   readonly history?: HistoryStore;
   readonly initialLog?: readonly DecisionLogEntry[];
   readonly saveLog?: (log: readonly DecisionLogEntry[]) => Promise<void>;
+  readonly journal?: SpendJournal;
   readonly research?: DeepDiveSettings;
   readonly initialPurchases?: readonly StoredPurchase[];
   readonly savePurchases?: (purchases: readonly StoredPurchase[]) => Promise<void>;
@@ -97,7 +102,8 @@ export interface Desk {
   readonly quote: (symbol: string) => Promise<FeedQuote | undefined>;
   readonly postContextFor: (symbol: string) => Promise<ResearchPostContext | undefined>;
   readonly getPositions: () => Promise<PositionsView>;
-  readonly buyDeepDive: (symbol: string, origin: string) => Promise<DeepDiveResult>;
+  readonly buyDeepDive: (symbol: string) => Promise<DeepDiveResult>;
+  readonly reconcile: () => Promise<Reconciliation>;
   readonly buyFromFeed: (request: FeedBuyRequest) => Promise<DecisionLogEntry>;
   readonly confirmFromFeed: (intentId: string) => Promise<ConfirmResult>;
   readonly proposeTrade: (request: ProposeRequest) => Promise<DecisionLogEntry>;
@@ -202,6 +208,9 @@ function failureReason(error: ExecutionError): string {
     case "invalid-limit-price": return "I couldn't get a valid price for this market, so I did not place the trade.";
     case "quantity-below-minimum": return "That amount is below the market's minimum order size, so I did not place the trade.";
     case "debit-unconfirmed": return "The payment could not be confirmed, so those funds stay reserved until it is checked.";
+    case "journal-unavailable":
+    case "pre-broadcast-failed": return "I couldn't record the payment safely, so I did not place the trade.";
+    case "destination-invalid": return "The vault recipient's USDC account isn't valid, so I did not place the trade.";
     case "unsafe-ledger-network": return "The ledger network is not approved for test payments.";
     case "recipient-ata-missing": return "The vault recipient has no USDC account yet, so I did not place the trade.";
     case "notional-overflow": return "The trade amount exceeds the ledger limit.";
@@ -228,7 +237,8 @@ export function createDesk(deps: DeskDeps): Desk {
   });
   let policy = deps.policy;
   const initialLog = (deps.initialLog ?? []).slice(0, LOG_LIMIT);
-  let state: PolicyState = restorePolicyState(initialLog, now());
+  const journal = deps.journal ?? createMemoryJournal(() => now().toISOString());
+  const currentState = (): PolicyState => policyStateFromSpends(journal.entries(), now());
   let current: { readonly news: NewsItem; readonly match: MatchResult } | undefined;
   const history = deps.history ?? createMemoryHistory();
   const saveLog = deps.saveLog ?? (() => Promise.resolve());
@@ -237,6 +247,7 @@ export function createDesk(deps: DeskDeps): Desk {
   let purchases: readonly StoredPurchase[] = (deps.initialPurchases ?? []).slice(0, PURCHASE_LIMIT);
   const savePurchases = deps.savePurchases ?? (() => Promise.resolve());
   const deepDives = new Map<string, Promise<DeepDiveResult>>();
+  const openedResearch = new Set<string>();
   const pending = new Map<string, PendingRecord>();
   const tickers = new Map<InstrumentSymbol, string>();
   const matchCache = new Map<string, { readonly at: number; readonly post: PostInput; readonly match: Promise<FeedMatch> }>();
@@ -341,95 +352,161 @@ export function createDesk(deps: DeskDeps): Desk {
     return match;
   }
 
-  function reserve(approved: Pick<ApprovedTrade, "intentId" | "notional">): void {
-    const rolled = rollDay(state, now());
-    state = {
-      ...rolled,
-      reservedToday: usdCents(rolled.reservedToday + approved.notional),
-      seenIntentIds: new Set([...rolled.seenIntentIds, approved.intentId]),
-    };
-  }
-
-  function settle(trade: TradeRecord): void {
-    const rolled = rollDay(state, now());
-    const released = usdCents(Math.max(0, rolled.reservedToday - trade.notional));
-    if (trade.kind === "paper-order") {
-      state = { ...rolled, reservedToday: released, spentToday: usdCents(rolled.spentToday + trade.notional) };
-    } else if (trade.error.code !== "debit-unconfirmed") {
-      state = { ...rolled, reservedToday: released };
-    }
-  }
-
-  function settleSpend(approved: ApprovedResearch, outcome: SpendOutcome): void {
-    if (outcome === "held") return;
-    const rolled = rollDay(state, now());
-    const released = usdCents(Math.max(0, rolled.reservedToday - approved.notional));
-    state = outcome === "paid"
-      ? { ...rolled, reservedToday: released, spentToday: usdCents(rolled.spentToday + approved.notional) }
-      : { ...rolled, reservedToday: released };
-  }
-
   function purchaseFor(symbol: string): StoredPurchase | undefined {
-    const found = purchases.find((purchase) => purchase.symbol === symbol);
-    return found && now().getTime() - found.atMs < PURCHASE_REUSE_MS ? found : undefined;
+    const nowMs = now().getTime();
+    return purchases.find((purchase) => purchase.symbol === symbol && nowMs - purchase.atMs < (purchase.brief ? PURCHASE_REUSE_MS : UNDELIVERED_RECOVERY_MS));
   }
 
-  function rememberPurchase(result: DeepDiveResult, symbol: string): void {
-    if (result.status !== "delivered" || !result.brief || !result.purchase) return;
-    const { signature, explorerUrl, costCents, at } = result.purchase;
-    purchases = [
-      { symbol, atMs: Date.parse(at), brief: result.brief, receipt: { signature, explorerUrl, costCents } },
-      ...purchases.filter((purchase) => purchase.symbol !== symbol),
-    ].slice(0, PURCHASE_LIMIT);
+  function storePurchases(next: readonly StoredPurchase[]): void {
+    purchases = next.slice(0, PURCHASE_LIMIT);
     savePurchases(purchases).catch(() => undefined);
   }
 
-  function alreadyPurchased(purchase: StoredPurchase): DeepDiveResult {
+  function rememberPurchase(result: DeepDiveResult, symbol: string): void {
+    if (!result.purchase) return;
+    const { signature, explorerUrl, costCents, at } = result.purchase;
+    storePurchases([
+      { symbol, atMs: Date.parse(at), brief: result.brief, receipt: { signature, explorerUrl, costCents } },
+      ...purchases.filter((purchase) => purchase.receipt.signature !== signature),
+    ]);
+  }
+
+  function syncPurchasesWithJournal(): void {
+    const known = new Set(purchases.map((purchase) => purchase.receipt.signature));
+    const missing = journal.entries().flatMap((entry): StoredPurchase[] => {
+      const { signature, explorerUrl } = entry;
+      if (entry.kind !== "research" || entry.status !== "settled" || signature === undefined || explorerUrl === undefined || known.has(signature)) return [];
+      return [{ symbol: entry.symbol, atMs: Date.parse(entry.resolvedAt ?? entry.reservedAt), brief: null, receipt: { signature, explorerUrl, costCents: entry.notionalCents } }];
+    });
+    if (missing.length > 0) storePurchases([...missing, ...purchases].sort((a, b) => b.atMs - a.atMs));
+  }
+
+  function deliveredFrom(purchase: StoredPurchase, brief: ResearchBrief, note: string): DeepDiveResult {
     return {
       status: "delivered",
       alreadyPurchased: true,
-      trace: [{ step: "brief", detail: "You already bought this brief in the last 15 minutes, so I did not pay again." }],
+      trace: [{ step: "brief", detail: note }],
       failureReason: null,
-      brief: purchase.brief,
+      brief,
       purchase: { at: new Date(purchase.atMs).toISOString(), ...purchase.receipt },
     };
   }
 
-  function deepDive(symbol: string, origin: string): Promise<DeepDiveResult> {
+  function unfinishedResult(reason: string, purchase: StoredPurchase | undefined): DeepDiveResult {
+    return {
+      status: "failed",
+      alreadyPurchased: purchase !== undefined,
+      trace: [],
+      failureReason: reason,
+      brief: null,
+      purchase: purchase ? { at: new Date(purchase.atMs).toISOString(), ...purchase.receipt } : null,
+    };
+  }
+
+  async function recoverPurchase(purchase: StoredPurchase): Promise<DeepDiveResult> {
+    const brief = await deps.research?.resource.recover(purchase.symbol, purchase.receipt.signature);
+    if (!brief) return unfinishedResult("You already paid for this brief, but I couldn't fetch it yet. I won't charge you again, so try again in a moment.", purchase);
+    storePurchases(purchases.map((existing) => (existing.receipt.signature === purchase.receipt.signature ? { ...existing, brief } : existing)));
+    return deliveredFrom(purchase, brief, "I had already paid for this brief, so I fetched it again without paying.");
+  }
+
+  function paymentStillInFlight(symbol: string): boolean {
+    return journal.entries().some((entry) => entry.kind === "research" && entry.symbol === symbol && entry.status === "reserved");
+  }
+
+  function deepDive(symbol: string): Promise<DeepDiveResult> {
     const reusable = purchaseFor(symbol);
-    if (reusable) return Promise.resolve(alreadyPurchased(reusable));
+    if (reusable?.brief) return Promise.resolve(deliveredFrom(reusable, reusable.brief, "You already bought this brief in the last 15 minutes, so I did not pay again."));
     const running = deepDives.get(symbol);
     if (running) return running;
-    const buying = buyDeepDive(
-      {
-        fetch: deps.fetch ?? fetch,
-        ledger,
-        ledgerView: deps.ledgerView,
-        settings: deps.research,
-        account: {
-          decide: (spend) => evaluateResearch(spend, policy, state, now()),
-          reserve,
-          settle: settleSpend,
-          remaining: () => remainingBudget(policy, state, now()),
-          record,
-        },
-      },
-      symbol,
-      origin,
-    ).then((result) => {
-      rememberPurchase(result, symbol);
-      return result;
-    });
-    deepDives.set(symbol, buying);
+    const work = reusable
+      ? recoverPurchase(reusable)
+      : paymentStillInFlight(symbol)
+        ? Promise.resolve(unfinishedResult("A payment for this brief is still being confirmed, so I won't pay a second time. Try again later.", undefined))
+        : buyDeepDive(
+            {
+              ledger,
+              ledgerView: deps.ledgerView,
+              settings: deps.research,
+              account: {
+                decide: (spend) => evaluateResearch(spend, policy, currentState(), now()),
+                async begin(approved, researchSymbol) {
+                  const written = await journal.begin({
+                    operationId: approved.intentId,
+                    kind: "research",
+                    notionalCents: approved.notional,
+                    symbol: researchSymbol,
+                    outcome: null,
+                    senderId: "research-agent",
+                    source: "research",
+                  });
+                  if (written.ok) openedResearch.add(approved.intentId);
+                  return written.ok;
+                },
+                async signed(approved, payment) {
+                  return (await journal.attachPayment(approved.intentId, payment)).ok;
+                },
+                async resolve(approved, outcome) {
+                  if (!openedResearch.delete(approved.intentId)) return;
+                  await (outcome === "settled" ? journal.settle(approved.intentId) : journal.fail(approved.intentId));
+                },
+                remaining: () => remainingBudget(policy, currentState(), now()),
+                record,
+              },
+            },
+            symbol,
+          ).then((result) => {
+            rememberPurchase(result, symbol);
+            return result;
+          });
+    deepDives.set(symbol, work);
     const forget = () => deepDives.delete(symbol);
-    buying.then(forget, forget);
-    return buying;
+    work.then(forget, forget);
+    return work;
+  }
+
+  function ticketRecord(ticket: PaperOrderTicket) {
+    return {
+      ticketId: ticket.ticketId,
+      symbol: ticket.payload.symbol,
+      outcome: ticket.payload.outcome,
+      quantity: ticket.payload.quantity,
+      price: ticket.payload.price,
+      mode: ticket.mode,
+    };
   }
 
   async function execute(approved: ApprovedTrade, intent: TradeIntent, quote: Quote): Promise<DecisionLogEntry> {
-    reserve(approved);
-    const trade = await executeApproved(approved, { ledger, now, idGen, limitPrice: quote.limitPrice, limits: quote.limits });
-    settle(trade);
+    const operationId = approved.intentId;
+    const reservation = { opened: false };
+    const trade = await executeApproved(approved, {
+      ledger,
+      now,
+      idGen,
+      limitPrice: quote.limitPrice,
+      limits: quote.limits,
+      async reserve(ticket) {
+        const written = await journal.begin({
+          operationId,
+          kind: "trade",
+          notionalCents: approved.notional,
+          symbol: intent.instrumentSymbol,
+          outcome: intent.outcome,
+          senderId: intent.senderId,
+          source: intent.source,
+          ticket: ticketRecord(ticket),
+        });
+        reservation.opened = written.ok;
+        return written.ok;
+      },
+      async beforeBroadcast(payment) {
+        return (await journal.attachPayment(operationId, payment)).ok;
+      },
+    });
+    if (reservation.opened) {
+      if (trade.kind === "paper-order") await journal.settle(operationId);
+      else if (trade.error.code !== "debit-unconfirmed") await journal.fail(operationId);
+    }
     if (trade.kind === "execution-failed") {
       return record({
         ...tradeFields(intent),
@@ -469,7 +546,7 @@ export function createDesk(deps: DeskDeps): Desk {
       ...(request.seenPriceCents === undefined ? {} : { seenPriceCents: request.seenPriceCents }),
     };
     const quote = quoteFor(await resolveMarket(symbol, true), intent.outcome);
-    const decision = evaluate(intent, quote, policy, state, now());
+    const decision = evaluate(intent, quote, policy, currentState(), now());
     switch (decision.kind) {
       case "refuse":
         return record({ ...tradeFields(intent), kind: "refuse", code: decision.code, spokenReason: decision.spokenReason });
@@ -490,7 +567,7 @@ export function createDesk(deps: DeskDeps): Desk {
     const waiting = pending.get(intentId);
     if (!waiting) return { ok: false, error: "unknown-intent" };
     const quote = quoteFor(await resolveMarket(waiting.intent.instrumentSymbol, true), waiting.intent.outcome);
-    const confirmed = confirm(waiting.decision, approverId, quote, policy, state, now());
+    const confirmed = confirm(waiting.decision, approverId, quote, policy, currentState(), now());
     if (confirmed.kind === "refuse") {
       if (confirmed.code === "duplicate-intent") pending.delete(intentId);
       return {
@@ -502,6 +579,8 @@ export function createDesk(deps: DeskDeps): Desk {
     if (!quote) throw new Error("Approval requires a quote");
     return { ok: true, entry: await execute(confirmed, waiting.intent, quote) };
   }
+
+  syncPurchasesWithJournal();
 
   return {
     async submitNews(news) {
@@ -547,7 +626,7 @@ export function createDesk(deps: DeskDeps): Desk {
     },
 
     async getPositions() {
-      const fills = fillsFromLog(log);
+      const fills = fillsFromJournal(journal.entries());
       const byEvent = new Map<string, Set<string>>();
       for (const { symbol } of fills) {
         const parsed = parseInstrumentSymbol(symbol);
@@ -558,14 +637,20 @@ export function createDesk(deps: DeskDeps): Desk {
           const result = await markets.getEvent(eventTicker);
           if (!result.ok) return;
           for (const contract of result.value.contracts) {
-            if (symbols.has(contract.instrumentSymbol)) lastMarks.set(contract.instrumentSymbol, markFromContract(result.value, contract));
+            if (symbols.has(contract.instrumentSymbol)) lastMarks.set(contract.instrumentSymbol, markFromContract(result.value, contract, now().getTime()));
           }
         }),
       );
-      return { ...aggregatePositions(fills, lastMarks, now().toISOString()), researchSpend: summarizeResearchSpend(log, now().toISOString()) };
+      return { ...aggregatePositions(fills, lastMarks, now().toISOString()), researchSpend: summarizeResearchSpend(journal.entries(), now().toISOString()) };
     },
 
     buyDeepDive: deepDive,
+
+    async reconcile() {
+      const result = await reconcileJournal(journal, (payment) => ledger.checkSignature(payment));
+      syncPurchasesWithJournal();
+      return result;
+    },
 
     buyFromFeed({ clientOrderId, ...request }) {
       const previous = feedOrders.get(clientOrderId);
@@ -594,13 +679,13 @@ export function createDesk(deps: DeskDeps): Desk {
     },
 
     async getSnapshot() {
-      const rolled = rollDay(state, now());
+      const rolled = currentState();
       const best = current?.match.kind === "matched" ? await resolveMarket(current.match.best.contract.instrumentSymbol) : undefined;
       const config = policy;
       const policyView: PolicyView = {
         dailyCapCents: config.dailyCap,
         spentCents: rolled.spentToday,
-        researchSpentCents: todaysResearchSpendCents(log, rolled.day),
+        researchSpentCents: todaysResearchSpendCents(journal.entries(), rolled.day),
         remainingCents: Math.max(0, config.dailyCap - rolled.spentToday - rolled.reservedToday),
         autoApproveMaxCents: config.autoApproveMax,
         perTradeMaxCents: config.perTradeMax,

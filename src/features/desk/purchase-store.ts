@@ -7,7 +7,7 @@ import type { FileSystem } from "@/features/storage";
 const purchaseSchema = z.object({
   symbol: z.string(),
   atMs: z.number(),
-  brief: researchBriefSchema,
+  brief: researchBriefSchema.nullable(),
   receipt: z.object({ signature: z.string(), explorerUrl: z.string(), costCents: z.number() }),
 });
 

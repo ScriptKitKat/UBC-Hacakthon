@@ -5,9 +5,18 @@ const MEMO_PREFIX = "x402";
 
 export type NonceCheck = "ok" | "nonce_invalid" | "expired";
 
+export interface PaymentTerms {
+  readonly symbol: string;
+  readonly resource: string;
+  readonly amount: string;
+  readonly asset: string;
+  readonly payTo: string;
+  readonly network: string;
+}
+
 export interface NonceCodec {
-  readonly issue: (symbol: string, nowMs: number) => string;
-  readonly check: (nonce: string, symbol: string, nowMs: number) => NonceCheck;
+  readonly issue: (terms: PaymentTerms, nowMs: number) => string;
+  readonly check: (nonce: string, terms: PaymentTerms, nowMs: number) => NonceCheck;
 }
 
 export interface NonceCodecOptions {
@@ -16,8 +25,9 @@ export interface NonceCodecOptions {
   readonly randomHex: () => string;
 }
 
-function mac(secret: string, symbol: string, expiresAtMs: string, random: string): string {
-  return createHmac("sha256", secret).update(`${symbol}|${expiresAtMs}|${random}`).digest("hex").slice(0, MAC_LENGTH);
+function mac(secret: string, terms: PaymentTerms, expiresAtMs: string, random: string): string {
+  const { symbol, resource, amount, asset, payTo, network } = terms;
+  return createHmac("sha256", secret).update(JSON.stringify([symbol, resource, amount, asset, payTo, network, expiresAtMs, random])).digest("hex").slice(0, MAC_LENGTH);
 }
 
 function sameText(left: string, right: string): boolean {
@@ -29,17 +39,17 @@ function sameText(left: string, right: string): boolean {
 export function createNonceCodec(options: NonceCodecOptions): NonceCodec {
   const { secret, ttlMs, randomHex } = options;
   return {
-    issue(symbol, nowMs) {
+    issue(terms, nowMs) {
       const expiresAtMs = String(nowMs + ttlMs);
       const random = randomHex();
-      return `${expiresAtMs}.${random}.${mac(secret, symbol, expiresAtMs, random)}`;
+      return `${expiresAtMs}.${random}.${mac(secret, terms, expiresAtMs, random)}`;
     },
-    check(nonce, symbol, nowMs) {
+    check(nonce, terms, nowMs) {
       const [expiresAtMs, random, tag, ...rest] = nonce.split(".");
       if (expiresAtMs === undefined || random === undefined || tag === undefined || rest.length > 0 || !/^\d+$/.test(expiresAtMs)) {
         return "nonce_invalid";
       }
-      if (!sameText(tag, mac(secret, symbol, expiresAtMs, random))) return "nonce_invalid";
+      if (!sameText(tag, mac(secret, terms, expiresAtMs, random))) return "nonce_invalid";
       return Number(expiresAtMs) <= nowMs ? "expired" : "ok";
     },
   };

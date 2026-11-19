@@ -115,18 +115,18 @@ export function ResearchPage({ symbol }: { readonly symbol: string }) {
             <p key={message} className={styles.notice} role="status">{message}</p>
           ))}
           <MarketHeader market={view.market} nowMs={Date.parse(view.generatedAt)} />
+          <DeepDiveCard symbol={symbol} />
           <PriceChart series={view.series} timeframe={timeframe} onTimeframe={chooseTimeframe} showOverlays={pro} />
           <div className={styles.columns}>
             {pro ? <OrderBookPanel book={view.book} available={view.data.book === "live"} /> : null}
             {pro ? <TradesPanel trades={view.trades} available={view.data.trades === "live"} /> : null}
             {pro ? <IndicatorsPanel indicators={view.indicators} /> : null}
           </div>
-          <BeginnerPanel prices={view.market.prices} />
+          <BeginnerPanel prices={view.market.prices} limits={view.market.quantityLimits} />
           <div className={styles.columns}>
             <PostPanel post={view.postContext} />
             <RulesPanel rulesText={view.market.rulesText} />
             <RelatedPanel related={view.related} />
-            <DeepDiveCard symbol={symbol} />
           </div>
         </>
       ) : null}

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMemoryHistory } from "@/features/history";
 import { createPolicy } from "@/features/guardrails";
+import { openSpendJournal } from "@/features/journal";
 import type { UsdcLedger } from "@/features/ledger";
 import { createUnconfiguredLedger } from "@/features/ledger";
 import { createGeminiMarketsClient, fail, ok } from "@/features/markets";
@@ -23,7 +24,7 @@ function contract(instrument: typeof symbol, label: string, marketState = "open"
     expiryDate: null,
     marketState,
     status: "active",
-    prices: { bestBidCents: 60, bestAskCents: 62, lastTradeCents: 62, buyYesCents: 62, buyNoCents: 40, sellYesCents: null, sellNoCents: null },
+    prices: { bestBidCents: 60, bestAskCents: 62, lastTradeCents: 62, buyYesCents: 62, buyNoCents: 40, sellYesCents: 60, sellNoCents: 38 },
     limits: { quantityIncrementHundredths: 1n, quantityMinimumHundredths: 1n, priceIncrementCents: 1n, priceMinimumCents: 1n },
   };
 }
@@ -59,7 +60,7 @@ const configuredLedger: LedgerView = {
 function setup(options: { ledger?: UsdcLedger; ledgerView?: LedgerView; markets?: ReturnType<typeof fakeMarkets>; killSwitch?: boolean; extra?: Partial<DeskDeps> } = {}) {
   let counter = 0;
   const debit = vi.fn<UsdcLedger["debit"]>(() => Promise.resolve({ ok: true, value: receipt(`sig-${String(++counter)}`) }));
-  const ledger = options.ledger ?? { debit, signPayment: vi.fn(), balance: vi.fn() };
+  const ledger = options.ledger ?? { debit, signPayment: vi.fn(), checkSignature: vi.fn(), balance: vi.fn() };
   const markets = options.markets ?? fakeMarkets();
   const policy = createPolicy({
     dailyCap: usdCents(2000), autoApproveMax: usdCents(200), perTradeMax: usdCents(1000),
@@ -249,7 +250,7 @@ describe("desk", () => {
     const debit = vi.fn<UsdcLedger["debit"]>()
       .mockResolvedValueOnce({ ok: false, error: { code: "debit-rejected" } })
       .mockResolvedValueOnce({ ok: false, error: { code: "debit-unconfirmed", signature: "s" } });
-    const { desk } = await readyDesk({ ledger: { debit, signPayment: vi.fn(), balance: vi.fn() } });
+    const { desk } = await readyDesk({ ledger: { debit, signPayment: vi.fn(), checkSignature: vi.fn(), balance: vi.fn() } });
     expect(await desk.proposeTrade(propose("yes", 200))).toMatchObject({ kind: "execution-failed", code: "debit-rejected" });
     expect((await desk.getSnapshot()).policy.remainingCents).toBe(2000);
     expect(await desk.proposeTrade(propose("yes", 200))).toMatchObject({ kind: "execution-failed", code: "debit-unconfirmed" });
@@ -393,25 +394,124 @@ describe("desk feed", () => {
 });
 
 describe("desk persistence, positions and research context", () => {
-  it("restores the decision log after a restart and keeps positions", async () => {
+  it("restores the decision log, positions and the day's spend after a restart", async () => {
     const fs = createMemoryFileSystem();
     const first = await openDecisionLog({ fs, path: "/d/log.json" });
-    const { desk } = await readyDesk({ extra: { initialLog: first.initialLog, saveLog: first.saveLog } });
+    const journal = await openSpendJournal({ fs, path: "/d/journal.json", nowIso: () => "2026-11-17T12:00:00.000Z" });
+    const { desk } = await readyDesk({ extra: { initialLog: first.initialLog, saveLog: first.saveLog, journal } });
     const filled = await desk.proposeTrade(propose("yes", 200));
     expect(filled.kind).toBe("approve");
     await new Promise((resolve) => setTimeout(resolve, 0));
     const second = await openDecisionLog({ fs, path: "/d/log.json" });
-    const { desk: restarted } = setup({ extra: { initialLog: second.initialLog, saveLog: second.saveLog } });
-    expect((await restarted.getSnapshot()).log).toEqual([filled]);
+    const reopened = await openSpendJournal({ fs, path: "/d/journal.json", nowIso: () => "2026-11-17T12:00:00.000Z" });
+    const { desk: restarted } = setup({ extra: { initialLog: second.initialLog, saveLog: second.saveLog, journal: reopened } });
+    const snapshot = await restarted.getSnapshot();
+    expect(snapshot.log).toEqual([filled]);
+    expect(snapshot.policy).toMatchObject({ spentCents: 200, remainingCents: 1800 });
     const positions = await restarted.getPositions();
     expect(positions.positions).toHaveLength(1);
     expect(positions.positions[0]).toMatchObject({ symbol, outcome: "yes", costCents: 200, status: "open" });
   });
 
-  it("survives a corrupted log file", async () => {
+  it("refuses to start empty when the decision log is corrupt", async () => {
     const fs = createMemoryFileSystem({ "/d/log.json": "}{" });
-    const store = await openDecisionLog({ fs, path: "/d/log.json" });
-    expect(store.initialLog).toEqual([]);
+    await expect(openDecisionLog({ fs, path: "/d/log.json" })).rejects.toMatchObject({ name: "StoreUnavailableError" });
+    expect([...fs.files.keys()].some((name) => name.startsWith("/d/log.json.corrupt-"))).toBe(true);
+  });
+
+  it("keeps every filled position even after the display log has rolled over", async () => {
+    const { desk } = await readyDesk();
+    await desk.proposeTrade(propose("yes", 200));
+    for (let index = 0; index < 1100; index += 1) await desk.proposeTrade(propose("yes", 200, "stranger"));
+    const snapshot = await desk.getSnapshot();
+    expect(snapshot.log.some((entry) => entry.kind === "approve")).toBe(false);
+    const { positions } = await desk.getPositions();
+    expect(positions).toHaveLength(1);
+    expect(positions[0]).toMatchObject({ costCents: 200 });
+  });
+
+  it("does not let a restart reopen a cap that was already spent", async () => {
+    const fs = createMemoryFileSystem();
+    const journal = await openSpendJournal({ fs, path: "/d/journal.json", nowIso: () => "2026-11-17T12:00:00.000Z" });
+    const { desk } = await readyDesk({ extra: { journal } });
+    for (let index = 0; index < 10; index += 1) await desk.proposeTrade(propose("yes", 200));
+    expect((await desk.getSnapshot()).policy.remainingCents).toBe(0);
+    const reopened = await openSpendJournal({ fs, path: "/d/journal.json", nowIso: () => "2026-11-17T12:00:00.000Z" });
+    const { desk: restarted, debit } = await readyDesk({ extra: { journal: reopened, idGen: () => "after-restart" } });
+    expect(await restarted.proposeTrade(propose("yes", 200))).toMatchObject({ kind: "refuse", code: "over-daily-cap" });
+    expect(debit).not.toHaveBeenCalled();
+  });
+
+  it("writes the reservation, then the signature, to disk before the debit can be broadcast, and settles it afterwards", async () => {
+    const fs = createMemoryFileSystem();
+    const journal = await openSpendJournal({ fs, path: "/d/journal.json", nowIso: () => "2026-11-17T12:00:00.000Z" });
+    let onDiskAtBroadcast: unknown;
+    const debit = vi.fn<UsdcLedger["debit"]>(async (_intent, _notional, _memo, beforeBroadcast) => {
+      await beforeBroadcast({ signature: "sig-9", blockhash: "hash-9", explorerUrl: "https://explorer.test/tx/sig-9" });
+      onDiskAtBroadcast = JSON.parse(fs.files.get("/d/journal.json") ?? "{}");
+      return { ok: true, value: receipt("sig-9") };
+    });
+    const { desk } = await readyDesk({ ledger: { debit, signPayment: vi.fn(), checkSignature: vi.fn(), balance: vi.fn() }, extra: { journal } });
+    await desk.proposeTrade(propose("yes", 200));
+    expect(onDiskAtBroadcast).toMatchObject({ entries: [{ kind: "trade", status: "reserved", signature: "sig-9", blockhash: "hash-9", ticket: { quantity: expect.any(String) as unknown } }] });
+    expect(journal.entries()).toMatchObject([{ status: "settled", signature: "sig-9" }]);
+  });
+
+  it("refuses to trade, and never debits, when the reservation cannot be written", async () => {
+    const memory = createMemoryFileSystem();
+    const fs = { ...memory, writeTextAtomic: () => Promise.reject(new Error("ENOSPC")) };
+    const journal = await openSpendJournal({ fs, path: "/d/journal.json", nowIso: () => "2026-11-17T12:00:00.000Z" });
+    const { desk, debit } = await readyDesk({ extra: { journal } });
+    expect(await desk.proposeTrade(propose("yes", 200))).toMatchObject({
+      kind: "execution-failed", code: "journal-unavailable", spokenReason: "I couldn't record the payment safely, so I did not place the trade.",
+    });
+    expect(debit).not.toHaveBeenCalled();
+    expect((await desk.getSnapshot()).policy.remainingCents).toBe(2000);
+  });
+
+  it("keeps an unconfirmed debit reserved across a restart and turns it into a position once the chain shows it landed", async () => {
+    const fs = createMemoryFileSystem();
+    const journal = await openSpendJournal({ fs, path: "/d/journal.json", nowIso: () => "2026-11-17T12:00:00.000Z" });
+    const debit = vi.fn<UsdcLedger["debit"]>(async (_intent, _notional, _memo, beforeBroadcast) => {
+      await beforeBroadcast({ signature: "sig-u", blockhash: "hash-u", explorerUrl: "https://explorer.test/tx/sig-u" });
+      return { ok: false, error: { code: "debit-unconfirmed", signature: "sig-u" } };
+    });
+    const { desk } = await readyDesk({ ledger: { debit, signPayment: vi.fn(), checkSignature: vi.fn(), balance: vi.fn() }, extra: { journal } });
+    await desk.proposeTrade(propose("yes", 200));
+    const reopened = await openSpendJournal({ fs, path: "/d/journal.json", nowIso: () => "2026-11-17T12:00:00.000Z" });
+    const checkSignature = vi.fn<UsdcLedger["checkSignature"]>(() => Promise.resolve("pending"));
+    const ledger = { debit: vi.fn(), signPayment: vi.fn(), checkSignature, balance: vi.fn() };
+    const { desk: restarted } = await readyDesk({ ledger, extra: { journal: reopened } });
+    expect((await restarted.getSnapshot()).policy.remainingCents).toBe(1800);
+    expect((await restarted.getPositions()).positions).toEqual([]);
+    checkSignature.mockResolvedValue("landed");
+    expect(await restarted.reconcile()).toEqual({ settled: 1, failed: 0, stillReserved: 0 });
+    expect(checkSignature).toHaveBeenCalledWith({ signature: "sig-u", blockhash: "hash-u", explorerUrl: "https://explorer.test/tx/sig-u" });
+    const view = await restarted.getPositions();
+    expect(view.positions).toHaveLength(1);
+    expect(view.positions[0]).toMatchObject({ symbol, outcome: "yes", costCents: 200 });
+    expect((await restarted.getSnapshot()).policy).toMatchObject({ spentCents: 200, remainingCents: 1800 });
+  });
+
+  it("releases a trade whose payment was never signed once it is reconciled", async () => {
+    const fs = createMemoryFileSystem();
+    const journal = await openSpendJournal({ fs, path: "/d/journal.json", nowIso: () => "2026-11-17T12:00:00.000Z" });
+    await journal.begin({ operationId: "crashed", kind: "trade", notionalCents: 200, symbol, outcome: "yes", senderId: "priscilla", source: "feed" });
+    const { desk } = await readyDesk({ extra: { journal } });
+    expect((await desk.getSnapshot()).policy.remainingCents).toBe(1800);
+    expect(await desk.reconcile()).toEqual({ settled: 0, failed: 1, stillReserved: 0 });
+    expect((await desk.getSnapshot()).policy.remainingCents).toBe(2000);
+  });
+
+  it("does not release a reservation that belongs to another operation when a trade fails across midnight", async () => {
+    const fs = createMemoryFileSystem();
+    const journal = await openSpendJournal({ fs, path: "/d/journal.json", nowIso: () => "2026-11-17T23:59:00.000Z" });
+    await journal.begin({ operationId: "older", kind: "research", notionalCents: 5, symbol, outcome: null, senderId: "research-agent", source: "research" });
+    await journal.attachPayment("older", { signature: "s", blockhash: "h", explorerUrl: "e" });
+    const debit = vi.fn<UsdcLedger["debit"]>(() => Promise.resolve({ ok: false, error: { code: "debit-rejected" } }));
+    const { desk } = await readyDesk({ ledger: { debit, signPayment: vi.fn(), checkSignature: vi.fn(), balance: vi.fn() }, extra: { journal } });
+    await desk.proposeTrade(propose("yes", 200));
+    expect((await desk.getSnapshot()).policy.remainingCents).toBe(1995);
   });
 
   it("values filled positions at the sell price once the market is known", async () => {

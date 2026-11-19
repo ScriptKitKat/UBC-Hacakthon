@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Desk, DeskAccess } from "@/features/desk";
-import type { Research } from "@/features/research";
-import { PAYMENT_HEADER, PAYMENT_RESPONSE_HEADER, decodeHeader, paymentRequiredSchema, settlementResponseSchema } from "@/features/x402";
-import type { X402Server } from "@/features/x402";
+import type { DeepDiveResource } from "@/features/desk";
 import type { DeepDiveResult, ResearchBrief } from "@/shared";
 import { POST as purchase } from "./[symbol]/deep/purchase/route";
 import { GET as deep } from "./[symbol]/deep/route";
@@ -13,109 +11,68 @@ vi.mock("@/features/desk", async (importOriginal) => ({ ...(await importOriginal
 
 const SYMBOL = "GEMI-FED261211-MAINTAIN";
 const URL_BASE = `http://desk.test/api/research/${SYMBOL}/deep`;
+const SAME_ORIGIN = { "sec-fetch-site": "same-origin" };
 const context = (symbol = SYMBOL) => ({ params: Promise.resolve({ symbol }) });
 const brief: ResearchBrief = { symbol: SYMBOL, generatedAt: "t", headline: "H", sections: [], polishedBy: "template" };
 
-const requirements = vi.fn<X402Server["requirements"]>();
-const verify = vi.fn<X402Server["verify"]>();
-const settle = vi.fn<X402Server["settle"]>();
-const polished = vi.fn(() => Promise.resolve(brief));
-const briefFor = vi.fn<Research["brief"]>();
+const handle = vi.fn<DeepDiveResource["handle"]>();
 const buyDeepDive = vi.fn<Desk["buyDeepDive"]>();
 
-function access(): DeskAccess {
-  return {
-    ok: true,
-    desk: { buyDeepDive } as unknown as Desk,
-    research: { view: vi.fn(), brief: briefFor },
-    payments: { requirements, verify, settle },
-  };
+function access(deepDive: DeepDiveResource | undefined = { urlFor: vi.fn(), handle, recover: vi.fn() }): DeskAccess {
+  return { ok: true, desk: { buyDeepDive } as unknown as Desk, research: { view: vi.fn(), brief: vi.fn() }, deepDive };
 }
 
 beforeEach(() => {
-  requirements.mockReset().mockImplementation((symbol, resource, description, error) => ({
-    x402Version: 1,
-    error,
-    accepts: [{
-      scheme: "exact", network: "solana-localnet", maxAmountRequired: "50000", asset: "Mint", payTo: "Payee", resource, description,
-      mimeType: "application/json", maxTimeoutSeconds: 120, extra: { nonce: "n", memo: `x402|${symbol}|n` },
-    }],
-  }));
-  verify.mockReset().mockResolvedValue({ ok: true, value: { symbol: SYMBOL, nonce: "n", payment: { payer: "P", signature: "S", memo: "m", rawTransaction: Buffer.alloc(0) } } });
-  settle.mockReset().mockResolvedValue({ ok: true, value: { signature: "S", payer: "P", network: "solana-localnet" } });
-  polished.mockClear();
-  briefFor.mockReset().mockResolvedValue({ kind: "ok", template: brief, polished });
+  handle.mockReset().mockResolvedValue(Response.json(brief));
   buyDeepDive.mockReset();
   getDesk.mockReset().mockResolvedValue(access());
 });
 
 describe("GET /api/research/[symbol]/deep", () => {
-  it("answers an unpaid request with 402 and the x402 v1 requirements", async () => {
-    const response = await deep(new Request(`${URL_BASE}?utm=1`), context());
-    expect(response.status).toBe(402);
-    const body = paymentRequiredSchema.parse(await response.json());
-    expect(body).toMatchObject({ x402Version: 1, error: "payment_required", accepts: [{ resource: URL_BASE, maxAmountRequired: "50000" }] });
-    expect(verify).not.toHaveBeenCalled();
-    expect(briefFor).not.toHaveBeenCalled();
-  });
-
-  it("delivers the brief with a settlement receipt once the payment verifies and settles", async () => {
-    const response = await deep(new Request(URL_BASE, { headers: { [PAYMENT_HEADER]: "payload" } }), context());
-    expect(response.status).toBe(200);
+  it("hands the request to the deep dive resource for the symbol and returns its answer", async () => {
+    const request = new Request(URL_BASE);
+    const response = await deep(request, context());
+    expect(handle).toHaveBeenCalledWith(request, SYMBOL);
     expect(await response.json()).toEqual(brief);
-    expect(decodeHeader(settlementResponseSchema, response.headers.get(PAYMENT_RESPONSE_HEADER) ?? "")).toEqual({
-      success: true, transaction: "S", network: "solana-localnet", payer: "P",
-    });
-    expect(verify).toHaveBeenCalledWith("payload", SYMBOL);
   });
 
-  it("answers a failed verification with 402, the specific error and a fresh nonce, and never settles", async () => {
-    verify.mockResolvedValue({ ok: false, error: "wrong_amount" });
-    const response = await deep(new Request(URL_BASE, { headers: { [PAYMENT_HEADER]: "payload" } }), context());
-    expect(response.status).toBe(402);
-    expect(paymentRequiredSchema.parse(await response.json()).error).toBe("wrong_amount");
-    expect(settle).not.toHaveBeenCalled();
-    expect(response.headers.get(PAYMENT_RESPONSE_HEADER)).toBeNull();
-  });
-
-  it("answers a failed settlement with 402 and withholds the brief", async () => {
-    settle.mockResolvedValue({ ok: false, error: "settlement_failed" });
-    const response = await deep(new Request(URL_BASE, { headers: { [PAYMENT_HEADER]: "payload" } }), context());
-    expect(response.status).toBe(402);
-    expect(paymentRequiredSchema.parse(await response.json()).error).toBe("settlement_failed");
-    expect(polished).not.toHaveBeenCalled();
-  });
-
-  it("does not settle when the market data is unavailable, so nobody pays for nothing", async () => {
-    briefFor.mockResolvedValue({ kind: "unavailable" });
-    const response = await deep(new Request(URL_BASE, { headers: { [PAYMENT_HEADER]: "payload" } }), context());
-    expect(response.status).toBe(503);
-    expect(settle).not.toHaveBeenCalled();
-  });
-
-  it("rejects a malformed symbol and reports payments as unconfigured", async () => {
+  it("rejects a malformed symbol before touching the resource", async () => {
     expect((await deep(new Request(URL_BASE), context("nope"))).status).toBe(400);
-    getDesk.mockResolvedValue({ ...access(), payments: undefined } as DeskAccess);
-    const response = await deep(new Request(URL_BASE), context());
-    expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ error: "research-payments-not-configured" });
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  it("reports unconfigured payments and a misconfigured desk as 503", async () => {
+    getDesk.mockResolvedValue({ ...access(), deepDive: undefined } as DeskAccess);
+    const unconfigured = await deep(new Request(URL_BASE), context());
+    expect(unconfigured.status).toBe(503);
+    expect(await unconfigured.json()).toEqual({ error: "research-payments-not-configured" });
+    getDesk.mockResolvedValue({ ok: false, issues: ["storage: broken"] });
+    expect(await (await deep(new Request(URL_BASE), context())).json()).toEqual({ error: "desk-misconfigured", issues: ["storage: broken"] });
   });
 });
 
 describe("POST /api/research/[symbol]/deep/purchase", () => {
   const result: DeepDiveResult = { status: "delivered", alreadyPurchased: false, trace: [], failureReason: null, brief, purchase: null };
+  const post = (headers: Record<string, string>, symbol = SYMBOL) =>
+    purchase(new Request(`${URL_BASE}/purchase`, { method: "POST", headers }), context(symbol));
 
-  it("runs the purchase against the request's own origin", async () => {
+  it("buys the brief for a dashboard request and never forwards any request-derived origin", async () => {
     buyDeepDive.mockResolvedValue(result);
-    const response = await purchase(new Request(`${URL_BASE}/purchase`, { method: "POST" }), context());
+    const response = await post(SAME_ORIGIN);
     expect(await response.json()).toEqual(result);
-    expect(buyDeepDive).toHaveBeenCalledWith(SYMBOL, "http://desk.test");
+    expect(buyDeepDive).toHaveBeenCalledExactlyOnceWith(SYMBOL);
   });
 
-  it("refuses cross-origin posts and malformed symbols", async () => {
-    const crossOrigin = await purchase(new Request(`${URL_BASE}/purchase`, { method: "POST", headers: { origin: "http://evil.test" } }), context());
-    expect(crossOrigin.status).toBe(403);
-    expect((await purchase(new Request(`${URL_BASE}/purchase`, { method: "POST" }), context("nope"))).status).toBe(400);
+  it("refuses a post with no browser provenance, a foreign origin, another scheme or a cross-site fetch", async () => {
+    for (const headers of [{}, { origin: "http://evil.test" }, { origin: "https://desk.test" }, { "sec-fetch-site": "cross-site" }]) {
+      expect((await post(headers)).status).toBe(403);
+    }
     expect(buyDeepDive).not.toHaveBeenCalled();
+  });
+
+  it("accepts a same-origin Origin header and rejects malformed symbols", async () => {
+    buyDeepDive.mockResolvedValue(result);
+    expect((await post({ origin: "http://desk.test" })).status).toBe(200);
+    expect((await post(SAME_ORIGIN, "nope")).status).toBe(400);
   });
 });

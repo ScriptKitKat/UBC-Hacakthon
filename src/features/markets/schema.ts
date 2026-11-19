@@ -144,12 +144,15 @@ export const eventsPageSchema = z
   })
   .transform((raw): EventsPage => ({ events: raw.data, total: raw.pagination.total }));
 
+const MAX_DATE_MS = 8_640_000_000_000_000;
+const decimalText = z.string().regex(/^\d+(?:\.\d+)?$/);
+const timestampMs = z.number().int().nonnegative().max(MAX_DATE_MS);
 const dollarsToCents = z.number().nonnegative().max(1).transform((dollars) => Math.round(dollars * 10000) / 100);
-const priceText = z.string().transform(Number).pipe(z.number().nonnegative().max(1)).transform((dollars) => Math.round(dollars * 10000) / 100);
-const amountText = z.string().transform(Number).pipe(z.number().nonnegative());
+const priceText = decimalText.transform(Number).pipe(z.number().max(1)).transform((dollars) => Math.round(dollars * 10000) / 100);
+const amountText = decimalText.transform(Number).pipe(z.number());
 
 export const candlesSchema = z
-  .array(z.tuple([z.number(), dollarsToCents, dollarsToCents, dollarsToCents, dollarsToCents, z.number().nonnegative()]))
+  .array(z.tuple([timestampMs, dollarsToCents, dollarsToCents, dollarsToCents, dollarsToCents, z.number().nonnegative()]))
   .transform((rows): Candle[] =>
     rows.map(([timeMs, openCents, highCents, lowCents, closeCents, volume]) => ({ timeMs, openCents, highCents, lowCents, closeCents, volume })),
   );
@@ -161,7 +164,7 @@ export const orderBookSchema = z
   .transform((book): OrderBook => ({ bids: book.bids ?? [], asks: book.asks ?? [] }));
 
 export const recentTradesSchema = z
-  .array(z.object({ tid: z.number(), timestampms: z.number(), price: priceText, amount: amountText, type: z.enum(["buy", "sell"]) }))
+  .array(z.object({ tid: z.number(), timestampms: timestampMs, price: priceText, amount: amountText, type: z.enum(["buy", "sell"]) }))
   .transform((rows): RecentTrade[] =>
     rows.map((row) => ({ tradeId: row.tid, timeMs: row.timestampms, priceCents: row.price, amount: row.amount, side: row.type })),
   );

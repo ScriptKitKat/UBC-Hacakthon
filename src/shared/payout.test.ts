@@ -13,8 +13,9 @@ describe("payoutFor", () => {
     const result = quote(62, 100);
     expect(result.contracts).toBe(1.61);
     expect(result.payoutCents).toBe(161);
-    expect(result.profitCents).toBe(61);
-    expect(result.returnPercent).toBeCloseTo(61, 5);
+    expect(result.costCents).toBeCloseTo(99.82, 5);
+    expect(result.profitCents).toBeCloseTo(61.18, 5);
+    expect(result.returnPercent).toBeCloseTo((61.18 / 99.82) * 100, 5);
     expect(result.breakEvenPercent).toBe(62);
   });
 
@@ -29,6 +30,7 @@ describe("payoutFor", () => {
     const no = quote(40, 500);
     expect(yes.payoutCents).toBe(806);
     expect(no.payoutCents).toBe(1250);
+    expect(no.costCents).toBe(500);
     expect(no.profitCents).toBe(750);
   });
 
@@ -65,6 +67,29 @@ describe("payoutFor", () => {
     expect(payoutFor(62, -5)).toEqual({ kind: "invalid-stake" });
     expect(payoutFor(62, 1.5)).toEqual({ kind: "invalid-stake" });
     expect(payoutFor(62, Number.NaN)).toEqual({ kind: "invalid-stake" });
+    expect(payoutFor(62, Number.POSITIVE_INFINITY)).toEqual({ kind: "invalid-stake" });
+    expect(payoutFor(62, Number.MAX_SAFE_INTEGER + 1)).toEqual({ kind: "invalid-stake" });
+  });
+
+  it("computes profit from the actual cost of the rounded quantity", () => {
+    const result = quote(60, 100);
+    expect(result.contracts).toBe(1.66);
+    expect(result.costCents).toBeCloseTo(99.6, 5);
+    expect(result.profitCents).toBeCloseTo(66.4, 5);
+  });
+
+  it("rounds down to the market's quantity increment", () => {
+    const result = payoutFor(60, 100, { quantityIncrementHundredths: 10, quantityMinimumHundredths: 10 });
+    expect(result).toMatchObject({ kind: "quote", contracts: 1.6 });
+  });
+
+  it("reports the minimum order when the stake buys less than it", () => {
+    expect(payoutFor(60, 100, { quantityIncrementHundredths: 100, quantityMinimumHundredths: 200 })).toEqual({ kind: "below-minimum", minimumContracts: 2 });
+    expect(payoutFor(60, 100, { quantityIncrementHundredths: 200, quantityMinimumHundredths: 200 })).toEqual({ kind: "below-minimum", minimumContracts: 2 });
+  });
+
+  it("rejects unusable limits", () => {
+    expect(payoutFor(60, 100, { quantityIncrementHundredths: 0, quantityMinimumHundredths: 1 })).toEqual({ kind: "no-price" });
   });
 
   it("buys a hundredth of a contract with the smallest stake", () => {
