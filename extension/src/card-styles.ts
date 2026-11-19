@@ -1,113 +1,87 @@
 export const CARD_COLORS = {
-  surface: "#16181c",
-  text: "rgb(231, 233, 234)",
-  border: "rgb(47, 51, 54)",
-  up: "rgb(0, 186, 124)",
-  down: "rgb(249, 24, 128)",
+  surface: "rgb(0, 0, 0)",
+  text: "rgb(237, 242, 234)",
+  border: "rgba(168, 192, 143, .48)",
+  up: "rgb(74, 222, 128)",
+  down: "rgb(248, 113, 113)",
 } as const;
 
 export const CARD_CSS = `
-:host { all: initial; display: block; margin-top: 12px; }
+:host { all: initial; display: block; margin-top: 12px; color-scheme: dark; container-type: inline-size; }
 *, *::before, *::after { box-sizing: border-box; }
 .card {
-  width: 100%;
-  max-width: 516px;
-  overflow: hidden;
-  border: 1px solid ${CARD_COLORS.border};
-  border-radius: 16px;
-  background: ${CARD_COLORS.surface};
-  color: ${CARD_COLORS.text};
-  font-family: TwitterChirp, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  font-size: 15px;
-  line-height: 20px;
-  text-align: left;
+  width: 100%; max-width: 516px; overflow: hidden; border: 1px solid ${CARD_COLORS.border}; border-radius: 24px;
+  background: ${CARD_COLORS.surface}; color: ${CARD_COLORS.text};
+  box-shadow: 0 0 24px rgba(162, 190, 141, .08), inset 0 1px 0 rgba(235, 244, 229, .06);
+  font: 500 15px/22px "NTD Manrope", ui-rounded, "Avenir Next", "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums; text-align: left; -webkit-font-smoothing: antialiased;
 }
-.body { padding: 12px 16px; display: grid; gap: 12px; }
-.head { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 12px; align-items: center; }
-.icon {
-  width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
-  background: linear-gradient(135deg, #00dcfa, #1a6bff);
-}
-.icon svg { width: 24px; height: 24px; }
+.body { padding: 20px; display: grid; gap: 18px; }
+.head { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 12px; align-items: center; }
+.icon { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, #00b9f5, #1a6bff); }
+.icon svg { width: 28px; height: 28px; }
 .titles { min-width: 0; }
-.title { font-weight: 700; color: ${CARD_COLORS.text}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sub { color: rgb(113, 118, 123); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sub strong { color: ${CARD_COLORS.text}; font-weight: 700; }
-.price-row { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; overflow: hidden; }
-.price-label { color: rgb(113, 118, 123); font-size: 13px; font-weight: 700; }
-.price { color: ${CARD_COLORS.text}; font-size: 28px; line-height: 32px; font-weight: 800; letter-spacing: -0.5px; }
-.change { font-size: 14px; font-weight: 700; }
-.change[data-trend="up"] { color: ${CARD_COLORS.up}; }
-.change[data-trend="down"] { color: ${CARD_COLORS.down}; }
-.change[data-trend="flat"] { color: rgb(113, 118, 123); }
-.no-price { margin-left: auto; color: rgb(113, 118, 123); font-size: 13px; }
-.chart { width: 112px; height: 40px; }
-.chart svg { width: 100%; height: 100%; display: block; overflow: visible; }
-.line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.line[data-trend="up"] { stroke: ${CARD_COLORS.up}; }
-.line[data-trend="down"] { stroke: ${CARD_COLORS.down}; }
-.line[data-trend="flat"] { stroke: rgb(113, 118, 123); }
-.area[data-trend="up"] { fill: rgba(0, 186, 124, 0.12); }
-.area[data-trend="down"] { fill: rgba(249, 24, 128, 0.12); }
-.area[data-trend="flat"] { fill: rgba(113, 118, 123, 0.12); }
-.bar { display: grid; gap: 4px; align-content: center; height: 100%; }
-.bar-track { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: ${CARD_COLORS.border}; }
-.bar-yes { background: ${CARD_COLORS.up}; }
-.bar-no { background: ${CARD_COLORS.down}; flex: 1; }
-.bar-labels { display: flex; justify-content: space-between; font-size: 11px; line-height: 12px; color: rgb(113, 118, 123); }
-.why { display: flex; gap: 8px; align-items: flex-start; color: ${CARD_COLORS.text}; }
-.badge {
-  flex: none; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 700; line-height: 20px;
-  background: rgb(239, 243, 244); color: rgb(15, 20, 25);
-}
-.badge[data-source="keywords"] {
-  padding: 0 6px; font-size: 10px; font-weight: 500; line-height: 16px; margin-top: 2px;
-  background: transparent; border: 1px solid ${CARD_COLORS.border}; color: rgb(113, 118, 123);
-}
-.why-text { min-width: 0; }
-.trade { display: grid; gap: 8px; }
-.chips { display: flex; gap: 8px; }
-button, a.link { font: inherit; }
-.chip {
-  flex: 1; height: 32px; border-radius: 999px; border: 1px solid rgb(83, 100, 113); background: transparent;
-  color: ${CARD_COLORS.text}; font-weight: 700; cursor: pointer;
-}
-.chip[aria-pressed="true"] { background: rgb(239, 243, 244); color: rgb(15, 20, 25); border-color: rgb(239, 243, 244); }
-.buys { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.buy {
-  height: 40px; border-radius: 999px; border: 0; font-weight: 700; color: #fff; cursor: pointer;
-}
-.buy[data-outcome="yes"] { background: ${CARD_COLORS.up}; }
-.buy[data-outcome="no"] { background: ${CARD_COLORS.down}; }
-.chip:disabled, .buy:disabled, .approve:disabled { opacity: 0.5; cursor: not-allowed; }
-button:focus-visible, a.link:focus-visible { outline: 2px solid rgb(29, 155, 240); outline-offset: 2px; }
-.blocked { color: rgb(113, 118, 123); font-size: 13px; line-height: 16px; }
-.result { border-radius: 12px; padding: 8px 12px; font-size: 14px; line-height: 18px; display: grid; gap: 6px; }
-.result[data-tone="filled"] { background: rgba(0, 186, 124, 0.12); color: ${CARD_COLORS.up}; }
-.result[data-tone="approval"] { background: rgba(255, 173, 31, 0.12); color: rgb(255, 173, 31); }
-.result[data-tone="refused"] { background: rgba(249, 24, 128, 0.12); color: ${CARD_COLORS.down}; }
-.result[data-tone="quiet"], .result[data-tone="pending"] { background: rgba(113, 118, 123, 0.12); color: rgb(139, 152, 165); }
+.title { font-size: 14px; line-height: 20px; color: #b3bdb5; overflow-wrap: anywhere; }
+.deadline { font-size: 11px; line-height: 16px; color: #a3afa5; }
+button, select, input, a { font: inherit; }
+.contract-picker { position: relative; display: inline-grid; grid-template-columns: minmax(0, 1fr) 18px; align-items: center; gap: 8px; max-width: 100%; padding: 3px 0; font-size: 24px; line-height: 32px; font-weight: 700; letter-spacing: -.6px; }
+.contract-picker[data-disabled="true"] { opacity: .5; }
+.contract-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contract { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.contract-chevron { width: 18px; height: 18px; pointer-events: none; color: #d4dfcf; }
+.contract option { background: ${CARD_COLORS.surface}; color: ${CARD_COLORS.text}; font-size: 16px; }
+.trade { display: grid; gap: 16px; }
+.outcomes { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; gap: 4px; border: 1px solid rgba(191, 210, 180, .16); border-radius: 999px; background: rgba(0, 0, 0, .2); box-shadow: inset 0 1px 6px rgba(0, 0, 0, .18); }
+.outcome { min-height: 46px; padding: 8px; border-radius: 999px; border: 1px solid transparent; background: transparent; color: #b3bdb5; font-size: 20px; line-height: 26px; font-weight: 650; cursor: pointer; }
+.outcome[data-outcome="yes"] { background: rgba(34, 197, 94, .08); border-color: rgba(74, 222, 128, .2); color: ${CARD_COLORS.up}; }
+.outcome[data-outcome="no"] { background: rgba(239, 68, 68, .08); border-color: rgba(248, 113, 113, .2); color: ${CARD_COLORS.down}; }
+.outcome[data-outcome="yes"][aria-pressed="true"] { background: rgba(34, 197, 94, .22); border-color: ${CARD_COLORS.up}; box-shadow: 0 0 16px rgba(34, 197, 94, .12), inset 0 1px 0 rgba(255, 255, 255, .09); }
+.outcome[data-outcome="no"][aria-pressed="true"] { background: rgba(239, 68, 68, .22); border-color: ${CARD_COLORS.down}; box-shadow: 0 0 16px rgba(239, 68, 68, .12), inset 0 1px 0 rgba(255, 255, 255, .09); }
+.amount-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 16px; border: 1px solid rgba(191, 210, 180, .24); border-radius: 18px; background: ${CARD_COLORS.surface}; cursor: text; }
+.amount-label { font-weight: 650; }
+.amount-value { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; max-width: 75%; font-size: 32px; line-height: 40px; font-weight: 650; letter-spacing: -1px; }
+.amount-unit { font-size: 13px; line-height: 20px; letter-spacing: 0; color: #b3bdb5; }
+.amount-editor { position: relative; min-width: 0; }
+.amount-mirror { visibility: hidden; white-space: pre; }
+.amount-input { position: absolute; inset: 0; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: ${CARD_COLORS.text}; font: inherit; letter-spacing: inherit; font-variant-numeric: inherit; text-align: right; }
+.amount-error { color: #ff6eae; font-size: 12px; line-height: 18px; }
+.estimate { text-align: center; }
+.payout { color: ${CARD_COLORS.up}; font-weight: 600; line-height: 24px; }
+.estimate[data-outcome="no"] .payout { color: ${CARD_COLORS.down}; }
+.estimate-note { margin-top: 3px; color: #a7b1ba; font-size: 11px; line-height: 16px; }
+.buy { width: 100%; min-height: 48px; padding: 12px 16px; border: 1px solid rgba(188, 211, 170, .5); border-radius: 999px; background: linear-gradient(165deg, #384238, #1c251e 70%); color: #f0f5eb; font-weight: 650; box-shadow: 0 0 22px rgba(172, 202, 148, .12), inset 0 1px 0 rgba(255, 255, 255, .13); cursor: pointer; }
+button:disabled, input:disabled { opacity: .5; cursor: not-allowed; }
+select:disabled { cursor: not-allowed; }
+button:focus-visible, input:focus-visible, a:focus-visible, .contract-picker:focus-within { outline: 2px solid #bed5ac; outline-offset: 3px; }
+.blocked { color: #a7b1ba; font-size: 13px; line-height: 18px; }
+.result { border-radius: 12px; padding: 8px 12px; font-size: 14px; line-height: 18px; display: grid; gap: 6px; overflow-wrap: anywhere; }
+.result[data-tone="filled"] { background: rgba(0,186,124,.12); color: ${CARD_COLORS.up}; }
+.result[data-tone="approval"] { background: rgba(255,173,31,.12); color: rgb(255,173,31); }
+.result[data-tone="refused"] { background: rgba(249,24,128,.12); color: ${CARD_COLORS.down}; }
+.result[data-tone="quiet"], .result[data-tone="pending"] { background: rgba(113,118,123,.12); color: #a7b1ba; }
 .result-title { font-weight: 700; }
+.status:empty { display: none; }
 .result-detail { color: ${CARD_COLORS.text}; }
-.link { color: rgb(29, 155, 240); text-decoration: none; font-weight: 700; }
-.link:hover { text-decoration: underline; }
-.approve {
-  justify-self: start; height: 32px; padding: 0 16px; border-radius: 999px; border: 0;
-  background: rgb(255, 173, 31); color: rgb(15, 20, 25); font-weight: 700; cursor: pointer;
-}
-.foot {
-  padding: 8px 16px; text-align: center; font-size: 14px; color: rgb(139, 152, 165);
-  background: rgba(0, 0, 0, 0.35); border-top: 1px solid ${CARD_COLORS.border};
-}
-.foot strong { color: ${CARD_COLORS.text}; }
-.research { margin-left: 10px; color: rgb(29, 155, 240); font-weight: 700; text-decoration: none; }
-.research:hover { text-decoration: underline; }
-@media (max-width: 420px) {
-  .head { grid-template-columns: 44px minmax(0, 1fr); }
-  .chart { grid-column: 1 / -1; width: 100%; }
+.result-note { color: #a7b1ba; font-size: 12px; }
+.link { color: #d0e4bf; text-decoration: none; font-weight: 650; }
+.approve { justify-self: start; min-height: 36px; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(231, 202, 167, .5); background: linear-gradient(155deg, #423b2e, #272218); color: #f2dec4; box-shadow: 0 0 16px rgba(231, 202, 167, .08), inset 0 1px 0 rgba(255, 255, 255, .1); font-weight: 650; cursor: pointer; }
+.foot { padding: 13px 16px; text-align: center; font-size: 12px; line-height: 18px; color: #a8b4aa; background: rgba(0, 0, 0, .18); border-top: 1px solid rgba(168, 192, 143, .18); }
+.foot a { color: #d9e6d0; font-weight: 650; text-underline-offset: 3px; }
+a:hover { text-decoration: underline; color: #edfae5; }
+@container (max-width: 300px) {
+  .body { padding: 16px 12px; }
+  .head { grid-template-columns: 32px minmax(0, 1fr); gap: 8px; }
+  .icon { width: 32px; height: 32px; }
+  .icon svg { width: 22px; height: 22px; }
+  .contract-picker { font-size: 18px; gap: 6px; }
+  .outcome { font-size: 17px; white-space: nowrap; }
+  .amount-field { padding: 12px; }
+  .amount-label { font-size: 13px; }
+  .amount-value { font-size: 24px; line-height: 32px; }
+  .payout { font-size: 13px; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .buy, .chip { transition: filter 120ms ease; }
-  .buy:hover:not(:disabled), .chip:hover:not(:disabled) { filter: brightness(1.12); }
+  button { transition: filter 120ms ease; }
+  button:hover:not(:disabled) { filter: brightness(1.12); }
 }
 `;

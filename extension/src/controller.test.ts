@@ -240,4 +240,39 @@ describe("feed controller", () => {
     await settle();
     expect(requests.filter((request) => request.type === "match")).toHaveLength(2);
   });
+
+  it("loads the desk budget and blocks trades the guardrails would refuse", async () => {
+    const budget = { remainingCents: 1800, perTradeMaxCents: 1000, autoApproveMaxCents: 200 };
+    const { controller, articles, show, requests } = setup((request) => (
+      request.type === "budget" ? { ok: true, value: { ...budget } } : defaultReply(request)
+    ));
+    controller.start();
+    show(0);
+    await vi.advanceTimersByTimeAsync(400);
+    await settle();
+    expect(requests.some((request) => request.type === "budget")).toBe(true);
+    expect(requests.some((request) => request.type === "positions")).toBe(false);
+    const root = articles()[0]?.querySelector("[data-ntd-card]")?.shadowRoot;
+    if (!root) throw new Error("missing card");
+    const typeAmount = (value: string) => {
+      const input = root.querySelector<HTMLInputElement>('[data-key="amount"]');
+      if (!input) throw new Error("missing amount field");
+      input.value = value;
+      const event = new Event("input", { bubbles: true, composed: true });
+      Object.defineProperty(event, "isTrusted", { value: true });
+      input.dispatchEvent(event);
+    };
+    const trade = () => root.querySelector<HTMLButtonElement>('[data-key="trade"]');
+    typeAmount("23.00");
+    expect(trade()?.disabled).toBe(true);
+    expect(root.textContent).toContain("Over your limit: max 10 USDC per trade (18 USDC left today)");
+    typeAmount("5.00");
+    expect(trade()?.disabled).toBe(false);
+    expect(root.textContent).toContain("Needs approval");
+    budget.remainingCents = 300;
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(trade()?.disabled).toBe(true);
+    expect(root.textContent).toContain("Over your limit: max 10 USDC per trade (3 USDC left today)");
+    controller.stop();
+  });
 });

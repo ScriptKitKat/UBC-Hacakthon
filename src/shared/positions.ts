@@ -79,6 +79,8 @@ export const feedPositionsSchema = z.object({
     spentCents: z.number(),
     remainingCents: z.number(),
     researchSpentCents: z.number(),
+    perTradeMaxCents: z.number().int().nonnegative(),
+    autoApproveMaxCents: z.number().int().nonnegative(),
   }),
 });
 

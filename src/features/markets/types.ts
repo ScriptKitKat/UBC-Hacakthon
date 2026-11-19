@@ -31,6 +31,7 @@ export interface MarketContract {
 
 export interface MarketEvent {
   readonly ticker: string;
+  readonly slug?: string;
   readonly title: string;
   readonly category: string;
   readonly status: string;

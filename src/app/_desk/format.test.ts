@@ -15,7 +15,7 @@ describe("desk formatting", () => {
     expect(parseDollarsToCents(text)).toBe(cents);
   });
 
-  it.each(["", "abc", "-1", "1.234", "1e3"])("rejects %j", (text) => {
+  it.each(["", "abc", "-1", "1.234", "1e3", "999999999999999999999"])("rejects %j", (text) => {
     expect(parseDollarsToCents(text)).toBeUndefined();
   });
 

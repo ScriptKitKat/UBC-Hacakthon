@@ -110,6 +110,7 @@ const contractSchema = z
 export const eventSchema = z
   .object({
     ticker: z.string().min(1),
+    slug: z.string().optional(),
     title: z.string(),
     category: z.string().nullish(),
     status: z.string(),
@@ -124,6 +125,7 @@ export const eventSchema = z
   .transform(
     (raw): MarketEvent => ({
       ticker: raw.ticker,
+      ...(raw.slug === undefined ? {} : { slug: raw.slug }),
       title: raw.title,
       category: raw.category ?? "",
       status: raw.status,

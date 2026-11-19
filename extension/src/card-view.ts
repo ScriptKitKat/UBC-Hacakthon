@@ -1,25 +1,26 @@
+import { parseDollarsToCents, payoutFor } from "@/shared";
 import { canBuy, cardReducer, initialCardState, isBusy } from "./card-state";
-import type { CardAction, CardState } from "./card-state";
+import type { CardAction } from "./card-state";
+import { ensureCardFont } from "./card-font";
 import { CARD_CSS } from "./card-styles";
 import { h, svg } from "./dom";
 import type { Child } from "./dom";
-import { clampPercent, formatCents, formatChangePercent, formatDollars, formatPercent } from "./format";
-import { AMOUNT_CHOICES_CENTS } from "./protocol";
+import { formatCents, formatPercent, formatUsdc } from "./format";
 import type { Sender } from "./protocol";
-import { buildSparkline } from "./sparkline";
-import type { Trend } from "./sparkline";
+import { isSafeExplorerLink, isSafeGeminiLink } from "./safe-link";
+import { needsApprovalNote, overTradeLimitMessage } from "./trade-budget";
+import type { TradeBudget } from "./trade-budget";
 import type { WireEntry, WireMatched, WireQuote } from "./wire";
 
 export const CARD_HOST_ATTRIBUTE = "data-ntd-card";
-const CHART_WIDTH = 112;
-const CHART_HEIGHT = 40;
-const BUBBLING_EVENTS = ["click", "mousedown", "mouseup", "pointerdown", "pointerup", "keydown", "keyup", "keypress", "touchstart", "touchend"];
+const BUBBLING_EVENTS = ["click", "change", "input", "mousedown", "mouseup", "pointerdown", "pointerup", "keydown", "keyup", "keypress", "touchstart", "touchend"];
 
 export interface CardHandle {
   readonly host: HTMLElement;
   readonly postId: string;
   readonly symbol: string;
   readonly update: (quote: WireQuote) => void;
+  readonly updateBudget: (budget: TradeBudget | undefined) => void;
 }
 
 function gemIcon(): SVGElement {
@@ -37,53 +38,27 @@ function userOnly(handler: () => void): (event: Event) => void {
   };
 }
 
-function trendOf(state: CardState): Trend {
-  const first = state.history[0]?.yesCents;
-  const last = state.history.at(-1)?.yesCents;
-  if (first === undefined || last === undefined || last === first) return "flat";
-  return last > first ? "up" : "down";
-}
-
-function chartView(state: CardState): Child {
-  const sparkline = buildSparkline(state.history.map((point) => point.yesCents), CHART_WIDTH, CHART_HEIGHT);
-  if (sparkline) {
-    const chart = svg("svg", { attributes: { viewBox: `0 0 ${String(CHART_WIDTH)} ${String(CHART_HEIGHT)}`, role: "img", "aria-label": "Yes price history" } });
-    chart.append(
-      svg("path", { className: "area", attributes: { d: sparkline.area, "data-trend": sparkline.trend } }),
-      svg("path", { className: "line", attributes: { d: sparkline.line, "data-trend": sparkline.trend } }),
-    );
-    return chart;
-  }
-  const yes = clampPercent(state.market.impliedYesPercent ?? state.market.yesCents);
-  const yesFill = h("div", { className: "bar-yes", attributes: { style: `width:${String(yes)}%` } });
-  return h(
-    "div",
-    { className: "bar", attributes: { role: "img", "aria-label": `Yes ${formatPercent(yes)}, No ${formatPercent(100 - yes)}` } },
-    h("div", { className: "bar-track" }, yesFill, h("div", { className: "bar-no" })),
-    h("div", { className: "bar-labels" }, h("span", { text: `Yes ${formatPercent(yes)}` }), h("span", { text: `No ${formatPercent(100 - yes)}` })),
-  );
-}
-
 function entrySummary(entry: WireEntry): string {
-  const ticket = entry.ticket;
-  const amount = `${formatDollars(entry.notionalCents)} ${entry.outcome.toUpperCase()}`;
-  return ticket ? `${amount} · ${ticket.quantity} @ ${ticket.price} · paper ticket ${ticket.ticketId.slice(0, 8)}` : amount;
+  return `${formatUsdc(entry.notionalCents)} on ${entry.outcome === "yes" ? "Yes" : "No"}`;
 }
 
-function isSafeLink(url: string): boolean {
-  try {
-    return new URL(url).protocol === "https:";
-  } catch {
-    return false;
-  }
+function deadline(expiry: string | null | undefined): string | null {
+  if (!expiry) return null;
+  const date = new Date(expiry);
+  if (!Number.isFinite(date.getTime())) return null;
+  return `Closes ${new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(date)}`;
 }
 
 export interface CardOptions {
   readonly researchHref?: string;
+  readonly researchHrefFor?: (symbol: string) => string | undefined;
+  readonly budget?: TradeBudget;
+  readonly onTradeSettled?: () => void;
 }
 
 export function createCard(initial: WireMatched, send: Sender, options: CardOptions = {}): CardHandle {
-  let state = initialCardState(initial);
+  ensureCardFont(document);
+  let state = initialCardState(initial, options.budget);
   const host = h("div", { attributes: { [CARD_HOST_ATTRIBUTE]: initial.postId } });
   const shadow = host.attachShadow({ mode: "open" });
   const root = h("div");
@@ -95,9 +70,11 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
     render();
   }
 
-  async function buy(outcome: "yes" | "no"): Promise<void> {
+  async function buy(): Promise<void> {
     if (!canBuy(state)) return;
-    const { amountCents, market } = state;
+    const { market, outcome } = state;
+    const amountCents = parseDollarsToCents(state.amountText);
+    if (amountCents === undefined) return;
     const seenPriceCents = outcome === "yes" ? market.yesCents : market.noCents;
     dispatch({ type: "buy-started" });
     const reply = await send({
@@ -110,6 +87,7 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
       ...(seenPriceCents === null ? {} : { seenPriceCents: Math.round(seenPriceCents) }),
     });
     dispatch(reply.ok ? { type: "buy-settled", entry: reply.value } : { type: "buy-failed", message: reply.error });
+    if (reply.ok) options.onTradeSettled?.();
   }
 
   async function approve(): Promise<void> {
@@ -118,6 +96,7 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
     dispatch({ type: "approve-started" });
     const reply = await send({ type: "confirm", intentId });
     dispatch(reply.ok ? { type: "approve-settled", entry: reply.value } : { type: "approve-failed", message: reply.error });
+    if (reply.ok) options.onTradeSettled?.();
   }
 
   function resultView(): Child {
@@ -128,14 +107,16 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
       case "buying":
         return h("div", { className: "result", attributes: { "data-tone": "pending" } }, h("span", { className: "result-title", text: "Placing order…" }));
       case "filled": {
-        const { explorerUrl } = status.entry;
+        const { explorerUrl, signature, ticket } = status.entry;
+        const hasReceipt = signature !== undefined && signature.trim() !== "" && explorerUrl !== undefined && isSafeExplorerLink(explorerUrl);
         return h(
           "div",
           { className: "result", attributes: { "data-tone": "filled" } },
-          h("span", { className: "result-title", text: "Filled" }),
+          h("span", { className: "result-title", text: ticket?.mode === "paper" ? "Simulated prediction" : "Order recorded" }),
           h("span", { className: "result-detail", text: entrySummary(status.entry) }),
-          explorerUrl !== undefined && isSafeLink(explorerUrl)
-            ? h("a", { className: "link", text: "View on Solana Explorer ↗", attributes: { href: explorerUrl, target: "_blank", rel: "noopener noreferrer" } })
+          h("span", { className: "result-note", text: hasReceipt ? "USDC payment on Solana" : "No transaction receipt" }),
+          hasReceipt
+            ? h("a", { className: "link", text: "View transaction ↗", attributes: { href: explorerUrl, target: "_blank", rel: "noopener noreferrer" } })
             : null,
         );
       }
@@ -172,100 +153,125 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
     }
   }
 
-  function tradeView(): Child {
-    const { market } = state;
+  function tradeView(): HTMLDivElement {
+    const { market, outcome } = state;
     const enabled = canBuy(state);
-    const chips = AMOUNT_CHOICES_CENTS.map((cents) =>
+    const locked = isBusy(state) || state.status.phase === "needs-approval";
+    const price = outcome === "yes" ? market.yesCents : market.noCents;
+    const amountCents = parseDollarsToCents(state.amountText);
+    const amountError = amountCents === undefined || amountCents <= 0
+      ? "Enter a USDC amount above 0 with up to two decimal places."
+      : overTradeLimitMessage(amountCents, state.budget);
+    const approvalNote = amountError === null && amountCents !== undefined ? needsApprovalNote(amountCents, state.budget) : null;
+    const payout = payoutFor(price, amountError === null ? amountCents ?? 0 : 0, market.quantityLimits);
+    const amount = h("input", { className: "amount-input", attributes: {
+      type: "text", inputmode: "decimal", "aria-label": "Trade amount in USDC", "data-key": "amount",
+      value: state.amountText, placeholder: "0.00", maxlength: "16", autocomplete: "off", spellcheck: "false",
+      "aria-invalid": String(amountError !== null), ...(locked ? { disabled: "" } : {}),
+    } });
+    amount.addEventListener("input", userOnly(() => { dispatch({ type: "amount-edited", amountText: amount.value }); }));
+    const outcomeButton = (side: "yes" | "no", cents: number | null) =>
       h("button", {
-        className: "chip",
-        text: formatDollars(cents),
+        className: "outcome",
+        text: `${side === "yes" ? "Yes" : "No"} ${formatPercent(cents)}`,
         attributes: {
           type: "button",
-          "data-key": `amount-${String(cents)}`,
-          "aria-pressed": String(state.amountCents === cents),
-          ...(isBusy(state) ? { disabled: "" } : {}),
+          "data-outcome": side,
+          "data-key": `outcome-${side}`,
+          "aria-pressed": String(outcome === side),
+          ...(locked ? { disabled: "" } : {}),
         },
-        on: { click: userOnly(() => { dispatch({ type: "amount-selected", amountCents: cents }); }) },
-      }),
-    );
-    const buyButton = (outcome: "yes" | "no", price: number | null) =>
-      h("button", {
-        className: "buy",
-        text: `Buy ${outcome === "yes" ? "Yes" : "No"} ${formatCents(price)}`,
-        attributes: {
-          type: "button",
-          "data-outcome": outcome,
-          "data-key": `buy-${outcome}`,
-          "aria-label": `Buy ${outcome} for ${formatDollars(state.amountCents)} at ${formatCents(price)}`,
-          ...(enabled ? {} : { disabled: "" }),
-        },
-        on: { click: userOnly(() => void buy(outcome)) },
+        on: { click: userOnly(() => { dispatch({ type: "outcome-selected", outcome: side }); }) },
       });
     return h(
       "div",
       { className: "trade" },
+      h("div", { className: "outcomes", attributes: { role: "group", "aria-label": "Prediction outcome" } }, outcomeButton("yes", market.yesCents), outcomeButton("no", market.noCents)),
+      h("label", { className: "amount-field" }, h("span", { className: "amount-label", text: "Amount" }), h("span", { className: "amount-value" }, h("span", { className: "amount-editor" }, h("span", { className: "amount-mirror", text: state.amountText || "0.00", attributes: { "aria-hidden": "true" } }), amount), h("span", { className: "amount-unit", text: "USDC", attributes: { "aria-hidden": "true" } }))),
+      amountError === null ? null : h("div", { className: "amount-error", text: amountError, attributes: { role: "status" } }),
+      h("div", { className: "estimate", attributes: { "aria-live": "polite", "data-outcome": outcome } },
+        h("div", { className: "payout", text: payout.kind === "quote" ? `${formatPercent(price)} chance · ${formatUsdc(Math.floor(payout.payoutCents))} potential payout` : "Payout unavailable" }),
+        payout.kind === "below-minimum" ? h("div", { className: "estimate-note", text: `Minimum ${String(payout.minimumContracts)} contracts` }) : null,
+        approvalNote === null ? null : h("div", { className: "estimate-note", text: approvalNote }),
+      ),
       market.tradeable ? null : h("div", { className: "blocked", text: market.tradeBlockedReason ?? "Trading is unavailable for this market." }),
-      h("div", { className: "chips", attributes: { role: "group", "aria-label": "Amount in dollars" } }, ...chips),
-      h("div", { className: "buys" }, buyButton("yes", market.yesCents), buyButton("no", market.noCents)),
+      h("button", { className: "buy", text: isBusy(state) ? "Placing order…" : "Trade now", attributes: {
+        type: "button", "data-key": "trade", "aria-label": `Trade ${outcome} for ${formatUsdc(amountCents ?? 0)} at ${formatCents(price)}`,
+        ...(enabled ? {} : { disabled: "" }),
+      }, on: { click: userOnly(() => void buy()) } }),
     );
   }
 
+  const select = h("select", { className: "contract", attributes: { "aria-label": "Prediction contract", "data-key": "contract" } });
+  select.addEventListener("change", userOnly(() => { dispatch({ type: "contract-selected", symbol: select.value }); }));
+  const eventTitle = h("div", { className: "title" });
+  const contractLabel = h("span", { className: "contract-label", attributes: { "aria-hidden": "true" } });
+  const picker = h("span", { className: "contract-picker" }, contractLabel, svg("svg", { className: "contract-chevron", attributes: { viewBox: "0 0 24 24", "aria-hidden": "true" } }, svg("path", { attributes: { d: "m6 9 6 6 6-6", fill: "none", stroke: "currentColor", "stroke-width": "2.5", "stroke-linecap": "round", "stroke-linejoin": "round" } })), select);
+  const expiry = h("div", { className: "deadline" });
+  const status = h("div", { className: "status", attributes: { "aria-live": "polite" } });
+  const foot = h("div", { className: "foot" });
+  let trade = h("div");
+  const body = h(
+    "div",
+    { className: "body" },
+    h(
+      "div",
+      { className: "head" },
+      h("div", { className: "icon" }, gemIcon()),
+      h(
+        "div",
+        { className: "titles" },
+        eventTitle,
+        picker,
+        expiry,
+      ),
+    ),
+    trade,
+    status,
+  );
+  const card = h("div", { className: "card", attributes: { role: "group" } }, body, foot);
+  root.append(card);
+
   function render(): void {
-    const focusKey = shadow.activeElement?.getAttribute("data-key");
-    const { market, match } = state;
-    const trend = trendOf(state);
-    const first = state.history[0]?.yesCents;
-    const last = state.history.at(-1)?.yesCents;
-    const change = first !== undefined && last !== undefined && state.history.length > 1 ? formatChangePercent(first, last) : null;
-    const body = h(
-      "div",
-      { className: "body" },
-      h(
-        "div",
-        { className: "head" },
-        h("div", { className: "icon" }, gemIcon()),
-        h(
-          "div",
-          { className: "titles" },
-          h("div", { className: "title", text: market.eventTitle, attributes: { title: market.eventTitle } }),
-          h("div", { className: "sub", text: `${market.contractLabel} · ${market.category}` }),
-          h(
-            "div",
-            { className: "price-row" },
-            h("span", { className: "price-label", text: "YES " }),
-            h("span", { className: "price", text: formatCents(market.yesCents) }),
-            change === null ? null : h("span", { className: "change", text: change, attributes: { "data-trend": trend } }),
-            h("span", { className: "no-price", text: `NO ${formatCents(market.noCents)}` }),
-          ),
-        ),
-        h("div", { className: "chart" }, chartView(state)),
-      ),
-      h(
-        "div",
-        { className: "why" },
-        h("span", { className: "badge", text: match.matchedBy === "grok" ? "Grok" : "matched by keywords", attributes: { "data-source": match.matchedBy } }),
-        h("span", { className: "why-text", text: match.why }),
-      ),
-      tradeView(),
-      h("div", { attributes: { "aria-live": "polite" } }, resultView()),
-    );
-    const card = h(
-      "div",
-      { className: "card", attributes: { role: "group", "aria-label": `Prediction market: ${market.eventTitle}` } },
-      body,
-      h(
-        "div",
-        { className: "foot" },
+    const focused = shadow.activeElement;
+    const focusKey = focused?.getAttribute("data-key");
+    const selection = focused instanceof HTMLInputElement ? { start: focused.selectionStart, end: focused.selectionEnd, direction: focused.selectionDirection } : undefined;
+    const { market, contracts } = state;
+    const locked = isBusy(state) || state.status.phase === "needs-approval";
+    const existing = Array.from(select.options);
+    if (existing.length !== contracts.length || contracts.some((contract, index) => existing[index]?.value !== contract.instrumentSymbol || existing[index].textContent !== contract.contractLabel)) {
+      select.replaceChildren(...contracts.map((contract) => h("option", { text: contract.contractLabel, attributes: { value: contract.instrumentSymbol } })));
+    }
+    if (select.value !== market.instrumentSymbol) select.value = market.instrumentSymbol;
+    if (select.disabled !== locked) select.disabled = locked;
+    picker.setAttribute("data-disabled", String(locked));
+    eventTitle.textContent = market.eventTitle;
+    eventTitle.title = market.description ?? market.eventTitle;
+    contractLabel.textContent = market.contractLabel;
+    const closes = deadline(market.expiryDate);
+    expiry.hidden = closes === null;
+    expiry.textContent = closes;
+    card.setAttribute("aria-label", `Prediction market: ${market.eventTitle}`);
+    const nextTrade = tradeView();
+    trade.replaceWith(nextTrade);
+    trade = nextTrade;
+    const result = resultView();
+    status.replaceChildren(...(result === null ? [] : [result]));
+    const researchHref = options.researchHrefFor?.(market.instrumentSymbol) ?? options.researchHref;
+    foot.replaceChildren(...[
         "Trade on ",
-        h("strong", { text: "Gemini" }),
-        " · settled in USDC on Solana",
-        options.researchHref === undefined
+        market.geminiUrl !== undefined && isSafeGeminiLink(market.geminiUrl)
+          ? h("a", { className: "gemini", text: "Gemini", attributes: { href: market.geminiUrl, target: "_blank", rel: "noopener noreferrer", "data-key": "gemini" } })
+          : h("strong", { text: "Gemini" }),
+        researchHref === undefined
           ? null
-          : h("a", { className: "research", text: "Research ↗", attributes: { href: options.researchHref, target: "_blank", rel: "noopener noreferrer", "data-key": "research" } }),
-      ),
-    );
-    root.replaceChildren(card);
-    if (focusKey) shadow.querySelector<HTMLElement>(`[data-key="${focusKey}"]`)?.focus();
+          : h("span", {}, " · ", h("a", { className: "research", text: "Research", attributes: { href: researchHref, target: "_blank", rel: "noopener noreferrer", "data-key": "research" } }), " to understand more"),
+    ].filter((child) => child !== null));
+    if (focusKey) {
+      const next = shadow.querySelector<HTMLElement>(`[data-key="${focusKey}"]`);
+      if (next !== shadow.activeElement) next?.focus();
+      if (next instanceof HTMLInputElement && selection) next.setSelectionRange(selection.start, selection.end, selection.direction ?? undefined);
+    }
   }
 
   render();
@@ -273,7 +279,8 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
   return {
     host,
     postId: initial.postId,
-    symbol: initial.market.instrumentSymbol,
+    get symbol() { return state.market.instrumentSymbol; },
     update: (quote) => { dispatch({ type: "quote-received", quote }); },
+    updateBudget: (budget) => { dispatch({ type: "budget-received", budget }); },
   };
 }

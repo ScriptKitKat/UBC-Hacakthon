@@ -2,6 +2,7 @@ import type { WireEntry, WireMarket, WireMatched, WireQuote } from "./wire";
 
 export const market: WireMarket = {
   eventTicker: "FED261211",
+  geminiUrl: "https://www.gemini.com/predictions/FED261211/fed-decision-in-december?status=active",
   eventTitle: "Fed decision in December?",
   contractLabel: "Fed maintains rate",
   instrumentSymbol: "GEMI-FED261211-MAINTAIN",

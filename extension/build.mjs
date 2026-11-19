@@ -60,7 +60,7 @@ function iconPng(size) {
 await rm(dist, { recursive: true, force: true });
 await mkdir(`${dist}/icons`, { recursive: true });
 
-const shared = { define: { __DEFAULT_DESK_TOKEN__: JSON.stringify("") }, bundle: true, minify: true, target: "chrome120", logLevel: "info", tsconfig: `${root}tsconfig.json` };
+const shared = { define: { __DEFAULT_DESK_TOKEN__: JSON.stringify("") }, bundle: true, minify: true, target: "chrome120", loader: { ".woff2": "binary" }, logLevel: "info", tsconfig: `${root}tsconfig.json` };
 await build({ ...shared, entryPoints: [`${root}src/content.ts`], outfile: `${dist}/content.js`, format: "iife" });
 await build({ ...shared, entryPoints: [`${root}src/options.ts`], outfile: `${dist}/options.js`, format: "iife" });
 await build({ ...shared, entryPoints: [`${root}src/popup.ts`], outfile: `${dist}/popup.js`, format: "iife" });

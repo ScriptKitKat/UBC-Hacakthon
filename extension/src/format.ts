@@ -13,10 +13,18 @@ export function formatChangePercent(from: number, to: number): string | null {
   return `${change > 0 ? "+" : "−"}${String(Math.abs(change))}%`;
 }
 
-export function formatDollars(cents: number): string {
+function formatAmount(cents: number): string {
   const whole = Math.floor(cents / 100);
   const rest = cents % 100;
-  return rest === 0 ? `$${String(whole)}` : `$${String(whole)}.${String(rest).padStart(2, "0")}`;
+  return rest === 0 ? String(whole) : `${String(whole)}.${String(rest).padStart(2, "0")}`;
+}
+
+export function formatDollars(cents: number): string {
+  return `$${formatAmount(cents)}`;
+}
+
+export function formatUsdc(cents: number): string {
+  return `${formatAmount(cents)} USDC`;
 }
 
 export function clampPercent(value: number | null): number {
