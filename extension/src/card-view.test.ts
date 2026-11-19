@@ -50,6 +50,8 @@ const reply = (value: WireEntry): BackgroundReply<WireEntry> => ({ ok: true, val
 
 beforeEach(() => {
   document.body.innerHTML = "";
+  document.body.removeAttribute("style");
+  document.documentElement.removeAttribute("style");
 });
 
 describe("research link", () => {
@@ -60,7 +62,7 @@ describe("research link", () => {
     expect(link?.getAttribute("href")).toBe("http://localhost:3000/markets/GEMI-FED261211-MAINTAIN");
     expect(link?.getAttribute("target")).toBe("_blank");
     expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(link?.textContent).toBe("Research");
+    expect(link?.textContent).toBe("Research to understand more ↗");
   });
 
   it("omits the link without a href", () => {
@@ -79,7 +81,7 @@ describe("market card", () => {
     const { text, handle, root, button } = setup();
     expect(handle.host.getAttribute(CARD_HOST_ATTRIBUTE)).toBe(matched.postId);
     expect(root.querySelector(".title")?.textContent).toBe("Fed decision in December?");
-    expect(root.querySelector("select")?.textContent).toBe("Fed maintains rate");
+    expect(root.querySelector(".contract-label")?.textContent).toBe("Fed maintains rate");
     expect(button("outcome-yes").textContent).toBe("Yes 62%");
     expect(button("outcome-no").textContent).toBe("No 40%");
     expect(button("outcome-yes").getAttribute("aria-pressed")).toBe("true");
@@ -103,20 +105,112 @@ describe("market card", () => {
     const styles = getComputedStyle(card);
     expect(CARD_MAX_WIDTH_PX).toBe(360);
     expect(getComputedStyle(handle.host).width).toBe("360px");
+    expect(card.getAttribute("data-theme")).toBe("light");
     expect(styles.backgroundColor).toBe("rgb(255, 255, 255)");
     expect(styles.backgroundImage).not.toContain("gradient");
     expect(styles.borderColor).toBe("rgb(38, 221, 249)");
     expect(getComputedStyle(button("trade")).backgroundColor).toBe("rgb(26, 107, 255)");
     expect(getComputedStyle(button("trade")).boxShadow).toBe("none");
     expect(getComputedStyle(root.querySelector(".payout") as Element).color).toBe("rgb(26, 107, 255)");
-    for (const side of ["yes", "no"]) {
-      press(button(`outcome-${side}`));
-      expect(getComputedStyle(button("outcome-yes")).color).toBe("rgb(17, 166, 66)");
-      expect(getComputedStyle(button("outcome-no")).color).toBe("rgb(196, 70, 70)");
-      const selected = button(`outcome-${side}`);
-      expect(getComputedStyle(selected).backgroundColor).toBe("rgb(220, 231, 255)");
-      expect(getComputedStyle(selected).boxShadow).toBe("none");
-    }
+    const withResearch = createCard(matched, vi.fn(), { researchHref: "http://localhost:3000/markets/GEMI-FED261211-MAINTAIN" });
+    document.body.append(withResearch.host);
+    const research = withResearch.host.shadowRoot?.querySelector(".research");
+    if (!research) throw new Error("missing research link");
+    expect(getComputedStyle(research).color).toBe("rgb(26, 107, 255)");
+  });
+
+  it("highlights the selected Yes outcome in green and No in red, leaving the other neutral", () => {
+    const { root, button } = setup();
+    const yes = button("outcome-yes");
+    const no = button("outcome-no");
+    expect(yes.classList.contains("is-selected")).toBe(true);
+    expect(no.classList.contains("is-selected")).toBe(false);
+    expect(getComputedStyle(yes).backgroundColor).toBe("rgb(209, 239, 219)");
+    expect(getComputedStyle(yes).borderTopColor).toBe("rgb(17, 166, 66)");
+    expect(getComputedStyle(yes).color).toBe("rgb(17, 166, 66)");
+    expect(getComputedStyle(yes).boxShadow).toBe("none");
+    expect(getComputedStyle(no).backgroundColor).toBe("transparent");
+    expect(getComputedStyle(no).color).toBe("rgb(102, 112, 122)");
+    press(no);
+    const nextYes = button("outcome-yes");
+    const nextNo = button("outcome-no");
+    expect(nextYes.classList.contains("is-selected")).toBe(false);
+    expect(nextNo.classList.contains("is-selected")).toBe(true);
+    expect(getComputedStyle(nextNo).backgroundColor).toBe("rgb(250, 224, 224)");
+    expect(getComputedStyle(nextNo).borderTopColor).toBe("rgb(196, 70, 70)");
+    expect(getComputedStyle(nextNo).color).toBe("rgb(196, 70, 70)");
+    expect(getComputedStyle(nextNo).boxShadow).toBe("none");
+    expect(getComputedStyle(nextYes).backgroundColor).toBe("transparent");
+    expect(getComputedStyle(nextYes).color).toBe("rgb(102, 112, 122)");
+    expect(getComputedStyle(button("trade")).backgroundColor).toBe("rgb(26, 107, 255)");
+    expect(getComputedStyle(root.querySelector(".payout") as Element).color).toBe("rgb(26, 107, 255)");
+  });
+
+  it("switches the card to the dark palette for X dim and lights-out backgrounds", () => {
+    document.body.style.backgroundColor = "#000000";
+    const lightsOut = setup();
+    const lightsCard = lightsOut.root.querySelector(".card");
+    if (!lightsCard) throw new Error("missing card");
+    expect(lightsCard.getAttribute("data-theme")).toBe("dark");
+    expect(getComputedStyle(lightsCard).backgroundColor).toBe("#101820");
+    document.body.innerHTML = "";
+    document.body.style.backgroundColor = "#15202B";
+    const dim = setup();
+    const dimCard = dim.root.querySelector(".card");
+    if (!dimCard) throw new Error("missing card");
+    expect(dimCard.getAttribute("data-theme")).toBe("dark");
+    expect(getComputedStyle(dimCard).backgroundColor).toBe("#101820");
+  });
+
+  it("shows a Yes-price sparkline and a labeled change once history has enough points", () => {
+    const { root, handle } = setup();
+    expect(root.querySelector("path.line")).toBeNull();
+    expect(root.querySelector(".change")).toBeNull();
+    handle.update(quote);
+    expect(root.querySelector("path.line")?.getAttribute("data-trend")).toBe("up");
+    expect(root.querySelector("path.area")?.getAttribute("data-trend")).toBe("up");
+    expect(getComputedStyle(root.querySelector("path.line") as Element).stroke).toBe("rgb(17, 166, 66)");
+    expect(root.querySelector(".change")?.textContent).toBe("+8.3% 40s");
+    expect(root.querySelector(".change")?.getAttribute("data-trend")).toBe("up");
+    expect(root.querySelector(".chart svg")?.getAttribute("aria-label")).toBe("Yes price history");
+  });
+
+  it("hides the sparkline until history has three distinct prices, then follows the selected contract", async () => {
+    const other = { ...market, instrumentSymbol: "GEMI-FED261211-CUT25", contractLabel: "Cut 25bps", yesCents: 20 };
+    const falling = {
+      ...quote,
+      market: other,
+      contracts: [market, other],
+      history: [
+        { at: "2026-11-18T22:00:00.000Z", yesCents: 40 },
+        { at: "2026-11-19T10:00:00.000Z", yesCents: 28 },
+        { at: "2026-11-19T22:00:00.000Z", yesCents: 20 },
+      ],
+    };
+    const send = vi.fn().mockResolvedValue({ ok: true, value: falling });
+    const handle = createCard({ ...matched, contracts: [market, other] }, send);
+    document.body.append(handle.host);
+    const root = handle.host.shadowRoot;
+    if (!root) throw new Error("missing root");
+    handle.update({ ...quote, contracts: [market, other], history: quote.history.slice(0, 2) });
+    expect(root.querySelector("path.line")).toBeNull();
+    handle.update({ ...quote, contracts: [market, other] });
+    expect(root.querySelector("path.line")?.getAttribute("data-trend")).toBe("up");
+    expect(root.querySelector(".change")?.textContent).toBe("+8.3% 40s");
+    const trigger = root.querySelector<HTMLButtonElement>('[data-key="contract"]');
+    if (!trigger) throw new Error("missing trigger");
+    press(trigger);
+    const option = root.querySelector<HTMLElement>(`[data-symbol="${other.instrumentSymbol}"]`);
+    if (!option) throw new Error("missing option");
+    press(option);
+    expect(handle.symbol).toBe(other.instrumentSymbol);
+    expect(root.querySelector("path.line")).toBeNull();
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: "quote", symbol: other.instrumentSymbol }));
+      expect(root.querySelector("path.line")?.getAttribute("data-trend")).toBe("down");
+    });
+    expect(root.querySelector(".change")?.textContent).toBe("−50% 24h");
+    expect(getComputedStyle(root.querySelector("path.line") as Element).stroke).toBe("rgb(196, 70, 70)");
   });
 
   it("asks a friendly price question and keeps other Gemini titles", () => {
@@ -190,12 +284,14 @@ describe("market card", () => {
     const root = handle.host.shadowRoot;
     if (!root) throw new Error("missing root");
     document.body.append(handle.host);
-    const select = root.querySelector("select");
-    if (!select) throw new Error("missing contract selector");
-    select.value = other.instrumentSymbol;
-    select.dispatchEvent(new Event("change"));
+    const trigger = root.querySelector<HTMLButtonElement>('[data-key="contract"]');
+    if (!trigger) throw new Error("missing contract trigger");
+    press(trigger);
+    const option = root.querySelector<HTMLElement>(`[data-symbol="${other.instrumentSymbol}"]`);
+    if (!option) throw new Error("missing contract option");
+    option.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
     expect(handle.symbol).toBe(market.instrumentSymbol);
-    select.dispatchEvent(trusted(new Event("change")));
+    press(option);
     expect(handle.symbol).toBe(other.instrumentSymbol);
     expect(root.textContent).toContain("20% chance · 5 USDC potential payout");
     expect(root.querySelector<HTMLAnchorElement>('[data-key="research"]')?.href).toBe(`https://desk.test/markets/${other.instrumentSymbol}`);
@@ -262,11 +358,8 @@ describe("market card", () => {
     expect(text()).toContain("Placing order…");
     expect(button("trade").disabled).toBe(true);
     expect(amountField(root).disabled).toBe(true);
-    expect(root.querySelector<HTMLSelectElement>("select")?.disabled).toBe(true);
+    expect(button("contract").disabled).toBe(true);
     expect(root.querySelector(".contract-picker")?.getAttribute("data-disabled")).toBe("true");
-    const select = root.querySelector("select");
-    if (!select) throw new Error("missing contract selector");
-    expect(getComputedStyle(select).opacity).toBe("0");
     pending.resolve(reply(entry({ outcome: "no", notionalCents: 500 })));
     await vi.waitFor(() => { expect(text()).toContain("Simulated prediction"); });
     expect(button("trade").disabled).toBe(false);
@@ -383,34 +476,49 @@ describe("market card", () => {
     expect(amountField(root).value).toBe("23.00");
   });
 
-  it("keeps the native contract selector and options connected during price refreshes", () => {
-    const { root, handle } = setup();
-    const select = root.querySelector("select");
-    if (!select) throw new Error("missing contract selector");
-    const firstOption = select.options[0];
-    select.focus();
+  it("keeps the contract trigger and listbox connected during price refreshes", () => {
+    const { root, handle, button } = setup();
+    const trigger = button("contract");
+    trigger.focus();
     handle.update({ ...quote, market: { ...quote.market, yesCents: 50 } });
-    expect(root.querySelector("select")).toBe(select);
-    expect(select.options[0]).toBe(firstOption);
-    expect(select.isConnected).toBe(true);
-    expect(root.activeElement).toBe(select);
+    expect(root.querySelector('[data-key="contract"]')).toBe(trigger);
+    expect(trigger.isConnected).toBe(true);
+    expect(root.activeElement).toBe(trigger);
     expect(root.querySelector(".payout")?.textContent).toBe("50% chance · 2 USDC potential payout");
-    select.blur();
+    trigger.blur();
   });
 
-  it("refreshes listed contract options without replacing the selector", () => {
-    const { root, handle } = setup();
-    const select = root.querySelector("select");
-    if (!select) throw new Error("missing contract selector");
+  it("lists sibling contracts in a keyboard-accessible listbox and keeps the trigger", () => {
+    const { root, handle, button } = setup();
+    const trigger = button("contract");
     const other = { ...market, instrumentSymbol: "GEMI-FED261211-CUT25", contractLabel: "Cut 25bps", yesCents: 20 };
     handle.update({ ...quote, contracts: [market, other] });
-    expect(root.querySelector("select")).toBe(select);
-    expect(Array.from(select.options).map((option) => option.value)).toEqual([market.instrumentSymbol, other.instrumentSymbol]);
-    expect(select.value).toBe(market.instrumentSymbol);
-    select.value = other.instrumentSymbol;
-    select.dispatchEvent(trusted(new Event("change")));
+    expect(root.querySelector('[data-key="contract"]')).toBe(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(root.querySelector('[role="listbox"]')?.hasAttribute("hidden")).toBe(true);
+    press(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    const options = Array.from(root.querySelectorAll<HTMLElement>('[role="option"]'));
+    expect(options.map((option) => option.getAttribute("data-symbol"))).toEqual([market.instrumentSymbol, other.instrumentSymbol]);
+    expect(options[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(options[0]?.textContent).toContain(market.contractLabel);
+    expect(options[0]?.textContent).toContain("62%");
+    expect(options[1]?.textContent).toContain("Cut 25bps");
+    expect(options[1]?.textContent).toContain("20%");
+    press(options[1] as HTMLElement);
     expect(handle.symbol).toBe(other.instrumentSymbol);
     expect(root.querySelector(".contract-label")?.textContent).toBe(other.contractLabel);
+    expect(button("contract").getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("closes the contract listbox on Escape", () => {
+    const { root, button } = setup({ ...matched, contracts: [market, { ...market, instrumentSymbol: "GEMI-FED261211-CUT25", contractLabel: "Cut 25bps" }] });
+    press(button("contract"));
+    expect(button("contract").getAttribute("aria-expanded")).toBe("true");
+    const list = root.querySelector('[role="listbox"]');
+    if (!list) throw new Error("missing listbox");
+    list.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(button("contract").getAttribute("aria-expanded")).toBe("false");
   });
 
   it("hides a Gemini link that is not on gemini.com", () => {
