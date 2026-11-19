@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changeTrend, contrastInk, formatBudgetCents, formatChangePercent, formatPayoutFromAsk, formatPercent, formatResetLabel, formatSignedPercent, formatVolumeUsd, isXUrl, nextUtcMidnight } from "./card-format";
+import { changeTrend, contrastInk, formatBudgetCents, formatChangePercent, formatPayoutFromAsk, formatPercent, formatResetLabel, formatSignedPercent, formatVolumeUsd, isXUrl, nextUtcMidnight, pointDelta, sparklinePointDelta } from "./card-format";
 
 describe("card format", () => {
   it("formats a yes chance and a signed 24h change", () => {
@@ -31,5 +31,14 @@ describe("card format", () => {
     expect(formatResetLabel(resetAt, "America/Chicago")).toBe("resets 6:00 PM CST");
     expect(contrastInk("#500000")).toBe("#EDEDED");
     expect(contrastInk("#F7931A")).toBe("#0A0A0A");
+  });
+
+  it("measures a yes-price move in percentage points", () => {
+    expect(pointDelta(48, 62)).toBe(14);
+    expect(pointDelta(49.4, 41.2)).toBe(-8);
+    expect(pointDelta(20, 20)).toBe(0);
+    expect(pointDelta(null, 50)).toBeNull();
+    expect(sparklinePointDelta([48, 50, 53, 62])).toBe(14);
+    expect(sparklinePointDelta([20])).toBeNull();
   });
 });

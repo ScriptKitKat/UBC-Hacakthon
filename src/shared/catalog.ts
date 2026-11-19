@@ -104,3 +104,29 @@ export type BrowseRow = z.output<typeof browseRowSchema>;
 export type BrowseCard = z.output<typeof browseCardSchema>;
 export type BrowseTab = z.output<typeof browseTabSchema>;
 export type BrowsePage = z.output<typeof browsePageSchema>;
+
+
+export const watchlistItemSchema = z.object({
+  eventTicker: z.string().min(1),
+  instrumentSymbol: z.string().min(1).nullable(),
+  savedAt: z.string().nullable(),
+  savedYesCents: z.number().nullable(),
+});
+
+export const watchlistCardSchema = catalogCardSchema.extend({
+  savedAt: z.string().nullable(),
+  savedYesCents: z.number().nullable(),
+  todayPoints: z.number().nullable(),
+  status: z.enum(["live", "ended", "settled"]),
+  href: z.string(),
+});
+
+export const watchlistViewSchema = z.object({
+  symbols: z.array(z.string()),
+  items: z.array(watchlistItemSchema),
+  cards: z.array(watchlistCardSchema).optional(),
+});
+
+export type WatchlistItemView = z.output<typeof watchlistItemSchema>;
+export type WatchlistCard = z.output<typeof watchlistCardSchema>;
+export type WatchlistView = z.output<typeof watchlistViewSchema>;

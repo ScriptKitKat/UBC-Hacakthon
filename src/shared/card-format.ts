@@ -76,3 +76,14 @@ export function contrastInk(background: string): string {
   const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
   return luminance > 0.6 ? "#0A0A0A" : "#EDEDED";
 }
+
+export function pointDelta(from: number | null | undefined, to: number | null | undefined): number | null {
+  if (from === null || from === undefined || to === null || to === undefined) return null;
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return null;
+  return Math.round(to) - Math.round(from);
+}
+
+export function sparklinePointDelta(values: readonly number[]): number | null {
+  if (values.length < 2) return null;
+  return pointDelta(values[0], values.at(-1));
+}
