@@ -9,7 +9,9 @@ const CHANGE_EVENT = "ntd:view-mode";
 const DEFAULT_MODE: ViewMode = "beginner";
 
 function fromParam(value: string | null): ViewMode | undefined {
-  return value === "pro" || value === "beginner" ? value : undefined;
+  if (value === "pro") return "pro";
+  if (value === "beginner" || value === "simple") return "beginner";
+  return undefined;
 }
 
 function read(): ViewMode {

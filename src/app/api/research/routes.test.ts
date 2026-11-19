@@ -53,7 +53,7 @@ const call = (symbol: string, query = "", headers: Record<string, string> = { "s
 beforeEach(() => {
   view.mockReset().mockResolvedValue({ kind: "ok", view: sampleView });
   getPositions.mockReset().mockResolvedValue(emptyPositions);
-  getDesk.mockReset().mockResolvedValue({ ok: true, desk: { getPositions } as unknown as Desk, research: { view, brief: vi.fn() }, deepDive: undefined });
+  getDesk.mockReset().mockResolvedValue({ ok: true, desk: { getPositions } as unknown as Desk, research: { view, brief: vi.fn() }, deepDive: undefined, marketPro: { shell: vi.fn(), live: vi.fn() } });
 });
 
 describe("GET /api/research/[symbol]", () => {

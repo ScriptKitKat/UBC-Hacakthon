@@ -177,10 +177,14 @@ const dollarsToCents = z.number().nonnegative().max(1).transform((dollars) => Ma
 const priceText = decimalText.transform(Number).pipe(z.number().max(1)).transform((dollars) => Math.round(dollars * 10000) / 100);
 const amountText = decimalText.transform(Number).pipe(z.number());
 
+export function oldestFirst<T extends { readonly timeMs: number }>(rows: readonly T[]): T[] {
+  return [...rows].sort((left, right) => left.timeMs - right.timeMs);
+}
+
 export const candlesSchema = z
   .array(z.tuple([timestampMs, dollarsToCents, dollarsToCents, dollarsToCents, dollarsToCents, z.number().nonnegative()]))
   .transform((rows): Candle[] =>
-    rows.map(([timeMs, openCents, highCents, lowCents, closeCents, volume]) => ({ timeMs, openCents, highCents, lowCents, closeCents, volume })),
+    oldestFirst(rows.map(([timeMs, openCents, highCents, lowCents, closeCents, volume]) => ({ timeMs, openCents, highCents, lowCents, closeCents, volume }))),
   );
 
 const bookLevel = z.object({ price: priceText, amount: amountText }).transform((level): BookLevel => ({ priceCents: level.price, amount: level.amount }));

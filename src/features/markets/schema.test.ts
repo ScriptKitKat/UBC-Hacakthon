@@ -31,3 +31,17 @@ describe("eventsPageSchema", () => {
     expect(parsed.data.events[0]?.contracts[0]?.strikeValue ?? null).toBeNull();
   });
 });
+
+import { candlesSchema } from "./schema";
+
+describe("candlesSchema", () => {
+  it("returns candles oldest-first when Gemini sends newest-first rows", () => {
+    const parsed = candlesSchema.parse([
+      [1_800_000, 0.6, 0.61, 0.59, 0.6, 10],
+      [1_200_000, 0.5, 0.51, 0.49, 0.5, 8],
+      [600_000, 0.4, 0.41, 0.39, 0.4, 4],
+    ]);
+    expect(parsed.map((candle) => candle.timeMs)).toEqual([600_000, 1_200_000, 1_800_000]);
+    expect(parsed.map((candle) => candle.closeCents)).toEqual([40, 50, 60]);
+  });
+});

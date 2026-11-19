@@ -9,6 +9,8 @@ import { cardsForSaved, cardsForSymbols, createBrowseCache, createListCache, lis
 import type { BrowseListResult, BrowseQuery, CatalogListResult, CatalogQuery, Watchlist, WatchlistItem } from "@/features/catalog";
 import type { CatalogCard, WatchlistCard } from "@/shared";
 import { createGeminiMarketsClient } from "@/features/markets";
+import { createMarketPro } from "@/features/market-pro";
+import type { MarketPro } from "@/features/market-pro";
 import { createResearch } from "@/features/research";
 import type { JsonCompleter, Research } from "@/features/research";
 import { StoreUnavailableError, nodeFileSystem, resolveDataDirectory } from "@/features/storage";
@@ -32,7 +34,7 @@ const NONCE_BYTES = 16;
 const SECRET_BYTES = 32;
 
 export type DeskAccess =
-  | { readonly ok: true; readonly desk: Desk; readonly research: Research; readonly deepDive: DeepDiveResource | undefined }
+  | { readonly ok: true; readonly desk: Desk; readonly research: Research; readonly deepDive: DeepDiveResource | undefined; readonly marketPro: MarketPro }
   | { readonly ok: false; readonly issues: readonly string[] };
 
 export interface HomeCatalog {
@@ -46,7 +48,7 @@ export interface HomeCatalog {
 }
 
 export type HomeServices =
-  | { readonly ok: true; readonly desk: Desk; readonly research: Research; readonly catalog: HomeCatalog }
+  | { readonly ok: true; readonly desk: Desk; readonly research: Research; readonly catalog: HomeCatalog; readonly marketPro: MarketPro }
   | { readonly ok: false; readonly issues: readonly string[] };
 
 async function openOrExplain<T>(open: () => Promise<T>): Promise<{ readonly ok: true; readonly value: T } | { readonly ok: false; readonly issue: string }> {
@@ -221,8 +223,15 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     cardsForSaved: (items) => cardsForSaved(catalogDeps, items),
     watchlist: openWatchlist({ fs: nodeFileSystem, path: join(dataDirectory, "watchlist.json") }),
   };
+  const watchlist = homeCatalog.watchlist;
+  const marketPro = createMarketPro({
+    markets,
+    nowMs: () => Date.now(),
+    desk,
+    isWatched: async (symbol) => (await watchlist.list()).includes(symbol),
+  });
   if (runtime) runtime.catalog = homeCatalog;
-  return { ok: true, desk, research, deepDive };
+  return { ok: true, desk, research, deepDive, marketPro };
 }
 
 const deskKey: unique symbol = Symbol.for("news-to-trade-desk.desk");
@@ -239,7 +248,7 @@ export async function getHomeServices(): Promise<HomeServices> {
   if (!access.ok) return access;
   const catalog = holder[deskKey]?.catalog ?? homeCatalog;
   if (catalog === undefined) return { ok: false, issues: ["catalog: unavailable"] };
-  return { ok: true, desk: access.desk, research: access.research, catalog };
+  return { ok: true, desk: access.desk, research: access.research, catalog, marketPro: access.marketPro };
 }
 
 export function getDesk(): Promise<DeskAccess> {

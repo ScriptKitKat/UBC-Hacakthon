@@ -24,6 +24,7 @@ const RAIL_MS = 8000;
 
 export function Shell({ children, initialView }: { readonly children: ReactNode; readonly initialView?: ViewMode }) {
   const path = usePathname();
+  const marketDetail = /^\/markets\/[^/]+$/u.test(path);
   const [mode, setMode] = useViewMode(initialView);
   const [rail, setRail] = useState<HomeRail | undefined>(undefined);
   usePolling(() => { void loadRail().then(setRail); }, RAIL_MS);
@@ -65,12 +66,14 @@ export function Shell({ children, initialView }: { readonly children: ReactNode;
         </Link>
       </nav>
       <div className={styles.column}>
-        <div className={styles.topbar}>
-          <div className={styles.mode} role="group" aria-label="Mode">
-            <button type="button" className={styles.modeButton} aria-pressed={mode === "beginner"} onClick={() => { setMode("beginner"); }}>Beginner</button>
-            <button type="button" className={styles.modeButton} aria-pressed={mode === "pro"} onClick={() => { setMode("pro"); }}>Pro</button>
+        {marketDetail ? null : (
+          <div className={styles.topbar}>
+            <div className={styles.mode} role="group" aria-label="Mode">
+              <button type="button" className={styles.modeButton} aria-pressed={mode === "beginner"} onClick={() => { setMode("beginner"); }}>Beginner</button>
+              <button type="button" className={styles.modeButton} aria-pressed={mode === "pro"} onClick={() => { setMode("pro"); }}>Pro</button>
+            </div>
           </div>
-        </div>
+        )}
         <div className={styles.content}>{children}</div>
       </div>
     </div>

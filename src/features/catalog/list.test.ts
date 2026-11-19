@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createMemoryHistory } from "@/features/history";
 import { instrumentSymbol } from "@/shared";
 import type { Candle, MarketEvent } from "@/features/markets";
+import { candlesSchema } from "@/features/markets";
 import { enrichSparklines, listCatalog } from "./list";
 
 function contract(label: string, symbol: string, yes: number, no: number, expiry: string) {
@@ -105,6 +106,30 @@ describe("listCatalog", () => {
     expect(candlesFn).toHaveBeenCalledWith("GEMI-FED-YES", "15m");
     expect(enriched[0]?.sparkline.length).toBeGreaterThan(1);
     expect(enriched[0]?.changePercent).not.toBeNull();
+  });
+
+  it("keeps a rising 24h change when Gemini candle rows arrive newest first", async () => {
+    const now = new Date("2026-11-19T18:00:00.000Z");
+    const history = createMemoryHistory();
+    const fed = event("FED", "Fed holds?", "Economics", 60, 40);
+    const candles = candlesSchema.parse([
+      [now.getTime() - 1 * 3600_000, 0.6, 0.6, 0.6, 0.6, 1],
+      [now.getTime() - 8 * 3600_000, 0.5, 0.5, 0.5, 0.5, 1],
+      [now.getTime() - 16 * 3600_000, 0.4, 0.4, 0.4, 0.4, 1],
+    ]);
+    const deps = {
+      markets: {
+        searchEvents: () => Promise.resolve({ ok: true as const, value: { events: [fed], total: 1 } }),
+        candles: () => Promise.resolve({ ok: true as const, value: candles }),
+      },
+      history,
+      now: () => now,
+    };
+    const first = await listCatalog(deps, { sort: "moving" });
+    if (!first.ok) throw new Error("expected catalog");
+    const enriched = await enrichSparklines(deps, first.page.markets);
+    expect(candles.map((candle) => candle.closeCents)).toEqual([40, 50, 60]);
+    expect(enriched[0]?.changePercent).toBe(50);
   });
 
   it("reports unavailability when Gemini search fails", async () => {

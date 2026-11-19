@@ -100,9 +100,6 @@ export function BeginnerView({
             <span>{category}</span>
           </nav>
           <div className={styles.actions}>
-            <button type="button" className={styles.proLink} onClick={() => { setMode("pro"); }}>
-              Open pro terminal →
-            </button>
             <div className={styles.mode} role="group" aria-label="Mode">
               <button type="button" className={styles.modeButton} aria-pressed>Beginner</button>
               <button type="button" className={styles.modeButton} aria-pressed={false} onClick={() => { setMode("pro"); }}>Pro</button>

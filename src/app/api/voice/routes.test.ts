@@ -66,7 +66,7 @@ beforeEach(() => {
   vi.stubEnv("ELEVENLABS_API_KEY", "");
   vi.stubEnv("ELEVENLABS_AGENT_ID", "");
   vi.stubEnv("VOICE_OPERATOR_ID", "priscilla");
-  getDesk.mockResolvedValue({ ok: true, desk: stubDesk, research: { view: vi.fn(), brief: vi.fn() }, deepDive: undefined });
+  getDesk.mockResolvedValue({ ok: true, desk: stubDesk, research: { view: vi.fn(), brief: vi.fn() }, deepDive: undefined, marketPro: { shell: vi.fn(), live: vi.fn() } });
 });
 
 describe("voice tool route", () => {
