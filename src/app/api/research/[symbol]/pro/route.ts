@@ -1,6 +1,6 @@
 import { parseInstrumentSymbol } from "@/features/markets";
 import { isProTimeframe, proLiveSchema, proShellSchema } from "@/shared";
-import { withHomeGet } from "../../../../desk/route-helpers";
+import { withHomeGet } from "../../../desk/route-helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

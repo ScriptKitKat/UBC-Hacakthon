@@ -1,4 +1,5 @@
 export interface TicketQuote {
+  readonly kind: "quote";
   readonly priceCents: number;
   readonly stakeCents: number;
   readonly shares: number;
@@ -29,6 +30,7 @@ export function ticketQuote(input: {
   const ev = probability * (shares * 100) - stakeCents;
   const kelly = Math.max(0, (probability - price) / (1 - price));
   return {
+    kind: "quote",
     priceCents,
     stakeCents,
     shares,

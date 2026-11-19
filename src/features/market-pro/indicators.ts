@@ -1,5 +1,6 @@
 import type { Candle } from "@/features/markets";
 import type { ProBandPoint, ProIndicatorRow } from "@/shared";
+import { chronological } from "./timeframes";
 
 const SMA_FAST = 7;
 const SMA_SLOW = 20;
@@ -89,11 +90,12 @@ export function percentB(close: number, lower: number, upper: number): number | 
 }
 
 export function onBalanceVolume(candles: readonly Candle[]): number[] {
+  const ordered = chronological(candles);
   const result: number[] = [];
   let running = 0;
-  for (let index = 0; index < candles.length; index += 1) {
-    const candle = candles[index];
-    const previous = candles[index - 1];
+  for (let index = 0; index < ordered.length; index += 1) {
+    const candle = ordered[index];
+    const previous = ordered[index - 1];
     if (candle === undefined) continue;
     if (previous === undefined) {
       result.push(0);
@@ -123,10 +125,11 @@ export function changeOver(candles: readonly Candle[], nowMs: number, lookbackMs
 }
 
 export function chartBands(candles: readonly Candle[]): readonly ProBandPoint[] {
-  const closes = candles.map((candle) => candle.closeCents);
+  const ordered = chronological(candles);
+  const closes = ordered.map((candle) => candle.closeCents);
   const ma7 = rollingSma(closes, SMA_FAST);
   const rsi = rsiSeries(closes);
-  return candles.map((candle, index) => {
+  return ordered.map((candle, index) => {
     const bands = bollingerAt(closes, index);
     return {
       timeMs: candle.timeMs,
@@ -141,7 +144,7 @@ export function chartBands(candles: readonly Candle[]): readonly ProBandPoint[] 
 
 function formatCents(value: number): string {
   const rounded = Math.round(value * 10) / 10;
-  return `${rounded.toFixed(Math.abs(rounded % 1) < 0.05 ? 0 : 1)}`;
+  return rounded.toFixed(Math.abs(rounded % 1) < 0.05 ? 0 : 1);
 }
 
 function signed(value: number, suffix = ""): string {
@@ -161,7 +164,8 @@ export function indicatorRows(input: {
   readonly lastCents: number | null;
   readonly depthPlusMinus5: number | null;
 }): readonly ProIndicatorRow[] {
-  const { hourly, nowMs, lastCents, depthPlusMinus5 } = input;
+  const hourly = chronological(input.hourly);
+  const { nowMs, lastCents, depthPlusMinus5 } = input;
   const closes = hourly.map((candle) => candle.closeCents);
   const lastIndex = closes.length - 1;
   const lastClose = lastCents ?? lastOf(closes) ?? null;

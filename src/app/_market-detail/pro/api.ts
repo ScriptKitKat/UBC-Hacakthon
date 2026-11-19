@@ -27,9 +27,10 @@ export async function loadProShell(symbol: string, timeframe: ProTimeframe): Pro
   if (!isProTimeframe(timeframe)) return { kind: "unknown" };
   try {
     const response = await request(symbol, "shell", timeframe);
-    if (!response.ok) return classify(response) === "error"
-      ? { kind: "error", message: `The desk responded with HTTP ${String(response.status)}` }
-      : { kind: classify(response) };
+    if (!response.ok) {
+      const kind = classify(response);
+      return kind === "error" ? { kind, message: `The desk responded with HTTP ${String(response.status)}` } : { kind };
+    }
     const parsed = proShellSchema.safeParse(await response.json());
     return parsed.success ? { kind: "ready", shell: parsed.data } : { kind: "error", message: "The desk sent an unexpected response" };
   } catch {
@@ -41,9 +42,10 @@ export async function loadProLive(symbol: string, timeframe: ProTimeframe): Prom
   if (!isProTimeframe(timeframe)) return { kind: "unknown" };
   try {
     const response = await request(symbol, "live", timeframe);
-    if (!response.ok) return classify(response) === "error"
-      ? { kind: "error", message: `The desk responded with HTTP ${String(response.status)}` }
-      : { kind: classify(response) };
+    if (!response.ok) {
+      const kind = classify(response);
+      return kind === "error" ? { kind, message: `The desk responded with HTTP ${String(response.status)}` } : { kind };
+    }
     const parsed = proLiveSchema.safeParse(await response.json());
     return parsed.success ? { kind: "ready", live: parsed.data } : { kind: "error", message: "The desk sent an unexpected response" };
   } catch {

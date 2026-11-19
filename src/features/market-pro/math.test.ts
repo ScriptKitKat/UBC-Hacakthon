@@ -45,7 +45,7 @@ describe("book", () => {
 describe("ticketQuote", () => {
   it("computes shares, max payout, break-even, EV, and a Kelly stake capped at $10", () => {
     const quote = ticketQuote({ priceCents: 63, stakeCents: 500, believedYesPercent: 68, side: "yes" });
-    if ("kind" in quote) throw new Error("expected a quote");
+    if (quote.kind === "invalid") throw new Error("expected a quote");
     expect(quote.shares).toBeCloseTo(500 / 63);
     expect(quote.maxPayoutCents).toBeCloseTo(quote.shares * 100);
     expect(quote.breakEvenPercent).toBe(63);
@@ -57,7 +57,7 @@ describe("ticketQuote", () => {
 
   it("returns no Kelly stake when the believed probability is below the price", () => {
     const quote = ticketQuote({ priceCents: 63, stakeCents: 500, believedYesPercent: 50, side: "yes" });
-    if ("kind" in quote) throw new Error("expected a quote");
+    if (quote.kind === "invalid") throw new Error("expected a quote");
     expect(quote.kellyFraction).toBe(0);
     expect(quote.kellyStakeCents).toBe(0);
     expect(quote.evCents).toBeLessThan(0);
@@ -101,8 +101,32 @@ describe("buildStats", () => {
     expect(stats.resolvesIn).toEqual({ kind: "value", text: "42d 10h", tone: "neutral" });
   });
 
+  it("still reports a positive 24h change when Gemini returns newest candles first", () => {
+    const now = Date.UTC(2026, 10, 19, 18);
+    const newestFirst = Array.from({ length: 19 }, (_, index) => {
+      const age = index;
+      const close = index === 18 ? 72 : 89;
+      return {
+        timeMs: now - age * 60 * 60 * 1000,
+        openCents: close,
+        highCents: 94,
+        lowCents: 72,
+        closeCents: close,
+        volume: 10,
+      };
+    });
+    const stats = buildStats({
+      prices: { bestBidCents: 90, bestAskCents: 94, lastTradeCents: 89, buyYesCents: 94, buyNoCents: 10, sellYesCents: 90, sellNoCents: 6 },
+      hourly: newestFirst,
+      volume: 46800,
+      volume24h: 46800,
+      expiryDate: new Date(now + 2 * 60 * 60 * 1000).toISOString(),
+      nowMs: now,
+    });
+    expect(stats.change24h).toEqual({ kind: "value", text: "+17", tone: "up" });
+  });
+
   it("says a market has ended when the expiry is in the past", () => {
-    expect(formatResolvesIn("2020-01-01T00:00:00.000Z", Date.UTC(2026, 10, 19)).text).toBeUndefined;
     const stat = formatResolvesIn("2020-01-01T00:00:00.000Z", Date.UTC(2026, 10, 19));
     expect(stat).toEqual({ kind: "value", text: "Ended", tone: "neutral" });
   });
@@ -112,7 +136,7 @@ describe("strikeLadder", () => {
   it("orders contracts by strike and marks the current one", () => {
     const contract = (symbol: string, strike: number, yes: number): MarketEvent["contracts"][number] => ({
       instrumentSymbol: symbol as MarketEvent["contracts"][number]["instrumentSymbol"],
-      label: `${strike}`,
+      label: String(strike),
       description: "",
       expiryDate: null,
       marketState: "open",

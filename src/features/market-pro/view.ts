@@ -145,15 +145,26 @@ export function createMarketPro(deps: MarketProDeps): MarketPro {
     return isNotFound(result) ? { kind: "unknown-symbol" } : { kind: "unavailable" };
   }
 
+  async function loadChartCandles(symbol: string, timeframe: ProTimeframe): Promise<{ readonly candles: readonly Candle[]; readonly live: boolean }> {
+    const plan = TIMEFRAME_PLANS[timeframe];
+    const primary = await markets.candles(symbol, plan.source);
+    if (primary.ok && primary.value.length > 0) return { candles: primary.value, live: true };
+    if (plan.fallback !== null) {
+      const fallback = await markets.candles(symbol, plan.fallback);
+      if (fallback.ok && fallback.value.length > 0) return { candles: fallback.value, live: true };
+      return { candles: [], live: primary.ok || fallback.ok };
+    }
+    return { candles: valueOr(primary, []), live: primary.ok };
+  }
+
   return {
     async shell(symbol, timeframe) {
       const parsed = parseInstrumentSymbol(symbol);
       if (!parsed) return { kind: "unknown-symbol" };
-      const plan = TIMEFRAME_PLANS[timeframe];
       const guessedAsset = tickerAsset(parsed.eventTicker);
       const [loaded, chartCandles, hourly, ticker, snapshot, positions, watched] = await Promise.all([
         loadEvent(symbol),
-        markets.candles(symbol, plan.source),
+        loadChartCandles(symbol, timeframe),
         markets.candles(symbol, STATS_CANDLE),
         guessedAsset === undefined ? Promise.resolve(null) : markets.pubticker(spotPair(guessedAsset)),
         deps.desk.getSnapshot(),
@@ -178,7 +189,7 @@ export function createMarketPro(deps: MarketProDeps): MarketPro {
             expiryDate: contract.expiryDate ?? event.expiryDate,
             nowMs: now,
           }),
-          chart: toChart(valueOr(chartCandles, []), timeframe, now, chartCandles.ok),
+          chart: toChart(chartCandles.candles, timeframe, now, chartCandles.live),
           ladder: [...strikeLadder(event, symbol)],
           spot: buildSpot({ event, symbol, last: spotLast }),
           budget: budgetFrom(snapshot, now),
@@ -189,7 +200,7 @@ export function createMarketPro(deps: MarketProDeps): MarketPro {
       };
     },
 
-    async live(symbol, timeframe) {
+    async live(symbol) {
       const [loaded, bookResult, tradeResult, hourly, snapshot, positions, watched, post] = await Promise.all([
         loadEvent(symbol),
         markets.orderBook(symbol),

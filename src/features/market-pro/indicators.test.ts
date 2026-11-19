@@ -59,6 +59,26 @@ describe("onBalanceVolume and indicatorRows", () => {
     expect(depth?.value).toBeNull();
     expect(depth?.missing).toMatch(/order book/i);
   });
+
+  it("treats a rising series as stretched even when candles arrive newest first", () => {
+    const now = 20 * 60 * 60 * 1000;
+    const newestFirst: Candle[] = Array.from({ length: 20 }, (_, index) => {
+      const age = index;
+      return {
+        timeMs: now - age * 60 * 60 * 1000,
+        openCents: 59 - age,
+        highCents: 60 - age,
+        lowCents: 58 - age,
+        closeCents: 59 - age,
+        volume: 10,
+      };
+    });
+    const rows = indicatorRows({ hourly: newestFirst, nowMs: now, lastCents: 59, depthPlusMinus5: null });
+    const rsi = rows.find((row) => row.key === "rsi");
+    expect(rsi?.signal).toBe("Stretched");
+    expect(rsi?.value).not.toBe("9.5");
+    expect(Number(rsi?.value)).toBeGreaterThan(70);
+  });
 });
 
 describe("chartBands", () => {

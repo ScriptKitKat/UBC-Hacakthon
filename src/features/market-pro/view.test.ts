@@ -129,7 +129,7 @@ function desk(): MarketProDesk {
 
 describe("createMarketPro", () => {
   it("builds a schema-valid shell with live stats, candles, a strike ladder, and a spot quote", async () => {
-    const pro = createMarketPro({ markets: markets(), nowMs: () => NOW, desk: desk(), isWatched: async () => true });
+    const pro = createMarketPro({ markets: markets(), nowMs: () => NOW, desk: desk(), isWatched: () => Promise.resolve(true) });
     const result = await pro.shell(SYMBOL, "1D");
     expect(result.kind).toBe("ok");
     if (result.kind !== "ok") return;
@@ -149,7 +149,7 @@ describe("createMarketPro", () => {
   });
 
   it("builds a schema-valid live payload with the book, tape, indicators, flow, and feed", async () => {
-    const pro = createMarketPro({ markets: markets(), nowMs: () => NOW, desk: desk(), isWatched: async () => false });
+    const pro = createMarketPro({ markets: markets(), nowMs: () => NOW, desk: desk(), isWatched: () => Promise.resolve(false) });
     const result = await pro.live(SYMBOL, "1D");
     expect(result.kind).toBe("ok");
     if (result.kind !== "ok") return;
@@ -163,14 +163,32 @@ describe("createMarketPro", () => {
     expect(live.feed.some((item) => item.event.includes("Bought YES $5"))).toBe(true);
   });
 
+
+  it("falls back to hourly candles when Gemini has no daily series", async () => {
+    const hourlyOnly: MarketProMarkets = {
+      ...markets(),
+      candles: (symbol, timeframe) => {
+        if (symbol === SYMBOL && timeframe === "1day") return Promise.resolve({ ok: false, error: { kind: "http", status: 400 } });
+        if (symbol === SYMBOL) return Promise.resolve(ok(hourly));
+        return Promise.resolve(ok([]));
+      },
+    };
+    const pro = createMarketPro({ markets: hourlyOnly, nowMs: () => NOW, desk: desk(), isWatched: () => Promise.resolve(false) });
+    const result = await pro.shell(SYMBOL, "1D");
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.shell.chart.source).toBe("live");
+    expect(result.shell.chart.candles.length).toBeGreaterThan(0);
+  });
+
   it("returns unknown-symbol for a malformed ticker and unavailable when Gemini is down", async () => {
-    const missing = createMarketPro({ markets: markets(), nowMs: () => NOW, desk: desk(), isWatched: async () => false });
+    const missing = createMarketPro({ markets: markets(), nowMs: () => NOW, desk: desk(), isWatched: () => Promise.resolve(false) });
     expect(await missing.shell("not-a-symbol", "1D")).toEqual({ kind: "unknown-symbol" });
     const down: MarketProMarkets = {
       ...markets(),
       getEvent: () => Promise.resolve({ ok: false, error: { kind: "network" } }),
     };
-    const pro = createMarketPro({ markets: down, nowMs: () => NOW, desk: desk(), isWatched: async () => false });
+    const pro = createMarketPro({ markets: down, nowMs: () => NOW, desk: desk(), isWatched: () => Promise.resolve(false) });
     expect(await pro.shell(SYMBOL, "1D")).toEqual({ kind: "unavailable" });
   });
 });

@@ -102,7 +102,7 @@ beforeEach(() => {
     research: { view: vi.fn(), brief: vi.fn() },
     catalog: {} as Extract<HomeServices, { ok: true }>["catalog"],
     marketPro: { shell, live },
-  } as Extract<HomeServices, { ok: true }>);
+  });
 });
 
 describe("GET /api/research/[symbol]/pro", () => {

@@ -86,7 +86,7 @@ export function OrderTicket({ market, budget }: { readonly market: ProMarket; re
           {quote.kind === "invalid" ? "—" : `${formatDollars(quote.evCents, true)} (${quote.evPercent >= 0 ? "+" : "−"}${Math.abs(quote.evPercent).toFixed(0)}%)`}
         </dd>
         <dt>Kelly stake (of $10 cap)</dt>
-        <dd>{quote.kind === "invalid" ? "—" : quote.kellyStakeCents > 0 ? `${formatDollars(quote.kellyStakeCents)} (${Math.round(quote.kellyFraction * 100)}%)` : "No bet"}</dd>
+        <dd>{quote.kind === "invalid" ? "—" : quote.kellyStakeCents > 0 ? `${formatDollars(quote.kellyStakeCents)} (${String(Math.round(quote.kellyFraction * 100))}%)` : "No bet"}</dd>
         <dt>
           <Tip text="Gemini does not publish the exchange fee for prediction market trades.">Fee</Tip>
         </dt>
@@ -97,7 +97,7 @@ export function OrderTicket({ market, budget }: { readonly market: ProMarket; re
       <button type="button" className={styles.submit} disabled={!canSubmit} onClick={submit}>
         {approval ? "Needs approval" : "Place market"} · {side.toUpperCase()} {formatBudgetCents(stakeCents)}
       </button>
-      <p className={overLimit ? `${styles.hint} ${styles.warn}` : styles.hint}>
+      <p className={overLimit ? [styles.hint, styles.warn].join(" ") : (styles.hint ?? "")}>
         {budgetNote(stakeCents, budget.remainingCents, budget.autoApproveMaxCents, remainingCap, budget.perTradeMaxCents)}
         {` · ${formatResetLabel(budget.resetAt, "America/Chicago")}`}
       </p>

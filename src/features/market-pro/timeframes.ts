@@ -8,22 +8,27 @@ const WEEK_MS = 7 * DAY_MS;
 
 export interface TimeframePlan {
   readonly source: CandleTimeframe;
+  readonly fallback: CandleTimeframe | null;
   readonly bucketMs: number | null;
   readonly windowMs: number | null;
 }
 
 export const TIMEFRAME_PLANS: Readonly<Record<ProTimeframe, TimeframePlan>> = {
-  "5m": { source: "5m", bucketMs: null, windowMs: 12 * HOUR_MS },
-  "1h": { source: "1hr", bucketMs: null, windowMs: 7 * DAY_MS },
-  "4h": { source: "1hr", bucketMs: 4 * HOUR_MS, windowMs: 30 * DAY_MS },
-  "1D": { source: "1day", bucketMs: null, windowMs: 180 * DAY_MS },
-  "1W": { source: "1day", bucketMs: WEEK_MS, windowMs: null },
+  "5m": { source: "5m", fallback: "1m", bucketMs: null, windowMs: 12 * HOUR_MS },
+  "1h": { source: "1hr", fallback: "15m", bucketMs: null, windowMs: 7 * DAY_MS },
+  "4h": { source: "1hr", fallback: "15m", bucketMs: 4 * HOUR_MS, windowMs: 30 * DAY_MS },
+  "1D": { source: "1day", fallback: "1hr", bucketMs: null, windowMs: 180 * DAY_MS },
+  "1W": { source: "1day", fallback: "6hr", bucketMs: WEEK_MS, windowMs: null },
 };
 
 export const STATS_CANDLE: CandleTimeframe = "1hr";
 export const INDICATOR_CANDLE: CandleTimeframe = "1hr";
 export const DAY_MS_VALUE = DAY_MS;
 export const HOUR_MS_VALUE = HOUR_MS;
+
+export function chronological(candles: readonly Candle[]): Candle[] {
+  return [...candles].sort((a, b) => a.timeMs - b.timeMs);
+}
 
 export function aggregateCandles(candles: readonly Candle[], bucketMs: number): Candle[] {
   if (bucketMs <= 0) return [...candles].sort((a, b) => a.timeMs - b.timeMs);

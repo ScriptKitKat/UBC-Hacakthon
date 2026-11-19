@@ -39,7 +39,7 @@ function problemMessage(kind: "unknown" | "unavailable" | "error", message?: str
 function StatCell({ label, stat }: { readonly label: string; readonly stat: ProStat }) {
   const text = stat.kind === "value" ? stat.text : "—";
   const tip = stat.kind === "unavailable" ? stat.reason : undefined;
-  const value = <div className={`${styles.statValue} ${styles[statClass(stat)]}`}>{text}</div>;
+  const value = <div className={[styles.statValue, styles[statClass(stat)]].join(" ")}>{text}</div>;
   return (
     <div className={styles.stat}>
       <div className={styles.statLabel}>{label}</div>
@@ -52,7 +52,7 @@ function Skeleton({ rows = 4 }: { readonly rows?: number }) {
   return (
     <div className={styles.skeleton} aria-hidden="true">
       {Array.from({ length: rows }, (_, index) => (
-        <div key={index} className={index === 0 ? `${styles.bone} ${styles.boneLg}` : styles.bone} />
+        <div key={index} className={index === 0 ? [styles.bone, styles.boneLg].join(" ") : (styles.bone ?? "")} />
       ))}
     </div>
   );
@@ -287,7 +287,7 @@ function OrderBookCard({ live }: { readonly live: ProLive }) {
               <td>{formatCents(level.priceCents)}</td>
               <td>{formatShares(level.amount)}</td>
               <td>
-                <span className={`${styles.depth} ${styles.askDepth}`} style={{ width: `${String(Math.round((level.amount / max) * 100))}%` }} />
+                <span className={[styles.depth, styles.askDepth].join(" ")} style={{ width: `${String(Math.round((level.amount / max) * 100))}%` }} />
                 {formatUsdCompact(level.cumulative)}
               </td>
             </tr>
@@ -298,7 +298,7 @@ function OrderBookCard({ live }: { readonly live: ProLive }) {
               <td>{formatCents(level.priceCents)}</td>
               <td>{formatShares(level.amount)}</td>
               <td>
-                <span className={`${styles.depth} ${styles.bidDepth}`} style={{ width: `${String(Math.round((level.amount / max) * 100))}%` }} />
+                <span className={[styles.depth, styles.bidDepth].join(" ")} style={{ width: `${String(Math.round((level.amount / max) * 100))}%` }} />
                 {formatUsdCompact(level.cumulative)}
               </td>
             </tr>

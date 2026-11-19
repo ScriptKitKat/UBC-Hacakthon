@@ -223,11 +223,12 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     cardsForSaved: (items) => cardsForSaved(catalogDeps, items),
     watchlist: openWatchlist({ fs: nodeFileSystem, path: join(dataDirectory, "watchlist.json") }),
   };
+  const watchlist = homeCatalog.watchlist;
   const marketPro = createMarketPro({
     markets,
     nowMs: () => Date.now(),
     desk,
-    isWatched: async (symbol) => (await homeCatalog.watchlist.list()).includes(symbol),
+    isWatched: async (symbol) => (await watchlist.list()).includes(symbol),
   });
   if (runtime) runtime.catalog = homeCatalog;
   return { ok: true, desk, research, deepDive, marketPro };
