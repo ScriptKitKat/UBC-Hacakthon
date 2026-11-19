@@ -23,6 +23,7 @@ import { awaitingPaymentResult, createFeedOrders } from "./feed-orders";
 import type { FeedOrder, FeedOrders } from "./feed-orders";
 import { singleReconciliation } from "./reconciliation";
 import { UNDELIVERED_RECOVERY_MS } from "./purchase-store";
+import { yesCentsFromBrief } from "@/shared";
 import type { StoredPurchase } from "./purchase-store";
 import type {
   DecisionLogEntry,
@@ -107,6 +108,8 @@ export interface Desk {
   readonly isCardFor: (postId: string, symbol: string) => Promise<boolean>;
   readonly quote: (symbol: string) => Promise<FeedQuote | undefined>;
   readonly postContextFor: (symbol: string) => Promise<ResearchPostContext | undefined>;
+  readonly matchedPostsFor: (symbol: string) => Promise<readonly ResearchPostContext[]>;
+  readonly peekResearchBriefs: (symbol: string) => { readonly current: StoredPurchase | null; readonly previous: StoredPurchase | null };
   readonly getFeedPositions: () => Promise<FeedPositions>;
   readonly getPositions: () => Promise<PositionsView>;
   readonly buyDeepDive: (symbol: string) => Promise<DeepDiveResult>;
@@ -416,7 +419,13 @@ export function createDesk(deps: DeskDeps): Desk {
     if (!result.purchase) return;
     const { signature, explorerUrl, costCents, at } = result.purchase;
     storePurchases([
-      { symbol, atMs: Date.parse(at), brief: result.brief, receipt: { signature, explorerUrl, costCents } },
+      {
+        symbol,
+        atMs: Date.parse(at),
+        brief: result.brief,
+        receipt: { signature, explorerUrl, costCents },
+        yesCents: result.brief ? yesCentsFromBrief(result.brief) : null,
+      },
       ...purchases.filter((purchase) => purchase.receipt.signature !== signature),
     ]);
   }
@@ -810,19 +819,39 @@ export function createDesk(deps: DeskDeps): Desk {
     },
 
     async postContextFor(symbol) {
+      return (await this.matchedPostsFor(symbol))[0];
+    },
+
+    async matchedPostsFor(symbol) {
       const nowMs = now().getTime();
+      const posts: ResearchPostContext[] = [];
       for (const { at, post, match } of [...matchCache.values()].reverse()) {
         if (nowMs - at >= MATCH_CACHE_TTL_MS) continue;
         const resolved = await match.catch(() => undefined);
         if (resolved?.kind === "matched" && isFeedContract(resolved, symbol)) {
-          return { source: "x-feed", text: post.text, author: post.author ?? null, url: post.url ?? null, why: resolved.why };
+          posts.push({ source: "x-feed", text: post.text, author: post.author ?? null, url: post.url ?? null, why: resolved.why, atMs: at });
         }
       }
       if (current?.match.kind === "matched" && current.match.best.contract.instrumentSymbol === symbol) {
         const { news } = current;
-        return { source: "news", text: news.text, author: news.author ?? null, url: news.url ?? null, why: current.match.reasons.join(" ") || null };
+        const atMs = news.postedAt.getTime();
+        posts.push({
+          source: "news",
+          text: news.text,
+          author: news.author ?? null,
+          url: news.url ?? null,
+          why: current.match.reasons.join(" ") || null,
+          atMs,
+        });
       }
-      return undefined;
+      return posts;
+    },
+
+    peekResearchBriefs(symbol) {
+      const list = purchases
+        .filter((purchase) => purchase.symbol === symbol && purchase.brief !== null)
+        .sort((a, b) => b.atMs - a.atMs);
+      return { current: list[0] ?? null, previous: list[1] ?? null };
     },
 
     async getPositions() {

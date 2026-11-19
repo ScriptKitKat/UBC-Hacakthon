@@ -20,7 +20,7 @@ const sampleView: ResearchView = {
   timeframe: "1D",
   market: {
     eventTicker: "FED261211", eventTitle: "Fed decision in December?", contractLabel: "Fed maintains rate", category: "Economics", subcategory: null,
-    expiryDate: null, eventStatus: "active", marketState: "open", rulesText: "", volume: null, volume24h: null, quantityLimits: null,
+    expiryDate: null, eventStatus: "active", marketState: "open", rulesText: "", imageUrl: null, termsLink: null, volume: null, volume24h: null, quantityLimits: null,
     prices: { buyYesCents: 62, buyNoCents: 40, sellYesCents: 60, sellNoCents: 38, bestBidCents: 60, bestAskCents: 62, lastTradeCents: 61 },
   },
   data: { event: "live", candles: "live", book: "live", trades: "live" },
@@ -36,6 +36,7 @@ const sampleView: ResearchView = {
   },
   related: { sameEvent: [], sameCategory: [] },
   postContext: null,
+  matchedPosts: [],
 };
 
 const emptyPositions: PositionsView = {
@@ -66,6 +67,11 @@ describe("GET /api/research/[symbol]", () => {
   it("passes a requested timeframe through", async () => {
     await call(SYMBOL, "?timeframe=1W");
     expect(view).toHaveBeenCalledWith(SYMBOL, "1W");
+  });
+
+  it("accepts the 1M beginner timeframe", async () => {
+    await call(SYMBOL, "?timeframe=1M");
+    expect(view).toHaveBeenCalledWith(SYMBOL, "1M");
   });
 
   it.each(["nope", "GEMI-FED261211", "gemi-fed261211-maintain", "GEMI-FED%3Fx-Y"])("rejects the malformed symbol %s with 400", async (symbol) => {

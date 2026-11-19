@@ -16,6 +16,7 @@ export const TIMEFRAME_PLANS: Readonly<Record<ResearchTimeframe, TimeframePlan>>
   "1H": { candle: "1m", windowMs: HOUR_MS },
   "1D": { candle: "15m", windowMs: DAY_MS },
   "1W": { candle: "1hr", windowMs: 7 * DAY_MS },
+  "1M": { candle: "6hr", windowMs: 30 * DAY_MS },
   All: { candle: "1day", windowMs: null },
 };
 

@@ -9,14 +9,15 @@ export default async function MarketPage({
   searchParams,
 }: {
   readonly params: Promise<{ readonly symbol: string }>;
-  readonly searchParams: Promise<{ readonly contract?: string }>;
+  readonly searchParams: Promise<{ readonly contract?: string; readonly view?: string }>;
 }) {
   const { symbol } = await params;
   const query = await searchParams;
   const selected = selectedResearchSymbol(decodeURIComponent(symbol), query.contract);
+  const initialView = query.view === "pro" || query.view === "beginner" ? query.view : undefined;
   return (
-    <Shell>
-      <ResearchPage symbol={decodeURIComponent(selected)} />
+    <Shell {...(initialView === undefined ? {} : { initialView })}>
+      <ResearchPage symbol={decodeURIComponent(selected)} {...(initialView === undefined ? {} : { initialView })} />
     </Shell>
   );
 }

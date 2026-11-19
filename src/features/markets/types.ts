@@ -49,6 +49,8 @@ export interface MarketEvent {
   readonly isLive?: boolean;
   readonly createdAt?: string | null;
   readonly startTime?: string | null;
+  readonly imageUrl?: string | null;
+  readonly termsLink?: string | null;
 }
 
 export interface EventsPage {

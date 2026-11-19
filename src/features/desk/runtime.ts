@@ -183,7 +183,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   const completeJson: JsonCompleter | undefined = grok.apiKey === undefined
     ? undefined
     : (request) => requestGrokJson({ settings: grok, fetch, ...request });
-  const research = createResearch({ markets, history, nowMs: () => Date.now(), postContextFor: desk.postContextFor, ...(completeJson ? { completeJson } : {}) });
+  const research = createResearch({ markets, history, nowMs: () => Date.now(), postContextFor: desk.postContextFor, matchedPostsFor: desk.matchedPostsFor, ...(completeJson ? { completeJson } : {}) });
   const deepDive = payments ? createDeepDiveResource({ payments, research, publicOrigin }) : undefined;
   deferredDeepDive.bind(deepDive);
   const reconcile = async () => {

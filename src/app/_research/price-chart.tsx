@@ -9,7 +9,7 @@ import { formatAxisTime, formatFullTime, formatPriceCents, formatVolume } from "
 import { Tip } from "./tip";
 import styles from "./research.module.css";
 
-const TIMEFRAME_LABELS: Record<ResearchTimeframe, string> = { "1H": "1H", "1D": "1D", "1W": "1W", All: "All" };
+const TIMEFRAME_LABELS: Record<ResearchTimeframe, string> = { "1H": "1H", "1D": "1D", "1W": "1W", "1M": "1M", All: "All" };
 
 const SOURCE_LABELS = { gemini: "Gemini candles", snapshot: "Desk snapshots" } as const;
 

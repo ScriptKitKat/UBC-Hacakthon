@@ -13,6 +13,7 @@ const view: ResearchView = {
   market: {
     eventTicker: "FED261211", eventTitle: "Fed decision in December?", contractLabel: "Fed maintains rate", category: "Economics", subcategory: null,
     expiryDate: "2026-12-11T19:00:00Z", eventStatus: "active", marketState: "open", rulesText: "Resolves YES if the Fed holds the target range at the December meeting.",
+    imageUrl: null, termsLink: null,
     volume: 12345, volume24h: 678, quantityLimits: null,
     prices: { buyYesCents: 62, buyNoCents: 40, sellYesCents: 60, sellNoCents: 38, bestBidCents: 60, bestAskCents: 62, lastTradeCents: 61 },
   },
@@ -38,7 +39,8 @@ const view: ResearchView = {
     sameEvent: [{ symbol: "GEMI-FED261211-CUT25", eventTitle: "Fed decision in December?", contractLabel: "Cut 25bps", yesCents: 33, noCents: 69 }],
     sameCategory: [{ symbol: "GEMI-CPI-HOT", eventTitle: "CPI above forecast?", contractLabel: "Yes", yesCents: 48, noCents: 54 }],
   },
-  postContext: { source: "x-feed", text: "Powell says rates could hold", author: "@Reuters", url: null, why: "Holding rates is the outcome this contract pays on." },
+  postContext: { source: "x-feed", text: "Powell says rates could hold", author: "@Reuters", url: null, why: "Holding rates is the outcome this contract pays on.", atMs: null },
+  matchedPosts: [],
 };
 
 const emptyView: ResearchView = {
@@ -57,6 +59,7 @@ const emptyView: ResearchView = {
   },
   related: { sameEvent: [], sameCategory: [] },
   postContext: null,
+  matchedPosts: [],
 };
 
 function numbersIn(text: string): string[] {
