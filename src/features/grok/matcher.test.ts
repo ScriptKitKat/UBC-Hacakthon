@@ -11,15 +11,17 @@ function contract(symbol: string, label: string, yes = 62): MarketContract {
   return {
     instrumentSymbol: instrumentSymbol(symbol),
     label,
+    description: "",
+    expiryDate: null,
     marketState: "open",
     status: "active",
-    prices: { bestBidCents: yes - 1, bestAskCents: yes, lastTradeCents: yes, buyYesCents: yes, buyNoCents: 100 - yes },
+    prices: { bestBidCents: yes - 1, bestAskCents: yes, lastTradeCents: yes, buyYesCents: yes, buyNoCents: 100 - yes, sellYesCents: null, sellNoCents: null },
     limits: null,
   };
 }
 
 function event(ticker: string, title: string, category: string, contracts: readonly MarketContract[]): MarketEvent {
-  return { ticker, title, category, status: "active", expiryDate: null, tags: [], contracts };
+  return { ticker, title, category, status: "active", expiryDate: null, description: "", subcategory: null, volume: null, volume24h: null, tags: [], contracts };
 }
 
 const fed = event("FED261211", "Fed decision in December?", "Economics", [
@@ -161,7 +163,7 @@ describe("grok post matcher", () => {
   });
 
   it("matches a sports post from the nickname's city and skips unpriced contracts", async () => {
-    const unpriced = event("NFL-2611221800-KC-BUF-S", "Kansas City vs Buffalo: Point Spread", "Sports", [{ ...contract("GEMI-KC2", "Kansas City"), prices: { bestBidCents: null, bestAskCents: null, lastTradeCents: null, buyYesCents: null, buyNoCents: 5 } }]);
+    const unpriced = event("NFL-2611221800-KC-BUF-S", "Kansas City vs Buffalo: Point Spread", "Sports", [{ ...contract("GEMI-KC2", "Kansas City"), prices: { bestBidCents: null, bestAskCents: null, lastTradeCents: null, buyYesCents: null, buyNoCents: 5, sellYesCents: null, sellNoCents: null } }]);
     const { matcher } = setup({ apiKey: undefined, markets: fakeMarkets([unpriced, intraday, sports]) });
     const result = await matcher.matchPost({ id: "5", text: "Chiefs host the Bills on Sunday, Chiefs favored" });
     expect(result).toMatchObject({ kind: "matched", matchedBy: "keywords", candidate: { eventTicker: "NFL-2611221800-KC-BUF-M", contract: { label: "Kansas City" } } });

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { DecisionKind, DecisionLogEntry } from "@/shared";
 import { formatClock, formatDollars, shortenMiddle } from "./format";
 import { SpeakerIcon } from "./icons";
@@ -42,7 +43,7 @@ export function LogPanel({ log }: { readonly log: readonly DecisionLogEntry[] })
                   <span className={entry.outcome === "yes" ? styles.pillYes : styles.pillNo}>{entry.outcome.toUpperCase()}</span>
                   <span className={styles.logAmount}>{formatDollars(entry.notionalCents)}</span>
                 </span>
-                <span className={styles.logSymbol}>{entry.symbol}</span>
+                <Link className={styles.logSymbol} href={`/markets/${entry.symbol}`} title="Research this market">{entry.symbol}</Link>
                 <span className={styles.logSender}>{entry.source === "feed" ? `X feed card · ${entry.senderId}` : entry.senderId}</span>
               </span>
               <span className={styles.logReason}>{entry.spokenReason}</span>

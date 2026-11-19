@@ -92,6 +92,8 @@ button:focus-visible, a.link:focus-visible { outline: 2px solid rgb(29, 155, 240
   background: rgba(0, 0, 0, 0.35); border-top: 1px solid rgb(47, 51, 54);
 }
 .foot strong { color: rgb(231, 233, 234); }
+.research { margin-left: 10px; color: rgb(29, 155, 240); font-weight: 700; text-decoration: none; }
+.research:hover { text-decoration: underline; }
 @media (max-width: 420px) {
   .head { grid-template-columns: 44px minmax(0, 1fr); }
   .chart { grid-column: 1 / -1; width: 100%; }

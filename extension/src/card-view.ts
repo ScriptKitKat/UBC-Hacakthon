@@ -78,7 +78,11 @@ function isSafeLink(url: string): boolean {
   }
 }
 
-export function createCard(initial: WireMatched, send: Sender): CardHandle {
+export interface CardOptions {
+  readonly researchHref?: string;
+}
+
+export function createCard(initial: WireMatched, send: Sender, options: CardOptions = {}): CardHandle {
   let state = initialCardState(initial);
   const host = h("div", { attributes: { [CARD_HOST_ATTRIBUTE]: initial.postId } });
   const shadow = host.attachShadow({ mode: "open" });
@@ -249,7 +253,16 @@ export function createCard(initial: WireMatched, send: Sender): CardHandle {
       "div",
       { className: "card", attributes: { role: "group", "aria-label": `Prediction market: ${market.eventTitle}` } },
       body,
-      h("div", { className: "foot" }, "Trade on ", h("strong", { text: "Gemini" }), " · settled in USDC on Solana"),
+      h(
+        "div",
+        { className: "foot" },
+        "Trade on ",
+        h("strong", { text: "Gemini" }),
+        " · settled in USDC on Solana",
+        options.researchHref === undefined
+          ? null
+          : h("a", { className: "research", text: "Research ↗", attributes: { href: options.researchHref, target: "_blank", rel: "noopener noreferrer", "data-key": "research" } }),
+      ),
     );
     root.replaceChildren(card);
     if (focusKey) shadow.querySelector<HTMLElement>(`[data-key="${focusKey}"]`)?.focus();

@@ -9,6 +9,6 @@ export const postBody = z.object({
 
 export type PostBody = z.output<typeof postBody>;
 
-export function toPostInput({ postId, text, author }: PostBody) {
-  return { id: postId, text, ...(author ? { author } : {}) };
+export function toPostInput({ postId, text, author, url }: PostBody) {
+  return { id: postId, text, ...(author ? { author } : {}), ...(url ? { url } : {}) };
 }

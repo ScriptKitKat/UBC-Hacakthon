@@ -41,6 +41,8 @@ const stubDesk: Desk = {
   matchPost: vi.fn(),
   isCardFor: vi.fn(),
   quote: vi.fn(),
+  postContextFor: vi.fn(),
+  getPositions: vi.fn(),
   buyFromFeed: vi.fn(),
   confirmFromFeed: vi.fn(),
   setKillSwitch: vi.fn(),
@@ -58,7 +60,7 @@ beforeEach(() => {
   vi.stubEnv("ELEVENLABS_API_KEY", "");
   vi.stubEnv("ELEVENLABS_AGENT_ID", "");
   vi.stubEnv("VOICE_OPERATOR_ID", "priscilla");
-  getDesk.mockResolvedValue({ ok: true, desk: stubDesk });
+  getDesk.mockResolvedValue({ ok: true, desk: stubDesk, research: { view: vi.fn() } });
 });
 
 describe("voice tool route", () => {

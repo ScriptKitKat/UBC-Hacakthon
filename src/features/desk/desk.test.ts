@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createMemoryHistory } from "@/features/history";
 import { createPolicy } from "@/features/guardrails";
 import type { UsdcLedger } from "@/features/ledger";
 import { createUnconfiguredLedger } from "@/features/ledger";
@@ -7,6 +8,9 @@ import type { GeminiMarketsClient, MarketContract, MarketEvent } from "@/feature
 import { instrumentSymbol, usdCents } from "@/shared";
 import type { LedgerView } from "@/shared";
 import { createDesk } from "./desk";
+import type { DeskDeps } from "./desk";
+import { openDecisionLog } from "./log-store";
+import { createMemoryFileSystem } from "@/features/storage";
 
 const symbol = instrumentSymbol("GEMI-FED261211-MAINTAIN");
 const otherSymbol = instrumentSymbol("GEMI-FED261211-CUT25");
@@ -15,9 +19,11 @@ function contract(instrument: typeof symbol, label: string, marketState = "open"
   return {
     instrumentSymbol: instrument,
     label,
+    description: "",
+    expiryDate: null,
     marketState,
     status: "active",
-    prices: { bestBidCents: 60, bestAskCents: 62, lastTradeCents: 62, buyYesCents: 62, buyNoCents: 40 },
+    prices: { bestBidCents: 60, bestAskCents: 62, lastTradeCents: 62, buyYesCents: 62, buyNoCents: 40, sellYesCents: null, sellNoCents: null },
     limits: { quantityIncrementHundredths: 1n, quantityMinimumHundredths: 1n, priceIncrementCents: 1n, priceMinimumCents: 1n },
   };
 }
@@ -29,6 +35,10 @@ function event(marketState = "open"): MarketEvent {
     category: "Economics",
     status: "active",
     expiryDate: null,
+    description: "",
+    subcategory: null,
+    volume: null,
+    volume24h: null,
     tags: ["fed"],
     contracts: [contract(symbol, "Fed maintains rate", marketState), contract(otherSymbol, "Cut 25bps")],
   };
@@ -46,7 +56,7 @@ const configuredLedger: LedgerView = {
   configured: true, cluster: "localnet", authority: "Authority1", mint: "Mint1", recipient: "Recipient1",
 };
 
-function setup(options: { ledger?: UsdcLedger; ledgerView?: LedgerView; markets?: ReturnType<typeof fakeMarkets>; killSwitch?: boolean } = {}) {
+function setup(options: { ledger?: UsdcLedger; ledgerView?: LedgerView; markets?: ReturnType<typeof fakeMarkets>; killSwitch?: boolean; extra?: Partial<DeskDeps> } = {}) {
   let counter = 0;
   const debit = vi.fn<UsdcLedger["debit"]>(() => Promise.resolve({ ok: true, value: receipt(`sig-${String(++counter)}`) }));
   const ledger = options.ledger ?? { debit, balance: vi.fn() };
@@ -57,9 +67,11 @@ function setup(options: { ledger?: UsdcLedger; ledgerView?: LedgerView; markets?
   });
   if (!policy.ok) throw new Error("invalid policy");
   let ids = 0;
+  let tick = 0;
   const desk = createDesk({
     policy: policy.value, feed: { operatorId: "priscilla", grok: { apiKey: undefined, model: "grok-test" } }, markets, ledger, ledgerView: options.ledgerView ?? configuredLedger,
-    now: () => new Date("2026-11-17T12:00:00Z"), idGen: () => `id-${String(++ids)}`,
+    now: () => new Date(Date.parse("2026-11-17T12:00:00Z") + 30_000 * tick++), idGen: () => `id-${String(++ids)}`,
+    ...options.extra,
   });
   return { desk, debit, markets };
 }
@@ -255,7 +267,7 @@ describe("desk", () => {
 describe("desk feed", () => {
   const post = { id: "post-1", text: news.text, author: "@Reuters" };
   const sportsEvent: MarketEvent = {
-    ticker: "NFL-2611221800-KC-BUF-M", title: "Kansas City vs Buffalo", category: "Sports", status: "active", expiryDate: null, tags: [],
+    ticker: "NFL-2611221800-KC-BUF-M", title: "Kansas City vs Buffalo", category: "Sports", status: "active", expiryDate: null, description: "", subcategory: null, volume: null, volume24h: null, tags: [],
     contracts: [contract(instrumentSymbol("GEMI-NFL-KC"), "Kansas City")],
   };
 
@@ -378,4 +390,68 @@ describe("desk feed", () => {
   });
 });
 
+});
+
+describe("desk persistence, positions and research context", () => {
+  it("restores the decision log after a restart and keeps positions", async () => {
+    const fs = createMemoryFileSystem();
+    const first = await openDecisionLog({ fs, path: "/d/log.json" });
+    const { desk } = await readyDesk({ extra: { initialLog: first.initialLog, saveLog: first.saveLog } });
+    const filled = await desk.proposeTrade(propose("yes", 200));
+    expect(filled.kind).toBe("approve");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const second = await openDecisionLog({ fs, path: "/d/log.json" });
+    const { desk: restarted } = setup({ extra: { initialLog: second.initialLog, saveLog: second.saveLog } });
+    expect((await restarted.getSnapshot()).log).toEqual([filled]);
+    const positions = await restarted.getPositions();
+    expect(positions.positions).toHaveLength(1);
+    expect(positions.positions[0]).toMatchObject({ symbol, outcome: "yes", costCents: 200, status: "open" });
+  });
+
+  it("survives a corrupted log file", async () => {
+    const fs = createMemoryFileSystem({ "/d/log.json": "}{" });
+    const store = await openDecisionLog({ fs, path: "/d/log.json" });
+    expect(store.initialLog).toEqual([]);
+  });
+
+  it("values filled positions at the sell price once the market is known", async () => {
+    const { desk } = await readyDesk();
+    await desk.proposeTrade(propose("yes", 200));
+    const { positions, totals } = await desk.getPositions();
+    expect(positions[0]).toMatchObject({ eventTitle: "Fed decision in December?", status: "open", currentCents: 60, contracts: 3.22 });
+    expect(totals.unpricedPositions).toBe(0);
+  });
+
+  it("only counts filled entries as positions", async () => {
+    const { desk } = setup();
+    await desk.proposeTrade(propose("yes", 200, "stranger"));
+    expect((await desk.getPositions()).positions).toEqual([]);
+  });
+
+  it("serves the x post that matched a market as research context", async () => {
+    const { desk } = setup();
+    const post = { id: "ctx-1", text: news.text, author: "@Reuters", url: "https://x.com/Reuters/status/1" };
+    const match = await desk.matchPost(post);
+    if (match.kind !== "matched") throw new Error("expected a match");
+    expect(await desk.postContextFor(match.market.instrumentSymbol)).toEqual({
+      source: "x-feed", text: news.text, author: "@Reuters", url: "https://x.com/Reuters/status/1", why: match.why,
+    });
+    expect(await desk.postContextFor("GEMI-OTHER-X")).toBeUndefined();
+  });
+
+  it("falls back to the submitted news as research context", async () => {
+    const { desk } = setup();
+    const view = await desk.submitNews(news);
+    if (view.kind !== "matched") throw new Error("expected a match");
+    expect(await desk.postContextFor(view.market.instrumentSymbol)).toMatchObject({ source: "news", text: news.text, author: "Reuters" });
+  });
+
+  it("feeds quote history from the shared history store", async () => {
+    const history = createMemoryHistory();
+    const { desk } = setup({ extra: { history } });
+    await desk.matchPost({ id: "h1", text: news.text });
+    await desk.quote("GEMI-FED261211-MAINTAIN");
+    expect(history.watched()).toContain("GEMI-FED261211-MAINTAIN");
+    expect(history.series("GEMI-FED261211-MAINTAIN")).toHaveLength(2);
+  });
 });

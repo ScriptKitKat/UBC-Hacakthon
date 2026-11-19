@@ -1,0 +1,122 @@
+import { z } from "zod";
+
+export const RESEARCH_TIMEFRAMES = ["1H", "1D", "1W", "All"] as const;
+export type ResearchTimeframe = (typeof RESEARCH_TIMEFRAMES)[number];
+
+const cents = z.number().nullable();
+
+const seriesPoint = z.object({
+  t: z.number(),
+  cents: z.number(),
+  volume: z.number().nullable(),
+  source: z.enum(["gemini", "snapshot"]),
+  bidCents: cents,
+  askCents: cents,
+  ma: cents,
+  upper: cents,
+  lower: cents,
+});
+
+const depthLevel = z.object({ priceCents: z.number(), amount: z.number(), cumulative: z.number() });
+
+const trade = z.object({
+  tradeId: z.number(),
+  timeMs: z.number(),
+  priceCents: z.number(),
+  amount: z.number(),
+  side: z.enum(["buy", "sell"]),
+});
+
+const relatedContract = z.object({
+  symbol: z.string(),
+  eventTitle: z.string(),
+  contractLabel: z.string(),
+  yesCents: cents,
+  noCents: cents,
+});
+
+const postContext = z.object({
+  source: z.enum(["x-feed", "news"]),
+  text: z.string(),
+  author: z.string().nullable(),
+  url: z.string().nullable(),
+  why: z.string().nullable(),
+});
+
+export const indicatorsSchema = z.object({
+  momentum: z.object({
+    value: z.number().nullable(),
+    zone: z.enum(["overbought", "oversold", "neutral"]).nullable(),
+    reading: z.string(),
+  }),
+  jumpiness: z.object({
+    value: z.number().nullable(),
+    mean: z.number().nullable(),
+    upper: z.number().nullable(),
+    lower: z.number().nullable(),
+    outsideBand: z.boolean(),
+    reading: z.string(),
+  }),
+  volumeSpike: z.object({
+    ratio: z.number().nullable(),
+    obvTrend: z.enum(["up", "down", "flat"]).nullable(),
+    reading: z.string(),
+  }),
+  averagePrice: z.object({ value: z.number().nullable(), window: z.number(), reading: z.string() }),
+  recentMove: z.object({ hourCents: z.number().nullable(), dayCents: z.number().nullable(), reading: z.string() }),
+});
+
+export const researchViewSchema = z.object({
+  symbol: z.string(),
+  generatedAt: z.string(),
+  timeframe: z.enum(RESEARCH_TIMEFRAMES),
+  market: z.object({
+    eventTicker: z.string(),
+    eventTitle: z.string(),
+    contractLabel: z.string(),
+    category: z.string(),
+    subcategory: z.string().nullable(),
+    expiryDate: z.string().nullable(),
+    eventStatus: z.string(),
+    marketState: z.string(),
+    rulesText: z.string(),
+    volume: z.number().nullable(),
+    volume24h: z.number().nullable(),
+    prices: z.object({
+      buyYesCents: cents,
+      buyNoCents: cents,
+      sellYesCents: cents,
+      sellNoCents: cents,
+      bestBidCents: cents,
+      bestAskCents: cents,
+      lastTradeCents: cents,
+    }),
+  }),
+  data: z.object({
+    event: z.enum(["live", "stale"]),
+    candles: z.enum(["live", "unavailable"]),
+    book: z.enum(["live", "unavailable"]),
+    trades: z.enum(["live", "unavailable"]),
+  }),
+  series: z.object({
+    source: z.enum(["gemini", "snapshot", "mixed", "none"]),
+    points: z.array(seriesPoint),
+  }),
+  book: z.object({ bids: z.array(depthLevel), asks: z.array(depthLevel) }),
+  trades: z.array(trade),
+  indicators: indicatorsSchema,
+  related: z.object({ sameEvent: z.array(relatedContract), sameCategory: z.array(relatedContract) }),
+  postContext: postContext.nullable(),
+});
+
+export type ResearchView = z.output<typeof researchViewSchema>;
+export type ResearchIndicators = z.output<typeof indicatorsSchema>;
+export type ResearchSeriesPoint = z.output<typeof seriesPoint>;
+export type ResearchPostContext = z.output<typeof postContext>;
+export type ResearchRelatedContract = z.output<typeof relatedContract>;
+export type ResearchDepthLevel = z.output<typeof depthLevel>;
+export type ResearchTrade = z.output<typeof trade>;
+
+export function isResearchTimeframe(value: string): value is ResearchTimeframe {
+  return (RESEARCH_TIMEFRAMES as readonly string[]).includes(value);
+}

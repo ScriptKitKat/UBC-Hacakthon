@@ -4,10 +4,15 @@ import { CARD_CATEGORIES, createPostMatcher } from "@/features/grok";
 import type { PostCandidate, PostInput } from "@/features/grok";
 import { confirm, evaluate, marketPolicyRefusal, rollDay } from "@/features/guardrails";
 import type { ApprovedTrade, Decision, Policy, PolicyState } from "@/features/guardrails";
+import { createMemoryHistory } from "@/features/history";
+import type { HistoryStore } from "@/features/history";
 import type { UsdcLedger } from "@/features/ledger";
+import { parseInstrumentSymbol } from "@/features/markets";
 import type { ContractLimits, GeminiMarketsClient, MarketContract } from "@/features/markets";
 import { allowAll, matchNews } from "@/features/matcher";
 import type { MatchCandidate, MatchResult, NewsItem } from "@/features/matcher";
+import { aggregatePositions, fillsFromLog, markFromContract } from "@/features/positions";
+import type { MarketMark } from "@/features/positions";
 import { instrumentSymbol, usdCents } from "@/shared";
 import type { FeedSettings } from "./config";
 import type {
@@ -24,13 +29,16 @@ import type {
   Outcome,
   PendingView,
   PolicyView,
+  PositionsView,
   PricePoint,
+  ResearchPostContext,
   TradeIntent,
   TradeSource,
   UsdCents,
 } from "@/shared";
 
-const LOG_LIMIT = 200;
+const LOG_LIMIT = 1000;
+const LOG_VIEW_LIMIT = 200;
 const HISTORY_LIMIT = 90;
 const MATCH_CACHE_LIMIT = 300;
 const MATCH_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -47,6 +55,9 @@ export interface DeskDeps {
   readonly fetch?: typeof fetch;
   readonly now: () => Date;
   readonly idGen: () => string;
+  readonly history?: HistoryStore;
+  readonly initialLog?: readonly DecisionLogEntry[];
+  readonly saveLog?: (log: readonly DecisionLogEntry[]) => Promise<void>;
 }
 
 export interface FeedBuyRequest {
@@ -75,6 +86,8 @@ export interface Desk {
   readonly matchPost: (post: PostInput) => Promise<FeedMatch>;
   readonly isCardFor: (postId: string, symbol: string) => Promise<boolean>;
   readonly quote: (symbol: string) => Promise<FeedQuote | undefined>;
+  readonly postContextFor: (symbol: string) => Promise<ResearchPostContext | undefined>;
+  readonly getPositions: () => Promise<PositionsView>;
   readonly buyFromFeed: (request: FeedBuyRequest) => Promise<DecisionLogEntry>;
   readonly confirmFromFeed: (intentId: string) => Promise<ConfirmResult>;
   readonly proposeTrade: (request: ProposeRequest) => Promise<DecisionLogEntry>;
@@ -210,19 +223,24 @@ export function createDesk(deps: DeskDeps): Desk {
     seenIntentIds: new Set(),
   };
   let current: { readonly news: NewsItem; readonly match: MatchResult } | undefined;
-  let log: readonly DecisionLogEntry[] = [];
+  const history = deps.history ?? createMemoryHistory();
+  const saveLog = deps.saveLog ?? (() => Promise.resolve());
+  const lastMarks = new Map<string, MarketMark>();
+  let log: readonly DecisionLogEntry[] = (deps.initialLog ?? []).slice(0, LOG_LIMIT);
   const pending = new Map<string, PendingRecord>();
   const tickers = new Map<InstrumentSymbol, string>();
-  const priceHistory = new Map<InstrumentSymbol, PricePoint[]>();
-  const matchCache = new Map<string, { readonly at: number; readonly match: Promise<FeedMatch> }>();
+  const matchCache = new Map<string, { readonly at: number; readonly post: PostInput; readonly match: Promise<FeedMatch> }>();
   const feedOrders = new Map<string, Promise<DecisionLogEntry>>();
 
   function recordPrice(market: LiveMarket): void {
-    const yesCents = market.contract.prices.buyYesCents;
-    if (yesCents === null) return;
-    const points = priceHistory.get(market.contract.instrumentSymbol) ?? [];
-    points.push({ at: now().toISOString(), yesCents });
-    priceHistory.set(market.contract.instrumentSymbol, points.slice(-HISTORY_LIMIT));
+    const { instrumentSymbol: symbol, prices } = market.contract;
+    history.watch(symbol);
+    if (prices.buyYesCents === null) return;
+    history.record(symbol, { atMs: now().getTime(), yesCents: prices.buyYesCents, bidCents: prices.bestBidCents, askCents: prices.bestAskCents });
+  }
+
+  function priceHistory(symbol: InstrumentSymbol): PricePoint[] {
+    return history.series(symbol).slice(-HISTORY_LIMIT).map((point) => ({ at: new Date(point.atMs).toISOString(), yesCents: point.yesCents }));
   }
 
   function tradeBlockedReason(market: LiveMarket): string | undefined {
@@ -252,6 +270,7 @@ export function createDesk(deps: DeskDeps): Desk {
   function record(entry: Omit<DecisionLogEntry, "entryId" | "at">): DecisionLogEntry {
     const complete = { ...entry, entryId: idGen(), at: now().toISOString() };
     log = [complete, ...log].slice(0, LOG_LIMIT);
+    saveLog(log).catch(() => undefined);
     return complete;
   }
 
@@ -303,7 +322,7 @@ export function createDesk(deps: DeskDeps): Desk {
       return hit.match;
     }
     const match = computeFeedMatch(post);
-    matchCache.set(post.id, { at: nowMs, match });
+    matchCache.set(post.id, { at: nowMs, post, match });
     for (const oldest of matchCache.keys()) {
       if (matchCache.size <= MATCH_CACHE_LIMIT) break;
       matchCache.delete(oldest);
@@ -432,7 +451,42 @@ export function createDesk(deps: DeskDeps): Desk {
     async quote(symbol) {
       const market = await resolveMarket(instrumentSymbol(symbol));
       if (!market) return undefined;
-      return { market: feedMarketView(market), history: [...(priceHistory.get(market.contract.instrumentSymbol) ?? [])] };
+      return { market: feedMarketView(market), history: priceHistory(market.contract.instrumentSymbol) };
+    },
+
+    async postContextFor(symbol) {
+      const nowMs = now().getTime();
+      for (const { at, post, match } of [...matchCache.values()].reverse()) {
+        if (nowMs - at >= MATCH_CACHE_TTL_MS) continue;
+        const resolved = await match.catch(() => undefined);
+        if (resolved?.kind === "matched" && resolved.market.instrumentSymbol === symbol) {
+          return { source: "x-feed", text: post.text, author: post.author ?? null, url: post.url ?? null, why: resolved.why };
+        }
+      }
+      if (current?.match.kind === "matched" && current.match.best.contract.instrumentSymbol === symbol) {
+        const { news } = current;
+        return { source: "news", text: news.text, author: news.author ?? null, url: news.url ?? null, why: current.match.reasons.join(" ") || null };
+      }
+      return undefined;
+    },
+
+    async getPositions() {
+      const fills = fillsFromLog(log);
+      const byEvent = new Map<string, Set<string>>();
+      for (const { symbol } of fills) {
+        const parsed = parseInstrumentSymbol(symbol);
+        if (parsed) byEvent.set(parsed.eventTicker, (byEvent.get(parsed.eventTicker) ?? new Set()).add(symbol));
+      }
+      await Promise.all(
+        [...byEvent].map(async ([eventTicker, symbols]) => {
+          const result = await markets.getEvent(eventTicker);
+          if (!result.ok) return;
+          for (const contract of result.value.contracts) {
+            if (symbols.has(contract.instrumentSymbol)) lastMarks.set(contract.instrumentSymbol, markFromContract(result.value, contract));
+          }
+        }),
+      );
+      return aggregatePositions(fills, lastMarks, now().toISOString());
     },
 
     buyFromFeed({ clientOrderId, ...request }) {
@@ -489,7 +543,7 @@ export function createDesk(deps: DeskDeps): Desk {
         match: matchView(current?.match, best),
         policy: policyView,
         pending: pendingViews,
-        log,
+        log: log.slice(0, LOG_VIEW_LIMIT),
         ledger: deps.ledgerView,
       };
     },

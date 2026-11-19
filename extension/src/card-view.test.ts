@@ -38,6 +38,23 @@ beforeEach(() => {
   document.body.innerHTML = "";
 });
 
+describe("research link", () => {
+  it("links to the research page in a new tab when a href is provided", () => {
+    const handle = createCard(matched, vi.fn(), { researchHref: "http://localhost:3000/markets/GEMI-FED261211-MAINTAIN" });
+    document.body.append(handle.host);
+    const link = handle.host.shadowRoot?.querySelector<HTMLAnchorElement>('[data-key="research"]');
+    expect(link?.getAttribute("href")).toBe("http://localhost:3000/markets/GEMI-FED261211-MAINTAIN");
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(link?.textContent).toBe("Research ↗");
+  });
+
+  it("omits the link without a href", () => {
+    const handle = createCard(matched, vi.fn());
+    expect(handle.host.shadowRoot?.querySelector('[data-key="research"]')).toBeNull();
+  });
+});
+
 describe("market card", () => {
   it("renders the market, prices, Grok badge, why line and footer", () => {
     const { text, handle, root } = setup();

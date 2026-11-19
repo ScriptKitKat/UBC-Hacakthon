@@ -47,7 +47,7 @@ beforeEach(() => {
   deskQuote.mockReset();
   buyFromFeed.mockReset().mockResolvedValue(entry);
   confirmFromFeed.mockReset().mockResolvedValue({ ok: true, entry });
-  getDesk.mockResolvedValue({ ok: true, desk: stubDesk });
+  getDesk.mockResolvedValue({ ok: true, desk: stubDesk, research: { view: vi.fn() } });
 });
 
 describe("feed cors", () => {
@@ -250,7 +250,7 @@ describe("feed prewarm", () => {
     const response = await prewarm(post("http://desk.test", { posts }));
     expect(await response.json()).toEqual({ warmed: [{ postId: "p1", kind: "no-match" }, { postId: "p2", kind: "no-match" }] });
     expect(matchPost).toHaveBeenCalledTimes(2);
-    expect(matchPost).toHaveBeenNthCalledWith(1, { id: "p1", text: "Fed holds rates", author: "@Reuters" });
+    expect(matchPost).toHaveBeenNthCalledWith(1, { id: "p1", text: "Fed holds rates", author: "@Reuters", url: "https://x.com/Reuters/status/1" });
     expect(matchPost).toHaveBeenNthCalledWith(2, { id: "p2", text: "Bitcoin slides" });
   });
 

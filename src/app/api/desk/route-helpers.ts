@@ -1,5 +1,6 @@
 import { getDesk } from "@/features/desk";
 import type { Desk } from "@/features/desk";
+import type { Research } from "@/features/research";
 import type { z } from "zod";
 
 export async function withDesk(handler: (desk: Desk) => Promise<Response>): Promise<Response> {
@@ -44,4 +45,14 @@ export function withDashboardBody<S extends z.ZodType>(
 ): Promise<Response> {
   if (isCrossOrigin(request)) return Promise.resolve(Response.json({ error: "cross-origin-forbidden" }, { status: 403 }));
   return withBody(request, schema, handler);
+}
+
+export async function withDashboardGet(
+  request: Request,
+  handler: (services: { readonly desk: Desk; readonly research: Research }) => Promise<Response>,
+): Promise<Response> {
+  if (isCrossOrigin(request)) return Response.json({ error: "cross-origin-forbidden" }, { status: 403 });
+  const access = await getDesk();
+  if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
+  return handler(access);
 }

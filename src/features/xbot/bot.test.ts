@@ -45,14 +45,19 @@ const marketEvent: MarketEvent = {
   category: "Economics",
   status: "active",
   expiryDate: null,
+  description: "",
+  subcategory: null,
+  volume: null,
+  volume24h: null,
   tags: ["fed"],
   contracts: [
     {
       instrumentSymbol: instrumentSymbol(SYMBOL),
       label: "Fed maintains rate",
+      description: "", expiryDate: null,
       marketState: "open",
       status: "active",
-      prices: { bestBidCents: 60, bestAskCents: 62, lastTradeCents: 62, buyYesCents: 62, buyNoCents: 40 },
+      prices: { bestBidCents: 60, bestAskCents: 62, lastTradeCents: 62, buyYesCents: 62, buyNoCents: 40, sellYesCents: null, sellNoCents: null },
       limits: { quantityIncrementHundredths: 1n, quantityMinimumHundredths: 1n, priceIncrementCents: 1n, priceMinimumCents: 1n },
     },
   ],
@@ -110,7 +115,7 @@ function fakeDesk(script: DeskScript = {}) {
   );
   const desk: Desk = {
     submitNews, proposeTrade, confirmPending, getSnapshot, setKillSwitch: vi.fn(),
-    matchPost: vi.fn(), isCardFor: vi.fn(), quote: vi.fn(), buyFromFeed: vi.fn(), confirmFromFeed: vi.fn(),
+    matchPost: vi.fn(), isCardFor: vi.fn(), quote: vi.fn(), postContextFor: vi.fn(), getPositions: vi.fn(), buyFromFeed: vi.fn(), confirmFromFeed: vi.fn(),
   };
   return { desk, proposeTrade, confirmPending, submitNews };
 }

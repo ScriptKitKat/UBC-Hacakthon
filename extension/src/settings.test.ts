@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLocalHost, parseDeskUrl, resolveDeskToken } from "./settings";
+import { isLocalHost, parseDeskUrl, researchUrl, resolveDeskToken } from "./settings";
 
 describe("desk url", () => {
   it.each([
@@ -28,5 +28,21 @@ describe("desk token", () => {
     expect(resolveDeskToken("", "baked")).toBe("baked");
     expect(resolveDeskToken(undefined, "baked")).toBe("baked");
     expect(resolveDeskToken(42, "")).toBe("");
+  });
+});
+
+describe("researchUrl", () => {
+  it("builds the research page url on the desk origin", () => {
+    expect(researchUrl("http://localhost:3000", "GEMI-FED261211-MAINTAIN")).toBe("http://localhost:3000/markets/GEMI-FED261211-MAINTAIN");
+    expect(researchUrl("https://desk.example.com/x", "GEMI-NBA-2611190030-CHI-BKN-S-CHI27")).toBe("https://desk.example.com/markets/GEMI-NBA-2611190030-CHI-BKN-S-CHI27");
+  });
+
+  it("refuses unsafe desk urls", () => {
+    expect(researchUrl("http://evil.example.com", "GEMI-A-B")).toBeUndefined();
+    expect(researchUrl("javascript:alert(1)", "GEMI-A-B")).toBeUndefined();
+  });
+
+  it.each(["", "GEMI-A", "../etc", "GEMI-A-B?x=1", "GEMI-A-B/../c", "gemi-a-b"])("refuses the symbol %j", (symbol) => {
+    expect(researchUrl("http://localhost:3000", symbol)).toBeUndefined();
   });
 });

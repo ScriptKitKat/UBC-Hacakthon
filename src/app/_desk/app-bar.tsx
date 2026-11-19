@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { LedgerView } from "@/shared";
 import { BrandMark } from "./icons";
 import styles from "./desk.module.css";
@@ -27,6 +28,10 @@ export function AppBar({ state }: { readonly state: AppBarState | null }) {
           LIVE
         </span>
       </div>
+      <nav className={styles.appNav} aria-label="Pages">
+        <Link className={styles.appNavLink} href="/">Desk</Link>
+        <Link className={styles.appNavLink} href="/positions">Positions</Link>
+      </nav>
       {state && ledger ? (
         <ul className={styles.appChips}>
           <li className={styles.appChip} data-tone={ledger.tone}>{ledger.label}</li>

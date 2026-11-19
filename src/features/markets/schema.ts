@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { instrumentSymbol } from "@/shared";
-import type { EventsPage, MarketContract, MarketEvent } from "./types";
+import type { BookLevel, Candle, EventsPage, MarketContract, MarketEvent, OrderBook, RecentTrade } from "./types";
 
 const hundredths = z.string()
   .regex(/^\d+(?:\.\d{1,2}0*)?$/)
@@ -16,6 +16,7 @@ const optionalCents = hundredths.pipe(z.bigint().max(100n))
 const pricesSchema = z
   .object({
     buy: z.object({ yes: optionalCents, no: optionalCents }).nullish(),
+    sell: z.object({ yes: optionalCents, no: optionalCents }).nullish(),
     bestBid: optionalCents,
     bestAsk: optionalCents,
     lastTradePrice: optionalCents,
@@ -27,12 +28,49 @@ const pricesSchema = z
     lastTradeCents: prices?.lastTradePrice ?? null,
     buyYesCents: prices?.buy?.yes ?? null,
     buyNoCents: prices?.buy?.no ?? null,
+    sellYesCents: prices?.sell?.yes ?? null,
+    sellNoCents: prices?.sell?.no ?? null,
   }));
+
+interface RichTextNode {
+  readonly value?: string | null | undefined;
+  readonly content?: readonly RichTextNode[] | null | undefined;
+}
+
+const richTextNode: z.ZodType<RichTextNode> = z.lazy(() =>
+  z.object({ value: z.string().nullish(), content: z.array(richTextNode).nullish() }),
+);
+
+const MARKDOWN_LINK = /\[([^\]]*)\]\([^)]*\)/gu;
+
+function flattenRichText(node: RichTextNode): string {
+  return (node.value ?? "") + (node.content ?? []).map(flattenRichText).join(" ");
+}
+
+function plainText(text: string): string {
+  return text.replace(MARKDOWN_LINK, "$1").replace(/\\([&_*[\]()])/gu, "$1").replace(/\s+/gu, " ").trim();
+}
+
+const descriptionSchema = z
+  .union([z.string(), richTextNode])
+  .nullish()
+  .transform((description) => plainText(typeof description === "string" ? description : description ? flattenRichText(description) : ""));
+
+const decimalNumber = z.union([z.string(), z.number()]).nullish().transform((value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+});
+
+const subcategorySchema = z.object({ name: z.string() }).nullish().transform((subcategory) => subcategory?.name ?? null);
 
 const contractSchema = z
   .object({
     instrumentSymbol: z.string().min(1).transform(instrumentSymbol),
     label: z.string().nullish(),
+    description: descriptionSchema,
+    expiryDate: z.string().nullish(),
+    resolutionSide: z.string().nullish(),
     abbreviatedName: z.string().nullish(),
     marketState: z.string(),
     status: z.string(),
@@ -59,6 +97,9 @@ const contractSchema = z
     return {
       instrumentSymbol: raw.instrumentSymbol,
       label: raw.label ?? raw.abbreviatedName ?? "",
+      description: raw.description,
+      expiryDate: raw.expiryDate ?? null,
+      ...(raw.resolutionSide === "yes" || raw.resolutionSide === "no" ? { resolutionSide: raw.resolutionSide } : {}),
       marketState: raw.marketState,
       status: raw.status,
       prices: raw.prices,
@@ -73,6 +114,10 @@ export const eventSchema = z
     category: z.string().nullish(),
     status: z.string(),
     expiryDate: z.string().nullish(),
+    description: descriptionSchema,
+    subcategory: subcategorySchema,
+    volume: decimalNumber,
+    volume24h: decimalNumber,
     tags: z.array(z.string()).nullish(),
     contracts: z.array(contractSchema).nullish(),
   })
@@ -83,6 +128,10 @@ export const eventSchema = z
       category: raw.category ?? "",
       status: raw.status,
       expiryDate: raw.expiryDate ?? null,
+      description: raw.description,
+      subcategory: raw.subcategory,
+      volume: raw.volume,
+      volume24h: raw.volume24h,
       tags: raw.tags ?? [],
       contracts: raw.contracts ?? [],
     }),
@@ -94,3 +143,25 @@ export const eventsPageSchema = z
     pagination: z.object({ total: z.number() }),
   })
   .transform((raw): EventsPage => ({ events: raw.data, total: raw.pagination.total }));
+
+const dollarsToCents = z.number().nonnegative().max(1).transform((dollars) => Math.round(dollars * 10000) / 100);
+const priceText = z.string().transform(Number).pipe(z.number().nonnegative().max(1)).transform((dollars) => Math.round(dollars * 10000) / 100);
+const amountText = z.string().transform(Number).pipe(z.number().nonnegative());
+
+export const candlesSchema = z
+  .array(z.tuple([z.number(), dollarsToCents, dollarsToCents, dollarsToCents, dollarsToCents, z.number().nonnegative()]))
+  .transform((rows): Candle[] =>
+    rows.map(([timeMs, openCents, highCents, lowCents, closeCents, volume]) => ({ timeMs, openCents, highCents, lowCents, closeCents, volume })),
+  );
+
+const bookLevel = z.object({ price: priceText, amount: amountText }).transform((level): BookLevel => ({ priceCents: level.price, amount: level.amount }));
+
+export const orderBookSchema = z
+  .object({ bids: z.array(bookLevel).nullish(), asks: z.array(bookLevel).nullish() })
+  .transform((book): OrderBook => ({ bids: book.bids ?? [], asks: book.asks ?? [] }));
+
+export const recentTradesSchema = z
+  .array(z.object({ tid: z.number(), timestampms: z.number(), price: priceText, amount: amountText, type: z.enum(["buy", "sell"]) }))
+  .transform((rows): RecentTrade[] =>
+    rows.map((row) => ({ tradeId: row.tid, timeMs: row.timestampms, priceCents: row.price, amount: row.amount, side: row.type })),
+  );

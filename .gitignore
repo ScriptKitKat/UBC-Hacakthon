@@ -8,3 +8,4 @@ id.json
 *.tsbuildinfo
 next-env.d.ts
 extension/dist/
+.data/

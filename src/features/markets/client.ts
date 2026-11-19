@@ -1,14 +1,16 @@
 import type { z } from "zod";
 import { systemClock, type Clock } from "./clock";
 import { createRateLimiter } from "./rate-limiter";
-import { eventSchema, eventsPageSchema } from "./schema";
+import { candlesSchema, eventSchema, eventsPageSchema, orderBookSchema, recentTradesSchema } from "./schema";
 import { fail, ok, type MarketsResult } from "./result";
 import { createTtlCache } from "./ttl-cache";
-import type { EventsPage, MarketEvent } from "./types";
+import type { Candle, CandleTimeframe, EventsPage, MarketEvent, OrderBook, RecentTrade } from "./types";
 
-const MIN_REQUEST_INTERVAL_MS = 1000;
+const DEFAULT_MIN_REQUEST_INTERVAL_MS = 1000;
 const CACHE_TTL_MS = 5000;
+const REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_LIMIT = 20;
+const DEFAULT_TRADE_LIMIT = 30;
 
 export interface SearchEventsQuery {
   readonly search?: string;
@@ -21,17 +23,21 @@ export interface SearchEventsQuery {
 export interface GeminiMarketsClient {
   readonly searchEvents: (query?: SearchEventsQuery) => Promise<MarketsResult<EventsPage>>;
   readonly getEvent: (ticker: string, options?: { readonly refresh?: boolean }) => Promise<MarketsResult<MarketEvent>>;
+  readonly candles: (symbol: string, timeframe: CandleTimeframe) => Promise<MarketsResult<readonly Candle[]>>;
+  readonly orderBook: (symbol: string) => Promise<MarketsResult<OrderBook>>;
+  readonly recentTrades: (symbol: string, limit?: number) => Promise<MarketsResult<readonly RecentTrade[]>>;
 }
 
 export interface GeminiMarketsClientOptions {
   readonly baseUrl: string;
   readonly fetch: typeof fetch;
   readonly clock?: Clock;
+  readonly minRequestIntervalMs?: number;
 }
 
 export function createGeminiMarketsClient(options: GeminiMarketsClientOptions): GeminiMarketsClient {
   const clock = options.clock ?? systemClock;
-  const limit = createRateLimiter(clock, MIN_REQUEST_INTERVAL_MS);
+  const limit = createRateLimiter(clock, options.minRequestIntervalMs ?? DEFAULT_MIN_REQUEST_INTERVAL_MS);
   const cache = createTtlCache<unknown>(clock, CACHE_TTL_MS);
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
 
@@ -42,7 +48,7 @@ export function createGeminiMarketsClient(options: GeminiMarketsClientOptions): 
     }
     let response: Response;
     try {
-      response = await limit(() => options.fetch(url, { headers: { accept: "application/json" } }));
+      response = await limit(() => options.fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }));
     } catch {
       return fail({ kind: "network" });
     }
@@ -80,5 +86,9 @@ export function createGeminiMarketsClient(options: GeminiMarketsClientOptions): 
     },
     getEvent: (ticker, options) =>
       getJson(`${baseUrl}/v1/prediction-markets/events/${encodeURIComponent(ticker)}`, eventSchema, options?.refresh),
+    candles: (symbol, timeframe) => getJson(`${baseUrl}/v2/candles/${encodeURIComponent(symbol)}/${timeframe}`, candlesSchema),
+    orderBook: (symbol) => getJson(`${baseUrl}/v1/book/${encodeURIComponent(symbol)}`, orderBookSchema),
+    recentTrades: (symbol, limit = DEFAULT_TRADE_LIMIT) =>
+      getJson(`${baseUrl}/v1/trades/${encodeURIComponent(symbol)}?limit_trades=${String(limit)}`, recentTradesSchema),
   };
 }
