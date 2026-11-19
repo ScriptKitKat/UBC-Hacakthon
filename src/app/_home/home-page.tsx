@@ -8,6 +8,7 @@ import { usePolling } from "../_desk/use-polling";
 import { loadHome, loadSparklines, matchQuery } from "../_shell/api";
 import { ChevronIcon, MicIcon, RefreshIcon, SubmitIcon } from "../_shell/icons";
 import { CHIP_CATEGORIES, FILTERS, PREFETCH_CATEGORIES, categoryKey } from "./category";
+import { useWatchlist } from "../_watchlist/use-watchlist";
 import { MarketCard } from "./market-card";
 import styles from "./home.module.css";
 
@@ -102,6 +103,7 @@ export function HomePage({ initialView }: { readonly initialView?: HomeView } = 
 
   const pending = view?.rail.pendingCount ?? 0;
   const markets = view?.markets ?? [];
+  const watchlist = useWatchlist();
 
   const selectFilter = (name: string) => {
     setFilter(name);
@@ -214,7 +216,14 @@ export function HomePage({ initialView }: { readonly initialView?: HomeView } = 
         {markets.length > 0 ? (
           <div className={styles.grid}>
             {markets.map((card) => (
-              <MarketCard key={card.instrumentSymbol} card={card} />
+              <MarketCard
+                key={card.instrumentSymbol}
+                card={card}
+                watched={watchlist.starred(card.eventTicker, card.instrumentSymbol)}
+                onToggleWatch={() => {
+                  void watchlist.toggle({ eventTicker: card.eventTicker, instrumentSymbol: card.instrumentSymbol, yesCents: card.yesCents });
+                }}
+              />
             ))}
           </div>
         ) : null}

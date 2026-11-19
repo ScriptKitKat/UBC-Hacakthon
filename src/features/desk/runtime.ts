@@ -5,9 +5,9 @@ import { requestGrokJson } from "@/features/grok";
 import { createSampler, openHistoryStore } from "@/features/history";
 import { createSolanaLedger, createUnconfiguredLedger, isExpectedGenesis } from "@/features/ledger";
 import type { UsdcLedger } from "@/features/ledger";
-import { cardsForSymbols, createBrowseCache, createListCache, listBrowse, listCatalog, loadSpotPrices, openWatchlist, sparklineUpdates } from "@/features/catalog";
-import type { BrowseListResult, BrowseQuery, CatalogListResult, CatalogQuery, Watchlist } from "@/features/catalog";
-import type { CatalogCard } from "@/shared";
+import { cardsForSaved, cardsForSymbols, createBrowseCache, createListCache, listBrowse, listCatalog, loadSpotPrices, openWatchlist, sparklineUpdates } from "@/features/catalog";
+import type { BrowseListResult, BrowseQuery, CatalogListResult, CatalogQuery, Watchlist, WatchlistItem } from "@/features/catalog";
+import type { CatalogCard, WatchlistCard } from "@/shared";
 import { createGeminiMarketsClient } from "@/features/markets";
 import { createResearch } from "@/features/research";
 import type { JsonCompleter, Research } from "@/features/research";
@@ -41,6 +41,7 @@ export interface HomeCatalog {
   readonly spots: (assets: readonly string[]) => Promise<Readonly<Record<string, string>>>;
   readonly sparklines: (symbols: readonly string[]) => Promise<Readonly<Record<string, { readonly sparkline: readonly number[]; readonly changePercent: number | null }>>>;
   readonly cardsFor: (symbols: readonly string[]) => Promise<readonly CatalogCard[]>;
+  readonly cardsForSaved: (items: readonly WatchlistItem[]) => Promise<readonly WatchlistCard[]>;
   readonly watchlist: Watchlist;
 }
 
@@ -217,6 +218,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     },
     spots: (assets) => loadSpotPrices({ markets }, assets),
     cardsFor: (symbols) => cardsForSymbols(catalogDeps, symbols),
+    cardsForSaved: (items) => cardsForSaved(catalogDeps, items),
     watchlist: openWatchlist({ fs: nodeFileSystem, path: join(dataDirectory, "watchlist.json") }),
   };
   if (runtime) runtime.catalog = homeCatalog;

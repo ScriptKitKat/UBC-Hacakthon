@@ -1,0 +1,188 @@
+.page { display: flex; flex-direction: column; min-width: 0; }
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 28px 0;
+  border-bottom: 1px solid #1f1f1f;
+}
+
+.titleRow { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+
+.title { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.03em; }
+
+.count { font-size: 13px; color: #8a8a93; }
+
+.search {
+  flex: 0 1 280px;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid #262626;
+  border-radius: 19px;
+  background: #111111;
+}
+
+.search svg { flex: 0 0 auto; color: #8a8a93; }
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: #ededed;
+  font: inherit;
+  font-size: 13px;
+}
+
+.hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.body { padding: 20px 28px 48px; display: flex; flex-direction: column; gap: 20px; }
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.chip {
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid #262626;
+  border-radius: 17px;
+  background: transparent;
+  color: #a1a1aa;
+  font-size: 13px;
+}
+
+.chip[aria-pressed="true"] { background: #1a1a1a; color: #ededed; }
+
+.sort {
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid #262626;
+  border-radius: 17px;
+  background: #111111;
+  color: #d4d4d8;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sort select { border: 0; background: transparent; color: inherit; font: inherit; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+
+.card {
+  min-width: 0;
+  border: 1px solid #1f1f1f;
+  border-radius: 14px;
+  background: #111111;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cardHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: #8a8a93; }
+
+.cardTitle {
+  color: #ededed;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+}
+
+.cardTitle:hover, .cardTitle:focus-visible { text-decoration: underline; text-underline-offset: 2px; }
+
+.cardTitle:focus-visible { outline: 2px solid rgb(26, 107, 255); outline-offset: 2px; }
+
+.oddsRow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+.oddsBlock { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+
+.odds { font-family: var(--mono); font-size: 24px; font-weight: 500; letter-spacing: -0.02em; }
+
+.delta { font-family: var(--mono); font-size: 13px; color: #8a8a93; white-space: nowrap; }
+
+.delta[data-trend="up"] { color: #3ddc97; }
+
+.delta[data-trend="down"] { color: #ff9a7a; }
+
+.chart { width: 110px; height: 34px; flex: 0 0 auto; }
+
+.chart svg { width: 100%; height: 100%; display: block; overflow: visible; }
+
+.line { fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; stroke: #8a8a93; }
+
+.line[data-trend="up"] { stroke: #3ddc97; }
+
+.line[data-trend="down"] { stroke: #ff9a7a; }
+
+.saved { font-size: 12px; color: #8a8a93; }
+
+.savedValue { font-family: var(--mono); color: #d4d4d8; }
+
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 12px;
+  margin-top: auto;
+  border-top: 1px solid #1a1a1a;
+}
+
+.open {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid #262626;
+  border-radius: 8px;
+  color: #ededed;
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.open:hover, .open:focus-visible { background: #1a1a1a; }
+
+.open:focus-visible { outline: 2px solid rgb(26, 107, 255); outline-offset: 2px; }
+
+.status { color: #a1a1aa; text-align: center; padding: 24px 8px; }
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 28px 20px;
+  border: 1px solid #1f1f1f;
+  border-radius: 14px;
+  background: #111111;
+  color: #a1a1aa;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.emptyLink {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  border: 1px solid #262626;
+  border-radius: 8px;
+  color: #ededed;
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.emptyLink:hover, .emptyLink:focus-visible { background: #1a1a1a; }
+
+.emptyLink:focus-visible { outline: 2px solid rgb(26, 107, 255); outline-offset: 2px; }

@@ -120,10 +120,10 @@ export async function listCatalog(deps: CatalogDeps, query: CatalogQuery = {}): 
 }
 
 
-export async function enrichSparklines(deps: CatalogDeps, cards: readonly CatalogCard[]): Promise<CatalogCard[]> {
+export async function enrichSparklines(deps: CatalogDeps, cards: readonly CatalogCard[], budget = CANDLE_BUDGET): Promise<CatalogCard[]> {
   const now = deps.now();
   const cutoff = now.getTime() - WINDOW_MS;
-  const needed = cards.filter((card) => card.sparkline.length < 2).slice(0, CANDLE_BUDGET);
+  const needed = cards.filter((card) => card.sparkline.length < 2).slice(0, budget);
   const updates = new Map<string, { sparkline: number[]; changePercent: number | null }>();
   await Promise.all(needed.map(async (card) => {
     const candles = await deps.markets.candles(card.instrumentSymbol, "15m");

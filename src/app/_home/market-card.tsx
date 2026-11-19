@@ -10,6 +10,7 @@ import {
   friendlyEventTitle,
 } from "@/shared";
 import type { CatalogCard } from "@/shared";
+import { StarButton } from "../_watchlist/star-button";
 import styles from "./market-card.module.css";
 
 const CHART_WIDTH = 96;
@@ -65,9 +66,9 @@ export function MarketCard({
         <div className={styles.odds}>{formatPercent(card.yesCents)}</div>
       </Link>
       {onToggleWatch !== undefined ? (
-        <button type="button" className={styles.watch} onClick={onToggleWatch}>
-          {watched === true ? "Unwatch" : "Watch"}
-        </button>
+        <div className={styles.starWrap}>
+          <StarButton pressed={watched === true} onToggle={onToggleWatch} />
+        </div>
       ) : null}
     </article>
   );

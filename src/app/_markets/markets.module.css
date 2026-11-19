@@ -22,7 +22,8 @@
 .top { display: flex; align-items: flex-start; gap: 12px; }
 .icon { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 16px; }
 .meta { flex: 1; min-width: 0; }
-.metaRow { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: #8a8a93; }
+.metaRow { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: #8a8a93; }
+.metaRight { display: flex; align-items: center; gap: 4px; }
 .live { color: #ff8a8a; }
 .live + .when, .when { color: #8a8a93; }
 .cardTitle { display: block; margin-top: 4px; color: #ededed; text-decoration: none; font-weight: 500; font-size: 15px; letter-spacing: -0.01em; line-height: 1.3; }

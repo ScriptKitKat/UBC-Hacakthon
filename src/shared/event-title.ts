@@ -155,3 +155,10 @@ export function formatMarketWhen(expiryDate: string | null | undefined, now = ne
   }
   return new Intl.DateTimeFormat("en-US", { timeZone, month: "short", day: "numeric" }).format(expiry);
 }
+
+export function formatEndsOn(expiryDate: string | null | undefined, timeZone = "America/Chicago"): string | null {
+  if (!expiryDate) return null;
+  const date = new Date(expiryDate);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-US", { timeZone, month: "short", day: "numeric" }).format(date);
+}

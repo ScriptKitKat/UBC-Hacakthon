@@ -1,5 +1,5 @@
-import { browsePageSchema, catalogCardSchema, homeRailSchema, homeViewSchema } from "@/shared";
-import type { BrowsePage, BrowseSort, CatalogCard, CatalogPage, FeedMatch, HomeRail, HomeView } from "@/shared";
+import { browsePageSchema, homeRailSchema, homeViewSchema, watchlistViewSchema } from "@/shared";
+import type { BrowsePage, BrowseSort, CatalogPage, FeedMatch, HomeRail, HomeView, WatchlistView } from "@/shared";
 
 export async function loadRail(): Promise<HomeRail | undefined> {
   const response = await fetch("/api/home/rail", { headers: { accept: "application/json" } });
@@ -35,31 +35,37 @@ export async function matchQuery(text: string): Promise<FeedMatch | { readonly e
   return await response.json() as FeedMatch;
 }
 
+export type WatchlistChange = {
+  readonly action: "add" | "remove";
+  readonly symbol?: string;
+  readonly eventTicker?: string;
+  readonly contract?: string;
+  readonly yesCents?: number | null;
+};
+
 export async function loadWatchlist(): Promise<readonly string[]> {
   const response = await fetch("/api/watchlist", { headers: { accept: "application/json" } });
   if (!response.ok) return [];
-  const body = await response.json() as { symbols?: unknown };
-  return Array.isArray(body.symbols) ? body.symbols.filter((item): item is string => typeof item === "string") : [];
+  const parsed = watchlistViewSchema.pick({ symbols: true }).safeParse(await response.json());
+  return parsed.success ? parsed.data.symbols : [];
 }
 
-export async function loadWatchlistCards(): Promise<{ readonly symbols: readonly string[]; readonly cards: readonly CatalogCard[] } | undefined> {
+export async function loadWatchlistCards(): Promise<WatchlistView | undefined> {
   const response = await fetch("/api/watchlist?cards=1", { headers: { accept: "application/json" } });
   if (!response.ok) return undefined;
-  const body = await response.json() as { symbols?: unknown; cards?: unknown };
-  const symbols = Array.isArray(body.symbols) ? body.symbols.filter((item): item is string => typeof item === "string") : [];
-  const parsed = catalogCardSchema.array().safeParse(body.cards);
-  return { symbols, cards: parsed.success ? parsed.data : [] };
+  const parsed = watchlistViewSchema.safeParse(await response.json());
+  return parsed.success ? parsed.data : undefined;
 }
 
-export async function changeWatchlist(symbol: string, action: "add" | "remove"): Promise<readonly string[]> {
+export async function changeWatchlist(input: WatchlistChange): Promise<{ readonly ok: true; readonly view: WatchlistView } | { readonly ok: false }> {
   const response = await fetch("/api/watchlist", {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ symbol, action }),
+    body: JSON.stringify(input),
   });
-  if (!response.ok) return [];
-  const body = await response.json() as { symbols?: unknown };
-  return Array.isArray(body.symbols) ? body.symbols.filter((item): item is string => typeof item === "string") : [];
+  if (!response.ok) return { ok: false };
+  const parsed = watchlistViewSchema.safeParse(await response.json());
+  return parsed.success ? { ok: true, view: parsed.data } : { ok: false };
 }
 
 export async function proposeTrade(input: { symbol: string; outcome: "yes" | "no"; senderId: string; notionalCents: number }): Promise<{ ok: true } | { ok: false; message: string }> {

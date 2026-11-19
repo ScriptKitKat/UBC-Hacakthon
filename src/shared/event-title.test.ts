@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetDisplayName, formatDeadline, formatMarketWhen, friendlyEventTitle, relativePriceDay } from "./event-title";
+import { assetDisplayName, formatDeadline, formatEndsOn, formatMarketWhen, friendlyEventTitle, relativePriceDay } from "./event-title";
 
 const TZ = "America/Chicago";
 const now = new Date("2026-11-19T16:00:00.000Z");
@@ -43,5 +43,11 @@ describe("friendly event titles", () => {
     const evening = new Date("2026-11-20T05:30:00.000Z");
     expect(relativePriceDay(new Date("2026-11-20T05:45:00.000Z"), evening, TZ)).toBe("today?");
     expect(relativePriceDay(new Date("2026-11-20T06:00:00.000Z"), evening, TZ)).toBe("tomorrow?");
+  });
+
+  it("formats a short end date", () => {
+    expect(formatEndsOn("2026-12-31T22:00:00.000Z", TZ)).toBe("Dec 31");
+    expect(formatEndsOn("2026-11-19T22:00:00.000Z", TZ)).toBe("Nov 19");
+    expect(formatEndsOn(null, TZ)).toBeNull();
   });
 });

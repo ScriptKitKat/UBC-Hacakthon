@@ -1,4 +1,4 @@
-.wrap { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.wrap { display: flex; flex-direction: column; gap: 8px; min-width: 0; position: relative; }
 .card {
   --ntd-accent: rgb(26, 107, 255);
   --ntd-cyan: rgb(38, 221, 249);
@@ -55,16 +55,9 @@
 .change[data-trend="up"] { color: var(--ntd-yes); }
 .change[data-trend="down"] { color: var(--ntd-no); }
 .odds { font-family: var(--mono); font-size: 32px; line-height: 36px; font-weight: 600; letter-spacing: -0.04em; }
-.watch {
-  align-self: flex-start;
-  border: 0;
-  background: transparent;
-  color: #ededed;
-  font: inherit;
-  font-size: 12px;
-  padding: 0 2px;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
+.starWrap {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
 }
-.watch:focus-visible { outline: 2px solid rgb(26, 107, 255); outline-offset: 2px; }
