@@ -25,8 +25,9 @@ import {
   yesCentsFromBrief,
 } from "@/shared";
 import type { CrowdMove, DecisionLogEntry, ResearchBrief, ResearchTimeframe, ResearchView, TradeBudget } from "@/shared";
-import { changeWatchlist, loadRail, loadWatchlist } from "../_shell/api";
+import { loadRail } from "../_shell/api";
 import type { HomeRail } from "../_shell/api";
+import { useWatchlist } from "../_watchlist/use-watchlist";
 import { usePolling } from "../_desk/use-polling";
 import { formatAxisTime, formatDollarsFromCents, formatPriceCents } from "./format";
 import { DEFAULT_BOX, buildChartGeometry } from "./chart-geometry";
@@ -106,7 +107,7 @@ export function BeginnerView({
               <button type="button" className={styles.modeButton} aria-pressed>Beginner</button>
               <button type="button" className={styles.modeButton} aria-pressed={false} onClick={() => { setMode("pro"); }}>Pro</button>
             </div>
-            <WatchButton symbol={view.symbol} />
+            <WatchButton eventTicker={view.market.eventTicker} symbol={view.symbol} yesCents={view.market.prices.buyYesCents} />
           </div>
         </div>
         {banners.map((message) => (
@@ -379,10 +380,9 @@ function Related({ markets }: { readonly markets: ResearchView["related"] }) {
   );
 }
 
-function WatchButton({ symbol }: { readonly symbol: string }) {
-  const [symbols, setSymbols] = useState<readonly string[] | undefined>(undefined);
-  usePolling(() => { void loadWatchlist().then(setSymbols); }, WATCH_MS);
-  const watched = symbols?.includes(symbol) === true;
+function WatchButton({ eventTicker, symbol, yesCents }: { readonly eventTicker: string; readonly symbol: string; readonly yesCents: number | null }) {
+  const watchlist = useWatchlist();
+  const watched = watchlist.starred(eventTicker, symbol);
   return (
     <button
       type="button"
@@ -390,7 +390,7 @@ function WatchButton({ symbol }: { readonly symbol: string }) {
       aria-pressed={watched}
       aria-label={watched ? "Remove from watchlist" : "Add to watchlist"}
       onClick={() => {
-        void changeWatchlist(symbol, watched ? "remove" : "add").then(setSymbols);
+        void watchlist.toggle({ eventTicker, instrumentSymbol: symbol, yesCents });
       }}
     >
       <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill={watched ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
