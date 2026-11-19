@@ -6,7 +6,7 @@ const start = initialCardState(matched);
 
 describe("card state machine", () => {
   it("starts idle with a $1 default", () => {
-    expect(start).toMatchObject({ amountCents: 100, status: { phase: "idle" } });
+    expect(start).toMatchObject({ amountText: "1.00", status: { phase: "idle" } });
     expect(canBuy(start)).toBe(true);
   });
 
@@ -19,7 +19,7 @@ describe("card state machine", () => {
     const buying = cardReducer(start, { type: "buy-started" });
     expect(buying.status.phase).toBe("buying");
     expect(cardReducer(buying, { type: "buy-started" })).toBe(buying);
-    expect(cardReducer(buying, { type: "amount-selected", amountCents: 500 })).toBe(buying);
+    expect(cardReducer(buying, { type: "amount-edited", amountText: "5" })).toBe(buying);
     expect(cardReducer(start, { type: "buy-settled", entry: entry() })).toBe(start);
   });
 
@@ -73,7 +73,20 @@ describe("card state machine", () => {
     const waiting = cardReducer(cardReducer(start, { type: "buy-started" }), { type: "buy-settled", entry: entry({ kind: "needs-approval" }) });
     expect(cardReducer(waiting, { type: "contract-selected", symbol: market.instrumentSymbol })).toBe(waiting);
     expect(cardReducer(waiting, { type: "outcome-selected", outcome: "no" })).toBe(waiting);
-    expect(cardReducer(waiting, { type: "amount-selected", amountCents: 500 })).toBe(waiting);
+    expect(cardReducer(waiting, { type: "amount-edited", amountText: "5" })).toBe(waiting);
     expect(canBuy({ ...start, market: { ...market, yesCents: null } })).toBe(false);
+  });
+
+  it.each(["", "0", "-1", "1.234", "1e3", "Infinity", "1000.01", "9999999999999999"])("blocks an invalid dollar stake %j", (amountText) => {
+    const state = cardReducer(start, { type: "amount-edited", amountText });
+    expect(state.amountText).toBe(amountText);
+    expect(canBuy(state)).toBe(false);
+    expect(cardReducer(state, { type: "buy-started" })).toBe(state);
+  });
+
+  it("accepts custom dollar stakes and enforces Gemini quantity minimums", () => {
+    expect(canBuy(cardReducer(start, { type: "amount-edited", amountText: "23.00" }))).toBe(true);
+    expect(canBuy(cardReducer(start, { type: "amount-edited", amountText: "1000" }))).toBe(true);
+    expect(canBuy({ ...start, market: { ...market, quantityLimits: { quantityIncrementHundredths: 100, quantityMinimumHundredths: 200 } } })).toBe(false);
   });
 });

@@ -1,8 +1,7 @@
 import type { FeedPositions } from "@/shared";
+import { MAX_FEED_BUY_CENTS } from "@/shared";
 import { z } from "zod";
 import type { WireEntry, WireMatch, WireQuote } from "./wire";
-
-export const AMOUNT_CHOICES_CENTS = [100, 200, 500] as const;
 
 export const backgroundRequestSchema = z.discriminatedUnion("type", [
   z.object({
@@ -19,7 +18,7 @@ export const backgroundRequestSchema = z.discriminatedUnion("type", [
     postId: z.string().min(1),
     instrumentSymbol: z.string().min(1),
     outcome: z.enum(["yes", "no"]),
-    amountCents: z.number().int().positive(),
+    amountCents: z.number().int().positive().max(MAX_FEED_BUY_CENTS),
     clientOrderId: z.uuid(),
     seenPriceCents: z.number().int().min(1).max(100).optional(),
   }),

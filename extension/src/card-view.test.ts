@@ -19,6 +19,18 @@ function press(element: HTMLElement): void {
   element.dispatchEvent(trusted(new MouseEvent("click", { bubbles: true, composed: true })));
 }
 
+function amountField(root: ShadowRoot): HTMLInputElement {
+  const input = root.querySelector<HTMLInputElement>('[data-key="amount"]');
+  if (!input) throw new Error("missing amount field");
+  return input;
+}
+
+function editAmount(root: ShadowRoot, value: string): void {
+  const input = amountField(root);
+  input.value = value;
+  input.dispatchEvent(trusted(new Event("input", { bubbles: true, composed: true })));
+}
+
 function setup(card = matched) {
   const send = vi.fn();
   const handle = createCard(card, send);
@@ -70,29 +82,56 @@ describe("market card", () => {
     expect(button("outcome-no").textContent).toBe("No 40%");
     expect(button("outcome-yes").getAttribute("aria-pressed")).toBe("true");
     expect(text()).toContain("62% chance | $1.61 potential payout");
-    expect(text()).toContain("before fees");
+    expect(text()).not.toContain("Implied by price");
+    expect(text()).not.toContain("before fees");
+    expect(text()).not.toContain("Your trade");
+    expect(root.querySelector(".contract-picker .contract-chevron")).not.toBeNull();
     expect(button("trade").textContent).toBe("Trade now");
     expect(root.querySelector<HTMLAnchorElement>('[data-key="gemini"]')?.href).toBe(market.geminiUrl);
-    expect(button("amount-100").getAttribute("aria-pressed")).toBe("true");
+    expect(amountField(root).value).toBe("1.00");
   });
 
   it("updates the chance and payout for the selected side, stake and live quote", () => {
     const { root, handle, button } = setup();
     press(button("outcome-no"));
     expect(root.textContent).toContain("40% chance | $2.50 potential payout");
-    press(button("amount-500"));
+    editAmount(root, "5.00");
     expect(root.textContent).toContain("40% chance | $12.50 potential payout");
     handle.update(quote);
     expect(root.textContent).toContain("37% chance | $13.51 potential payout");
     expect(button("outcome-no").getAttribute("aria-pressed")).toBe("true");
-    expect(button("amount-500").getAttribute("aria-pressed")).toBe("true");
+    expect(amountField(root).value).toBe("5.00");
+  });
+
+  it("calculates the sketched payout from a custom dollar stake and live Gemini price", async () => {
+    const { root, button, send, handle } = setup({ ...matched, market: { ...market, yesCents: 43 } });
+    editAmount(root, "23.00");
+    expect(root.querySelector(".payout")?.textContent).toBe("43% chance | $53.48 potential payout");
+    expect(send).not.toHaveBeenCalled();
+    handle.update({ ...quote, market: { ...quote.market, yesCents: 50 } });
+    expect(root.querySelector(".payout")?.textContent).toBe("50% chance | $46 potential payout");
+    send.mockResolvedValue({ ok: false, error: "stubbed" });
+    press(button("trade"));
+    await vi.waitFor(() => { expect(send).toHaveBeenCalledWith(expect.objectContaining({ amountCents: 2300, seenPriceCents: 50 })); });
+  });
+
+  it.each(["", "0", "-1", "1.234", "1e3", "1000.01", "9999999999999999"])("does not submit an invalid dollar amount %j", (value) => {
+    const { root, button, send } = setup();
+    editAmount(root, value);
+    expect(button("trade").disabled).toBe(true);
+    expect(amountField(root).getAttribute("aria-invalid")).toBe("true");
+    press(button("trade"));
+    expect(send).not.toHaveBeenCalled();
+    editAmount(root, "2.50");
+    expect(button("trade").disabled).toBe(false);
+    expect(amountField(root).getAttribute("aria-invalid")).toBe("false");
   });
 
   it("uses Gemini quantity limits and disables trades below the minimum", () => {
     const { root, button } = setup({ ...matched, market: { ...market, quantityLimits: { quantityIncrementHundredths: 100, quantityMinimumHundredths: 200 } } });
     expect(root.textContent).toContain("Minimum 2 contracts");
     expect(button("trade").disabled).toBe(true);
-    press(button("amount-200"));
+    editAmount(root, "2.00");
     expect(root.textContent).toContain("62% chance | $3 potential payout");
     expect(button("trade").disabled).toBe(false);
   });
@@ -138,11 +177,13 @@ describe("market card", () => {
   });
 
   it("ignores events that did not come from the user", () => {
-    const { send, button } = setup();
-    button("amount-500").click();
+    const { send, button, root } = setup();
+    amountField(root).value = "5";
+    amountField(root).dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     button("trade").click();
     button("trade").dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
-    expect(button("amount-500").getAttribute("aria-pressed")).toBe("false");
+    press(button("outcome-yes"));
+    expect(amountField(root).value).toBe("1.00");
     expect(send).not.toHaveBeenCalled();
   });
 
@@ -156,20 +197,20 @@ describe("market card", () => {
   });
 
   it("stops pointer and keyboard events from reaching the tweet", () => {
-    const { button } = setup();
+    const { root } = setup();
     const outside = vi.fn();
     document.body.addEventListener("click", outside);
     document.body.addEventListener("keydown", outside);
-    press(button("amount-200"));
-    button("amount-200").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, composed: true }));
+    editAmount(root, "2.00");
+    amountField(root).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, composed: true }));
     expect(outside).not.toHaveBeenCalled();
   });
 
   it("buys with the chosen amount and outcome, disabling controls while pending", async () => {
     const pending = deferred<BackgroundReply<WireEntry>>();
-    const { send, button, text } = setup();
+    const { send, button, text, root } = setup();
     send.mockReturnValue(pending.promise);
-    press(button("amount-500"));
+    editAmount(root, "5.00");
     press(button("outcome-no"));
     press(button("trade"));
     press(button("trade"));
@@ -180,7 +221,12 @@ describe("market card", () => {
     });
     expect(text()).toContain("Placing order…");
     expect(button("trade").disabled).toBe(true);
-    expect(button("trade").disabled).toBe(true);
+    expect(amountField(root).disabled).toBe(true);
+    expect(root.querySelector<HTMLSelectElement>("select")?.disabled).toBe(true);
+    expect(root.querySelector(".contract-picker")?.getAttribute("data-disabled")).toBe("true");
+    const select = root.querySelector("select");
+    if (!select) throw new Error("missing contract selector");
+    expect(getComputedStyle(select).opacity).toBe("0");
     pending.resolve(reply(entry({ outcome: "no", notionalCents: 500 })));
     await vi.waitFor(() => { expect(text()).toContain("Filled"); });
     expect(button("trade").disabled).toBe(false);
@@ -224,6 +270,9 @@ describe("market card", () => {
     expect(root.textContent).toContain("The $5 trade needs your approval.");
     expect(button("trade").disabled).toBe(true);
     send.mockResolvedValueOnce(reply(entry()));
+    expect(amountField(root).disabled).toBe(true);
+    editAmount(root, "23.00");
+    expect(amountField(root).value).toBe("1.00");
     press(button("approve"));
     expect(send).toHaveBeenLastCalledWith({ type: "confirm", intentId: "intent-9" });
     await vi.waitFor(() => { expect(root.querySelector('.result[data-tone="filled"]')).not.toBeNull(); });
@@ -258,9 +307,43 @@ describe("market card", () => {
   });
 
   it("keeps keyboard focus on the same control across re-renders", () => {
-    const { button, root } = setup();
-    button("amount-200").focus();
-    press(button("amount-200"));
-    expect(root.activeElement?.getAttribute("data-key")).toBe("amount-200");
+    const { root, handle } = setup();
+    editAmount(root, "23.00");
+    amountField(root).focus();
+    amountField(root).setSelectionRange(2, 2);
+    handle.update(quote);
+    expect(root.activeElement?.getAttribute("data-key")).toBe("amount");
+    expect(amountField(root).selectionStart).toBe(2);
+    expect(amountField(root).value).toBe("23.00");
+  });
+
+  it("keeps the native contract selector and options connected during price refreshes", () => {
+    const { root, handle } = setup();
+    const select = root.querySelector("select");
+    if (!select) throw new Error("missing contract selector");
+    const firstOption = select.options[0];
+    select.focus();
+    handle.update({ ...quote, market: { ...quote.market, yesCents: 50 } });
+    expect(root.querySelector("select")).toBe(select);
+    expect(select.options[0]).toBe(firstOption);
+    expect(select.isConnected).toBe(true);
+    expect(root.activeElement).toBe(select);
+    expect(root.querySelector(".payout")?.textContent).toBe("50% chance | $2 potential payout");
+    select.blur();
+  });
+
+  it("refreshes listed contract options without replacing the selector", () => {
+    const { root, handle } = setup();
+    const select = root.querySelector("select");
+    if (!select) throw new Error("missing contract selector");
+    const other = { ...market, instrumentSymbol: "GEMI-FED261211-CUT25", contractLabel: "Cut 25bps", yesCents: 20 };
+    handle.update({ ...quote, contracts: [market, other] });
+    expect(root.querySelector("select")).toBe(select);
+    expect(Array.from(select.options).map((option) => option.value)).toEqual([market.instrumentSymbol, other.instrumentSymbol]);
+    expect(select.value).toBe(market.instrumentSymbol);
+    select.value = other.instrumentSymbol;
+    select.dispatchEvent(trusted(new Event("change")));
+    expect(handle.symbol).toBe(other.instrumentSymbol);
+    expect(root.querySelector(".contract-label")?.textContent).toBe(other.contractLabel);
   });
 });

@@ -1,11 +1,11 @@
-import { payoutFor } from "@/shared";
+import { MAX_FEED_BUY_CENTS, parseDollarsToCents, payoutFor } from "@/shared";
 import { canBuy, cardReducer, initialCardState, isBusy } from "./card-state";
 import type { CardAction } from "./card-state";
+import { ensureCardFont } from "./card-font";
 import { CARD_CSS } from "./card-styles";
 import { h, svg } from "./dom";
 import type { Child } from "./dom";
 import { formatCents, formatDollars, formatPercent } from "./format";
-import { AMOUNT_CHOICES_CENTS } from "./protocol";
 import type { Sender } from "./protocol";
 import type { WireEntry, WireMatched, WireQuote } from "./wire";
 
@@ -61,6 +61,7 @@ export interface CardOptions {
 }
 
 export function createCard(initial: WireMatched, send: Sender, options: CardOptions = {}): CardHandle {
+  ensureCardFont(document);
   let state = initialCardState(initial);
   const host = h("div", { attributes: { [CARD_HOST_ATTRIBUTE]: initial.postId } });
   const shadow = host.attachShadow({ mode: "open" });
@@ -75,7 +76,9 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
 
   async function buy(): Promise<void> {
     if (!canBuy(state)) return;
-    const { amountCents, market, outcome } = state;
+    const { market, outcome } = state;
+    const amountCents = parseDollarsToCents(state.amountText);
+    if (amountCents === undefined) return;
     const seenPriceCents = outcome === "yes" ? market.yesCents : market.noCents;
     dispatch({ type: "buy-started" });
     const reply = await send({
@@ -150,25 +153,21 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
     }
   }
 
-  function tradeView(): Child {
+  function tradeView(): HTMLDivElement {
     const { market, outcome } = state;
     const enabled = canBuy(state);
     const locked = isBusy(state) || state.status.phase === "needs-approval";
     const price = outcome === "yes" ? market.yesCents : market.noCents;
-    const payout = payoutFor(price, state.amountCents, market.quantityLimits);
-    const chips = AMOUNT_CHOICES_CENTS.map((cents) =>
-      h("button", {
-        className: "chip",
-        text: formatDollars(cents),
-        attributes: {
-          type: "button",
-          "data-key": `amount-${String(cents)}`,
-          "aria-pressed": String(state.amountCents === cents),
-          ...(locked ? { disabled: "" } : {}),
-        },
-        on: { click: userOnly(() => { dispatch({ type: "amount-selected", amountCents: cents }); }) },
-      }),
-    );
+    const amountCents = parseDollarsToCents(state.amountText);
+    const amountError = amountCents === undefined || amountCents <= 0 ? "Enter a dollar amount above $0 with up to two decimal places."
+      : amountCents > MAX_FEED_BUY_CENTS ? `Maximum ${formatDollars(MAX_FEED_BUY_CENTS)} per order.` : null;
+    const payout = payoutFor(price, amountError === null ? amountCents ?? 0 : 0, market.quantityLimits);
+    const amount = h("input", { className: "amount-input", attributes: {
+      type: "text", inputmode: "decimal", "aria-label": "Trade amount in dollars", "data-key": "amount",
+      value: state.amountText, placeholder: "0.00", maxlength: "16", autocomplete: "off", spellcheck: "false",
+      "aria-invalid": String(amountError !== null), ...(locked ? { disabled: "" } : {}),
+    } });
+    amount.addEventListener("input", userOnly(() => { dispatch({ type: "amount-edited", amountText: amount.value }); }));
     const outcomeButton = (side: "yes" | "no", cents: number | null) =>
       h("button", {
         className: "outcome",
@@ -186,54 +185,77 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
       "div",
       { className: "trade" },
       h("div", { className: "outcomes", attributes: { role: "group", "aria-label": "Prediction outcome" } }, outcomeButton("yes", market.yesCents), outcomeButton("no", market.noCents)),
-      h("div", { className: "stake" }, h("span", { text: "Your trade" }), h("div", { className: "chips", attributes: { role: "group", "aria-label": "Amount in dollars" } }, ...chips)),
+      h("label", { className: "amount-field" }, h("span", { className: "amount-label", text: "Dollars" }), h("span", { className: "amount-value" }, h("span", { text: "$", attributes: { "aria-hidden": "true" } }), h("span", { className: "amount-editor" }, h("span", { className: "amount-mirror", text: state.amountText || "0.00", attributes: { "aria-hidden": "true" } }), amount))),
+      amountError === null ? null : h("div", { className: "amount-error", text: amountError, attributes: { role: "status" } }),
       h("div", { className: "estimate", attributes: { "aria-live": "polite", "data-outcome": outcome } },
         h("div", { className: "payout", text: payout.kind === "quote" ? `${formatPercent(price)} chance | ${formatDollars(Math.floor(payout.payoutCents))} potential payout` : "Payout unavailable" }),
-        h("div", { className: "estimate-note", text: payout.kind === "below-minimum" ? `Minimum ${String(payout.minimumContracts)} contracts` : `Implied by price · if ${outcome === "yes" ? "Yes" : "No"} wins · before fees` }),
+        payout.kind === "below-minimum" ? h("div", { className: "estimate-note", text: `Minimum ${String(payout.minimumContracts)} contracts` }) : null,
       ),
       market.tradeable ? null : h("div", { className: "blocked", text: market.tradeBlockedReason ?? "Trading is unavailable for this market." }),
       h("button", { className: "buy", text: isBusy(state) ? "Placing order…" : "Trade now", attributes: {
-        type: "button", "data-key": "trade", "aria-label": `Trade ${outcome} for ${formatDollars(state.amountCents)} at ${formatCents(price)}`,
-        ...(enabled && payout.kind === "quote" ? {} : { disabled: "" }),
+        type: "button", "data-key": "trade", "aria-label": `Trade ${outcome} for ${formatDollars(amountCents ?? 0)} at ${formatCents(price)}`,
+        ...(enabled ? {} : { disabled: "" }),
       }, on: { click: userOnly(() => void buy()) } }),
     );
   }
 
-  function render(): void {
-    const focusKey = shadow.activeElement?.getAttribute("data-key");
-    const { market } = state;
-    const locked = isBusy(state) || state.status.phase === "needs-approval";
-    const select = h("select", { className: "contract", attributes: { "aria-label": "Prediction contract", "data-key": "contract", ...(locked ? { disabled: "" } : {}) } },
-      ...state.contracts.map((contract) => h("option", { text: contract.contractLabel, attributes: { value: contract.instrumentSymbol, ...(market.instrumentSymbol === contract.instrumentSymbol ? { selected: "" } : {}) } })),
-    );
-    select.addEventListener("change", userOnly(() => { dispatch({ type: "contract-selected", symbol: select.value }); }));
-    const researchHref = options.researchHrefFor?.(market.instrumentSymbol) ?? options.researchHref;
-    const closes = deadline(market.expiryDate);
-    const body = h(
+  const select = h("select", { className: "contract", attributes: { "aria-label": "Prediction contract", "data-key": "contract" } });
+  select.addEventListener("change", userOnly(() => { dispatch({ type: "contract-selected", symbol: select.value }); }));
+  const eventTitle = h("div", { className: "title" });
+  const contractLabel = h("span", { className: "contract-label", attributes: { "aria-hidden": "true" } });
+  const picker = h("span", { className: "contract-picker" }, contractLabel, svg("svg", { className: "contract-chevron", attributes: { viewBox: "0 0 24 24", "aria-hidden": "true" } }, svg("path", { attributes: { d: "m6 9 6 6 6-6", fill: "none", stroke: "currentColor", "stroke-width": "2.5", "stroke-linecap": "round", "stroke-linejoin": "round" } })), select);
+  const expiry = h("div", { className: "deadline" });
+  const status = h("div", { className: "status", attributes: { "aria-live": "polite" } });
+  const foot = h("div", { className: "foot" });
+  let trade = h("div");
+  const body = h(
+    "div",
+    { className: "body" },
+    h(
       "div",
-      { className: "body" },
+      { className: "head" },
+      h("div", { className: "icon" }, gemIcon()),
       h(
         "div",
-        { className: "head" },
-        h("div", { className: "icon" }, gemIcon()),
-        h(
-          "div",
-          { className: "titles" },
-          h("div", { className: "title", text: market.eventTitle, attributes: { title: market.description ?? market.eventTitle } }),
-          select,
-          closes === null ? null : h("div", { className: "deadline", text: closes }),
-        ),
+        { className: "titles" },
+        eventTitle,
+        picker,
+        expiry,
       ),
-      tradeView(),
-      h("div", { className: "status", attributes: { "aria-live": "polite" } }, resultView()),
-    );
-    const card = h(
-      "div",
-      { className: "card", attributes: { role: "group", "aria-label": `Prediction market: ${market.eventTitle}` } },
-      body,
-      h(
-        "div",
-        { className: "foot" },
+    ),
+    trade,
+    status,
+  );
+  const card = h("div", { className: "card", attributes: { role: "group" } }, body, foot);
+  root.append(card);
+
+  function render(): void {
+    const focused = shadow.activeElement;
+    const focusKey = focused?.getAttribute("data-key");
+    const selection = focused instanceof HTMLInputElement ? { start: focused.selectionStart, end: focused.selectionEnd, direction: focused.selectionDirection } : undefined;
+    const { market, contracts } = state;
+    const locked = isBusy(state) || state.status.phase === "needs-approval";
+    const existing = Array.from(select.options);
+    if (existing.length !== contracts.length || contracts.some((contract, index) => existing[index]?.value !== contract.instrumentSymbol || existing[index].textContent !== contract.contractLabel)) {
+      select.replaceChildren(...contracts.map((contract) => h("option", { text: contract.contractLabel, attributes: { value: contract.instrumentSymbol } })));
+    }
+    if (select.value !== market.instrumentSymbol) select.value = market.instrumentSymbol;
+    if (select.disabled !== locked) select.disabled = locked;
+    picker.setAttribute("data-disabled", String(locked));
+    eventTitle.textContent = market.eventTitle;
+    eventTitle.title = market.description ?? market.eventTitle;
+    contractLabel.textContent = market.contractLabel;
+    const closes = deadline(market.expiryDate);
+    expiry.hidden = closes === null;
+    expiry.textContent = closes;
+    card.setAttribute("aria-label", `Prediction market: ${market.eventTitle}`);
+    const nextTrade = tradeView();
+    trade.replaceWith(nextTrade);
+    trade = nextTrade;
+    const result = resultView();
+    status.replaceChildren(...(result === null ? [] : [result]));
+    const researchHref = options.researchHrefFor?.(market.instrumentSymbol) ?? options.researchHref;
+    foot.replaceChildren(...[
         "Trade on ",
         market.geminiUrl !== undefined && isSafeLink(market.geminiUrl)
           ? h("a", { className: "gemini", text: "Gemini", attributes: { href: market.geminiUrl, target: "_blank", rel: "noopener noreferrer", "data-key": "gemini" } })
@@ -241,10 +263,12 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
         researchHref === undefined
           ? null
           : h("span", {}, " | ", h("a", { className: "research", text: "Research", attributes: { href: researchHref, target: "_blank", rel: "noopener noreferrer", "data-key": "research" } }), " to understand more"),
-      ),
-    );
-    root.replaceChildren(card);
-    if (focusKey) shadow.querySelector<HTMLElement>(`[data-key="${focusKey}"]`)?.focus();
+    ].filter((child) => child !== null));
+    if (focusKey) {
+      const next = shadow.querySelector<HTMLElement>(`[data-key="${focusKey}"]`);
+      if (next !== shadow.activeElement) next?.focus();
+      if (next instanceof HTMLInputElement && selection) next.setSelectionRange(selection.start, selection.end, selection.direction ?? undefined);
+    }
   }
 
   render();
