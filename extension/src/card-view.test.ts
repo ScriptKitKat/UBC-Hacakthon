@@ -266,6 +266,9 @@ describe("market card", () => {
   it.each([
     { explorerUrl: "javascript:alert(1)" },
     { explorerUrl: "http://explorer.solana.com/tx/sig" },
+    { explorerUrl: "https://evil.test/tx/sig" },
+    { explorerUrl: "https://solscan.io/tx/sig" },
+    { explorerUrl: "https://explorer.solana.com.evil.test/tx/sig" },
     { explorerUrl: undefined },
     { signature: undefined },
     { signature: " " },
@@ -384,5 +387,67 @@ describe("market card", () => {
     select.dispatchEvent(trusted(new Event("change")));
     expect(handle.symbol).toBe(other.instrumentSymbol);
     expect(root.querySelector(".contract-label")?.textContent).toBe(other.contractLabel);
+  });
+
+  it("hides a Gemini link that is not on gemini.com", () => {
+    const handle = createCard({ ...matched, market: { ...market, geminiUrl: "https://evil.test/predictions" } }, vi.fn());
+    document.body.append(handle.host);
+    const root = handle.host.shadowRoot;
+    if (!root) throw new Error("missing root");
+    expect(root.querySelector('[data-key="gemini"]')).toBeNull();
+    expect(root.querySelector(".foot")?.textContent).toContain("Trade on Gemini");
+  });
+});
+
+const deskBudget = { perTradeMaxCents: 1000, remainingCents: 1800, autoApproveMaxCents: 200 };
+
+describe("card desk limits", () => {
+  it("disables Trade now and explains when the stake exceeds the desk limit", () => {
+    const handle = createCard(matched, vi.fn(), { budget: deskBudget });
+    document.body.append(handle.host);
+    const root = handle.host.shadowRoot;
+    if (!root) throw new Error("missing root");
+    const button = () => root.querySelector<HTMLButtonElement>('[data-key="trade"]') as HTMLButtonElement;
+    editAmount(root, "10.01");
+    expect(button().disabled).toBe(true);
+    expect(root.textContent).toContain("Over your limit: max 10 USDC per trade (18 USDC left today)");
+    expect(amountField(root).getAttribute("aria-invalid")).toBe("true");
+    press(button());
+    editAmount(root, "5.00");
+    expect(button().disabled).toBe(false);
+    expect(root.textContent).toContain("Needs approval");
+    expect(root.textContent).not.toContain("Over your limit");
+    editAmount(root, "1.00");
+    expect(button().disabled).toBe(false);
+    expect(root.textContent).not.toContain("Needs approval");
+    expect(root.textContent).not.toContain("Over your limit");
+  });
+
+  it("does not present the API ceiling as a personal desk limit when budget is unknown", () => {
+    const { root, button, send } = setup();
+    editAmount(root, "23.00");
+    expect(button("trade").disabled).toBe(false);
+    expect(root.textContent).not.toContain("Over your limit");
+    editAmount(root, "1000.01");
+    expect(button("trade").disabled).toBe(true);
+    expect(root.textContent).toContain("Maximum 1000 USDC per order.");
+    expect(root.textContent).not.toContain("Over your limit");
+    press(button("trade"));
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("applies a later budget update from the feed positions payload", () => {
+    const handle = createCard(matched, vi.fn());
+    document.body.append(handle.host);
+    const root = handle.host.shadowRoot;
+    if (!root) throw new Error("missing root");
+    const button = () => root.querySelector<HTMLButtonElement>('[data-key="trade"]') as HTMLButtonElement;
+    editAmount(root, "10.00");
+    expect(button().disabled).toBe(false);
+    handle.updateBudget(deskBudget);
+    expect(button().disabled).toBe(false);
+    handle.updateBudget({ ...deskBudget, remainingCents: 350 });
+    expect(button().disabled).toBe(true);
+    expect(root.textContent).toContain("Over your limit: max 10 USDC per trade (3.50 USDC left today)");
   });
 });

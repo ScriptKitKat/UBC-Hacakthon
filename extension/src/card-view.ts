@@ -1,4 +1,4 @@
-import { MAX_FEED_BUY_CENTS, parseDollarsToCents, payoutFor } from "@/shared";
+import { parseDollarsToCents, payoutFor } from "@/shared";
 import { canBuy, cardReducer, initialCardState, isBusy } from "./card-state";
 import type { CardAction } from "./card-state";
 import { ensureCardFont } from "./card-font";
@@ -7,6 +7,9 @@ import { h, svg } from "./dom";
 import type { Child } from "./dom";
 import { formatCents, formatPercent, formatUsdc } from "./format";
 import type { Sender } from "./protocol";
+import { isSafeExplorerLink, isSafeGeminiLink } from "./safe-link";
+import { needsApprovalNote, overTradeLimitMessage } from "./trade-budget";
+import type { TradeBudget } from "./trade-budget";
 import type { WireEntry, WireMatched, WireQuote } from "./wire";
 
 export const CARD_HOST_ATTRIBUTE = "data-ntd-card";
@@ -17,6 +20,7 @@ export interface CardHandle {
   readonly postId: string;
   readonly symbol: string;
   readonly update: (quote: WireQuote) => void;
+  readonly updateBudget: (budget: TradeBudget | undefined) => void;
 }
 
 function gemIcon(): SVGElement {
@@ -38,14 +42,6 @@ function entrySummary(entry: WireEntry): string {
   return `${formatUsdc(entry.notionalCents)} on ${entry.outcome === "yes" ? "Yes" : "No"}`;
 }
 
-function isSafeLink(url: string): boolean {
-  try {
-    return new URL(url).protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 function deadline(expiry: string | null | undefined): string | null {
   if (!expiry) return null;
   const date = new Date(expiry);
@@ -56,11 +52,13 @@ function deadline(expiry: string | null | undefined): string | null {
 export interface CardOptions {
   readonly researchHref?: string;
   readonly researchHrefFor?: (symbol: string) => string | undefined;
+  readonly budget?: TradeBudget;
+  readonly onTradeSettled?: () => void;
 }
 
 export function createCard(initial: WireMatched, send: Sender, options: CardOptions = {}): CardHandle {
   ensureCardFont(document);
-  let state = initialCardState(initial);
+  let state = initialCardState(initial, options.budget);
   const host = h("div", { attributes: { [CARD_HOST_ATTRIBUTE]: initial.postId } });
   const shadow = host.attachShadow({ mode: "open" });
   const root = h("div");
@@ -89,6 +87,7 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
       ...(seenPriceCents === null ? {} : { seenPriceCents: Math.round(seenPriceCents) }),
     });
     dispatch(reply.ok ? { type: "buy-settled", entry: reply.value } : { type: "buy-failed", message: reply.error });
+    if (reply.ok) options.onTradeSettled?.();
   }
 
   async function approve(): Promise<void> {
@@ -97,6 +96,7 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
     dispatch({ type: "approve-started" });
     const reply = await send({ type: "confirm", intentId });
     dispatch(reply.ok ? { type: "approve-settled", entry: reply.value } : { type: "approve-failed", message: reply.error });
+    if (reply.ok) options.onTradeSettled?.();
   }
 
   function resultView(): Child {
@@ -108,7 +108,7 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
         return h("div", { className: "result", attributes: { "data-tone": "pending" } }, h("span", { className: "result-title", text: "Placing order…" }));
       case "filled": {
         const { explorerUrl, signature, ticket } = status.entry;
-        const hasReceipt = signature !== undefined && signature.trim() !== "" && explorerUrl !== undefined && isSafeLink(explorerUrl);
+        const hasReceipt = signature !== undefined && signature.trim() !== "" && explorerUrl !== undefined && isSafeExplorerLink(explorerUrl);
         return h(
           "div",
           { className: "result", attributes: { "data-tone": "filled" } },
@@ -159,8 +159,10 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
     const locked = isBusy(state) || state.status.phase === "needs-approval";
     const price = outcome === "yes" ? market.yesCents : market.noCents;
     const amountCents = parseDollarsToCents(state.amountText);
-    const amountError = amountCents === undefined || amountCents <= 0 ? "Enter a USDC amount above 0 with up to two decimal places."
-      : amountCents > MAX_FEED_BUY_CENTS ? `Maximum ${formatUsdc(MAX_FEED_BUY_CENTS)} per order.` : null;
+    const amountError = amountCents === undefined || amountCents <= 0
+      ? "Enter a USDC amount above 0 with up to two decimal places."
+      : overTradeLimitMessage(amountCents, state.budget);
+    const approvalNote = amountError === null && amountCents !== undefined ? needsApprovalNote(amountCents, state.budget) : null;
     const payout = payoutFor(price, amountError === null ? amountCents ?? 0 : 0, market.quantityLimits);
     const amount = h("input", { className: "amount-input", attributes: {
       type: "text", inputmode: "decimal", "aria-label": "Trade amount in USDC", "data-key": "amount",
@@ -190,6 +192,7 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
       h("div", { className: "estimate", attributes: { "aria-live": "polite", "data-outcome": outcome } },
         h("div", { className: "payout", text: payout.kind === "quote" ? `${formatPercent(price)} chance · ${formatUsdc(Math.floor(payout.payoutCents))} potential payout` : "Payout unavailable" }),
         payout.kind === "below-minimum" ? h("div", { className: "estimate-note", text: `Minimum ${String(payout.minimumContracts)} contracts` }) : null,
+        approvalNote === null ? null : h("div", { className: "estimate-note", text: approvalNote }),
       ),
       market.tradeable ? null : h("div", { className: "blocked", text: market.tradeBlockedReason ?? "Trading is unavailable for this market." }),
       h("button", { className: "buy", text: isBusy(state) ? "Placing order…" : "Trade now", attributes: {
@@ -257,7 +260,7 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
     const researchHref = options.researchHrefFor?.(market.instrumentSymbol) ?? options.researchHref;
     foot.replaceChildren(...[
         "Trade on ",
-        market.geminiUrl !== undefined && isSafeLink(market.geminiUrl)
+        market.geminiUrl !== undefined && isSafeGeminiLink(market.geminiUrl)
           ? h("a", { className: "gemini", text: "Gemini", attributes: { href: market.geminiUrl, target: "_blank", rel: "noopener noreferrer", "data-key": "gemini" } })
           : h("strong", { text: "Gemini" }),
         researchHref === undefined
@@ -278,5 +281,6 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
     postId: initial.postId,
     get symbol() { return state.market.instrumentSymbol; },
     update: (quote) => { dispatch({ type: "quote-received", quote }); },
+    updateBudget: (budget) => { dispatch({ type: "budget-received", budget }); },
   };
 }

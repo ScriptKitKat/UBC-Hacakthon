@@ -627,7 +627,7 @@ describe("desk persistence, positions and research context", () => {
         explorerUrl: positions[0]?.fills.at(-1)?.explorerUrl, researchPath: `/markets/${symbol}`,
       }],
       totals,
-      budget: { dailyCapCents: 2000, spentCents: 200, remainingCents: 1800, researchSpentCents: 0 },
+      budget: { dailyCapCents: 2000, spentCents: 200, remainingCents: 1800, researchSpentCents: 0, perTradeMaxCents: 1000, autoApproveMaxCents: 200 },
     });
   });
 

@@ -1,4 +1,6 @@
-import { MAX_FEED_BUY_CENTS, parseDollarsToCents, payoutFor } from "@/shared";
+import { parseDollarsToCents, payoutFor } from "@/shared";
+import { tradeCapCents } from "./trade-budget";
+import type { TradeBudget } from "./trade-budget";
 import type { WireEntry, WireMarket, WireMatched, WireQuote } from "./wire";
 
 export type TradeStatus =
@@ -17,11 +19,13 @@ export interface CardState {
   readonly contracts: readonly WireMarket[];
   readonly outcome: "yes" | "no";
   readonly amountText: string;
+  readonly budget: TradeBudget | undefined;
   readonly status: TradeStatus;
 }
 
 export type CardAction =
   | { readonly type: "quote-received"; readonly quote: WireQuote }
+  | { readonly type: "budget-received"; readonly budget: TradeBudget | undefined }
   | { readonly type: "amount-edited"; readonly amountText: string }
   | { readonly type: "contract-selected"; readonly symbol: string }
   | { readonly type: "outcome-selected"; readonly outcome: "yes" | "no" }
@@ -32,8 +36,8 @@ export type CardAction =
   | { readonly type: "approve-settled"; readonly entry: WireEntry }
   | { readonly type: "approve-failed"; readonly message: string };
 
-export function initialCardState(match: WireMatched): CardState {
-  return { match, market: match.market, contracts: match.contracts ?? [match.market], outcome: "yes", history: [], amountText: "1.00", status: { phase: "idle" } };
+export function initialCardState(match: WireMatched, budget?: TradeBudget): CardState {
+  return { match, market: match.market, contracts: match.contracts ?? [match.market], outcome: "yes", history: [], amountText: "1.00", budget, status: { phase: "idle" } };
 }
 
 export function statusFromEntry(entry: WireEntry): TradeStatus {
@@ -59,13 +63,15 @@ export function isBusy(state: CardState): boolean {
 export function canBuy(state: CardState): boolean {
   const price = state.outcome === "yes" ? state.market.yesCents : state.market.noCents;
   const amountCents = parseDollarsToCents(state.amountText);
-  return state.market.tradeable && amountCents !== undefined && amountCents <= MAX_FEED_BUY_CENTS
+  return state.market.tradeable && amountCents !== undefined && amountCents <= tradeCapCents(state.budget)
     && payoutFor(price, amountCents, state.market.quantityLimits).kind === "quote" && !isBusy(state) && state.status.phase !== "needs-approval";
 }
 
 export function cardReducer(state: CardState, action: CardAction): CardState {
   const { status } = state;
   switch (action.type) {
+    case "budget-received":
+      return { ...state, budget: action.budget };
     case "quote-received":
       return action.quote.market.instrumentSymbol === state.market.instrumentSymbol
         ? { ...state, market: action.quote.market, contracts: action.quote.contracts ?? state.contracts, history: action.quote.history }

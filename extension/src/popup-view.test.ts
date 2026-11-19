@@ -11,7 +11,7 @@ const position: FeedPositions["positions"][number] = {
 const view: FeedPositions = {
   positions: [position],
   totals: { costCents: 100, pricedCostCents: 100, valueCents: 125, pnlCents: 25, pnlPercent: 25, unpricedPositions: 0 },
-  budget: { dailyCapCents: 2000, spentCents: 105, remainingCents: 1895, researchSpentCents: 5 },
+  budget: { dailyCapCents: 2000, spentCents: 105, remainingCents: 1895, researchSpentCents: 5, perTradeMaxCents: 1000, autoApproveMaxCents: 200 },
 };
 
 describe("popup positions view", () => {

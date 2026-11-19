@@ -758,6 +758,8 @@ export function createDesk(deps: DeskDeps): Desk {
       spentCents: rolled.spentToday,
       researchSpentCents: todaysResearchSpendCents(journal.entries(), rolled.day),
       remainingCents: Math.max(0, config.dailyCap - rolled.spentToday - rolled.reservedToday),
+      perTradeMaxCents: config.perTradeMax,
+      autoApproveMaxCents: config.autoApproveMax,
     };
   }
 

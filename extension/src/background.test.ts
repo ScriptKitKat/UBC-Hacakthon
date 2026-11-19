@@ -30,7 +30,7 @@ it("only fetches positions for its own extension pages and authenticates the rea
   const value = {
     positions: [],
     totals: { costCents: 0, pricedCostCents: 0, valueCents: 0, pnlCents: 0, pnlPercent: null, unpricedPositions: 0 },
-    budget: { dailyCapCents: 2000, spentCents: 0, remainingCents: 2000, researchSpentCents: 0 },
+    budget: { dailyCapCents: 2000, spentCents: 0, remainingCents: 2000, researchSpentCents: 0, perTradeMaxCents: 1000, autoApproveMaxCents: 200 },
   };
   const send = vi.fn<typeof fetch>().mockResolvedValue(Response.json(value));
   vi.stubGlobal("fetch", send);

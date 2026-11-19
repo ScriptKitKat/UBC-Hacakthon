@@ -3,6 +3,8 @@ import type { CardHandle } from "./card-view";
 import { MIN_TEXT_LENGTH, TWEET_SELECTOR, extractPost, isTopLevelTweet, ownElements } from "./post-extraction";
 import type { Sender } from "./protocol";
 import { researchUrl } from "./settings";
+import { tradeBudgetFrom } from "./trade-budget";
+import type { TradeBudget } from "./trade-budget";
 
 const DEFAULT_DWELL_MS = 350;
 const DEFAULT_REFRESH_MS = 20_000;
@@ -85,6 +87,21 @@ export function createFeedController(deps: ControllerDeps): FeedController {
   const enqueue = createQueue(MATCH_CONCURRENCY);
   let scanTimer: ReturnType<typeof setTimeout> | undefined;
   let mutations: MutationObserver | undefined;
+  let latestBudget: TradeBudget | undefined;
+  let budgetRefresh: Promise<void> | undefined;
+
+  function applyBudget(budget: TradeBudget | undefined): void {
+    latestBudget = budget;
+    for (const entry of entries.values()) entry.card?.updateBudget(budget);
+  }
+
+  function refreshBudget(): Promise<void> {
+    if (budgetRefresh) return budgetRefresh;
+    budgetRefresh = send({ type: "positions" }).then((reply) => {
+      if (reply.ok) applyBudget(tradeBudgetFrom(reply.value.budget));
+    }).finally(() => { budgetRefresh = undefined; });
+    return budgetRefresh;
+  }
 
   function entryFor(postId: string): PostEntry {
     const existing = entries.get(postId);
@@ -97,7 +114,7 @@ export function createFeedController(deps: ControllerDeps): FeedController {
   async function refreshQuote(entry: PostEntry): Promise<void> {
     const { card } = entry;
     if (!card) return;
-    const reply = await send({ type: "quote", symbol: card.symbol });
+    const [reply] = await Promise.all([send({ type: "quote", symbol: card.symbol }), refreshBudget()]);
     if (reply.ok) card.update(reply.value);
   }
 
@@ -135,7 +152,12 @@ export function createFeedController(deps: ControllerDeps): FeedController {
     }
     entry.matchState = "matched";
     const deskUrl = await deps.loadDeskUrl?.();
-    entry.card = createCard(reply.value, send, deskUrl === undefined ? {} : { researchHrefFor: (symbol) => researchUrl(deskUrl, symbol) });
+    entry.card = createCard(reply.value, send, {
+      ...(deskUrl === undefined ? {} : { researchHrefFor: (symbol: string) => researchUrl(deskUrl, symbol) }),
+      ...(latestBudget === undefined ? {} : { budget: latestBudget }),
+      onTradeSettled: () => { void refreshBudget(); },
+    });
+    void refreshBudget();
     const target = articleOf.get(post.id) ?? article;
     if (target.isConnected && postIdOf.get(target) === post.id && visibleArticles.has(target)) showCard(target, post.id, entry);
   }

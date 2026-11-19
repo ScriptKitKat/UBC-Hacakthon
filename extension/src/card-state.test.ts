@@ -89,4 +89,14 @@ describe("card state machine", () => {
     expect(canBuy(cardReducer(start, { type: "amount-edited", amountText: "1000" }))).toBe(true);
     expect(canBuy({ ...start, market: { ...market, quantityLimits: { quantityIncrementHundredths: 100, quantityMinimumHundredths: 200 } } })).toBe(false);
   });
+
+  it("blocks stakes over the desk per-trade max or remaining budget", () => {
+    const limited = cardReducer(start, { type: "budget-received", budget: { perTradeMaxCents: 1000, remainingCents: 1800, autoApproveMaxCents: 200 } });
+    expect(canBuy(cardReducer(limited, { type: "amount-edited", amountText: "10.00" }))).toBe(true);
+    expect(canBuy(cardReducer(limited, { type: "amount-edited", amountText: "10.01" }))).toBe(false);
+    expect(canBuy(cardReducer(limited, { type: "amount-edited", amountText: "23.00" }))).toBe(false);
+    const tight = cardReducer(limited, { type: "budget-received", budget: { perTradeMaxCents: 1000, remainingCents: 350, autoApproveMaxCents: 200 } });
+    expect(canBuy(cardReducer(tight, { type: "amount-edited", amountText: "3.50" }))).toBe(true);
+    expect(canBuy(cardReducer(tight, { type: "amount-edited", amountText: "3.51" }))).toBe(false);
+  });
 });
