@@ -1,5 +1,5 @@
 export const CARD_COLORS = {
-  surface: "#16181c",
+  surface: "rgb(21, 24, 28)",
   text: "rgb(231, 233, 234)",
   border: "rgb(47, 51, 54)",
   up: "rgb(0, 186, 124)",
@@ -7,107 +7,64 @@ export const CARD_COLORS = {
 } as const;
 
 export const CARD_CSS = `
-:host { all: initial; display: block; margin-top: 12px; }
+:host { all: initial; display: block; margin-top: 12px; color-scheme: dark; }
 *, *::before, *::after { box-sizing: border-box; }
 .card {
-  width: 100%;
-  max-width: 516px;
-  overflow: hidden;
-  border: 1px solid ${CARD_COLORS.border};
-  border-radius: 16px;
-  background: ${CARD_COLORS.surface};
-  color: ${CARD_COLORS.text};
-  font-family: TwitterChirp, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  font-size: 15px;
-  line-height: 20px;
+  width: 100%; max-width: 516px; overflow: hidden; border: 1px solid ${CARD_COLORS.border}; border-radius: 20px;
+  background: ${CARD_COLORS.surface}; color: ${CARD_COLORS.text};
+  font: 15px/20px TwitterChirp, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   text-align: left;
 }
-.body { padding: 12px 16px; display: grid; gap: 12px; }
-.head { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 12px; align-items: center; }
-.icon {
-  width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
-  background: linear-gradient(135deg, #00dcfa, #1a6bff);
-}
-.icon svg { width: 24px; height: 24px; }
+.body { padding: 20px; display: grid; gap: 18px; }
+.head { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 12px; align-items: center; }
+.icon { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, #00b9f5, #1a6bff); }
+.icon svg { width: 28px; height: 28px; }
 .titles { min-width: 0; }
-.title { font-weight: 700; color: ${CARD_COLORS.text}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sub { color: rgb(113, 118, 123); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sub strong { color: ${CARD_COLORS.text}; font-weight: 700; }
-.price-row { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; overflow: hidden; }
-.price-label { color: rgb(113, 118, 123); font-size: 13px; font-weight: 700; }
-.price { color: ${CARD_COLORS.text}; font-size: 28px; line-height: 32px; font-weight: 800; letter-spacing: -0.5px; }
-.change { font-size: 14px; font-weight: 700; }
-.change[data-trend="up"] { color: ${CARD_COLORS.up}; }
-.change[data-trend="down"] { color: ${CARD_COLORS.down}; }
-.change[data-trend="flat"] { color: rgb(113, 118, 123); }
-.no-price { margin-left: auto; color: rgb(113, 118, 123); font-size: 13px; }
-.chart { width: 112px; height: 40px; }
-.chart svg { width: 100%; height: 100%; display: block; overflow: visible; }
-.line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.line[data-trend="up"] { stroke: ${CARD_COLORS.up}; }
-.line[data-trend="down"] { stroke: ${CARD_COLORS.down}; }
-.line[data-trend="flat"] { stroke: rgb(113, 118, 123); }
-.area[data-trend="up"] { fill: rgba(0, 186, 124, 0.12); }
-.area[data-trend="down"] { fill: rgba(249, 24, 128, 0.12); }
-.area[data-trend="flat"] { fill: rgba(113, 118, 123, 0.12); }
-.bar { display: grid; gap: 4px; align-content: center; height: 100%; }
-.bar-track { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: ${CARD_COLORS.border}; }
-.bar-yes { background: ${CARD_COLORS.up}; }
-.bar-no { background: ${CARD_COLORS.down}; flex: 1; }
-.bar-labels { display: flex; justify-content: space-between; font-size: 11px; line-height: 12px; color: rgb(113, 118, 123); }
-.why { display: flex; gap: 8px; align-items: flex-start; color: ${CARD_COLORS.text}; }
-.badge {
-  flex: none; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 700; line-height: 20px;
-  background: rgb(239, 243, 244); color: rgb(15, 20, 25);
-}
-.badge[data-source="keywords"] {
-  padding: 0 6px; font-size: 10px; font-weight: 500; line-height: 16px; margin-top: 2px;
-  background: transparent; border: 1px solid ${CARD_COLORS.border}; color: rgb(113, 118, 123);
-}
-.why-text { min-width: 0; }
-.trade { display: grid; gap: 8px; }
-.chips { display: flex; gap: 8px; }
-button, a.link { font: inherit; }
-.chip {
-  flex: 1; height: 32px; border-radius: 999px; border: 1px solid rgb(83, 100, 113); background: transparent;
-  color: ${CARD_COLORS.text}; font-weight: 700; cursor: pointer;
-}
-.chip[aria-pressed="true"] { background: rgb(239, 243, 244); color: rgb(15, 20, 25); border-color: rgb(239, 243, 244); }
-.buys { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.buy {
-  height: 40px; border-radius: 999px; border: 0; font-weight: 700; color: #fff; cursor: pointer;
-}
-.buy[data-outcome="yes"] { background: ${CARD_COLORS.up}; }
-.buy[data-outcome="no"] { background: ${CARD_COLORS.down}; }
-.chip:disabled, .buy:disabled, .approve:disabled { opacity: 0.5; cursor: not-allowed; }
-button:focus-visible, a.link:focus-visible { outline: 2px solid rgb(29, 155, 240); outline-offset: 2px; }
-.blocked { color: rgb(113, 118, 123); font-size: 13px; line-height: 16px; }
-.result { border-radius: 12px; padding: 8px 12px; font-size: 14px; line-height: 18px; display: grid; gap: 6px; }
-.result[data-tone="filled"] { background: rgba(0, 186, 124, 0.12); color: ${CARD_COLORS.up}; }
-.result[data-tone="approval"] { background: rgba(255, 173, 31, 0.12); color: rgb(255, 173, 31); }
-.result[data-tone="refused"] { background: rgba(249, 24, 128, 0.12); color: ${CARD_COLORS.down}; }
-.result[data-tone="quiet"], .result[data-tone="pending"] { background: rgba(113, 118, 123, 0.12); color: rgb(139, 152, 165); }
+.title { font-size: 14px; line-height: 20px; color: #a7b1ba; overflow-wrap: anywhere; }
+.deadline { font-size: 11px; line-height: 16px; color: #a7b1ba; }
+button, select, a { font: inherit; }
+.contract { display: block; width: 100%; padding: 2px 22px 2px 0; border: 0; background: transparent; color: ${CARD_COLORS.text}; font-size: 25px; line-height: 32px; font-weight: 750; letter-spacing: -.5px; cursor: pointer; text-overflow: ellipsis; }
+.contract option { background: ${CARD_COLORS.surface}; color: ${CARD_COLORS.text}; font-size: 16px; }
+.trade { display: grid; gap: 16px; }
+.outcomes { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; gap: 4px; border: 1px solid #3b4249; border-radius: 999px; background: #101317; }
+.outcome { min-height: 46px; padding: 8px; border-radius: 999px; border: 1px solid transparent; background: transparent; color: #a7b1ba; font-size: 21px; line-height: 26px; font-weight: 700; cursor: pointer; }
+.outcome[data-outcome="yes"][aria-pressed="true"] { background: rgba(0,186,124,.12); border-color: ${CARD_COLORS.up}; color: #42d7a3; }
+.outcome[data-outcome="no"][aria-pressed="true"] { background: rgba(249,24,128,.12); border-color: ${CARD_COLORS.down}; color: #ff6eae; }
+.stake { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: #a7b1ba; }
+.chips { display: flex; gap: 6px; }
+.chip { min-width: 48px; height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid #3b4249; background: transparent; color: #a7b1ba; font-weight: 650; cursor: pointer; }
+.chip[aria-pressed="true"] { background: #e7e9ea; color: #0f1419; border-color: #e7e9ea; }
+.estimate { text-align: center; }
+.payout { color: #42d7a3; font-weight: 650; line-height: 24px; }
+.estimate[data-outcome="no"] .payout { color: #ff6eae; }
+.estimate-note { margin-top: 3px; color: #a7b1ba; font-size: 11px; line-height: 16px; }
+.buy { width: 100%; min-height: 44px; padding: 10px 16px; border: 1px solid #329dff; border-radius: 999px; background: #1a6bff; color: #fff; font-weight: 750; cursor: pointer; }
+button:disabled, select:disabled { opacity: .5; cursor: not-allowed; }
+button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #329dff; outline-offset: 3px; }
+.blocked { color: #a7b1ba; font-size: 13px; line-height: 18px; }
+.result { border-radius: 12px; padding: 8px 12px; font-size: 14px; line-height: 18px; display: grid; gap: 6px; overflow-wrap: anywhere; }
+.result[data-tone="filled"] { background: rgba(0,186,124,.12); color: ${CARD_COLORS.up}; }
+.result[data-tone="approval"] { background: rgba(255,173,31,.12); color: rgb(255,173,31); }
+.result[data-tone="refused"] { background: rgba(249,24,128,.12); color: ${CARD_COLORS.down}; }
+.result[data-tone="quiet"], .result[data-tone="pending"] { background: rgba(113,118,123,.12); color: #a7b1ba; }
 .result-title { font-weight: 700; }
+.status:empty { display: none; }
 .result-detail { color: ${CARD_COLORS.text}; }
-.link { color: rgb(29, 155, 240); text-decoration: none; font-weight: 700; }
-.link:hover { text-decoration: underline; }
-.approve {
-  justify-self: start; height: 32px; padding: 0 16px; border-radius: 999px; border: 0;
-  background: rgb(255, 173, 31); color: rgb(15, 20, 25); font-weight: 700; cursor: pointer;
-}
-.foot {
-  padding: 8px 16px; text-align: center; font-size: 14px; color: rgb(139, 152, 165);
-  background: rgba(0, 0, 0, 0.35); border-top: 1px solid ${CARD_COLORS.border};
-}
-.foot strong { color: ${CARD_COLORS.text}; }
-.research { margin-left: 10px; color: rgb(29, 155, 240); font-weight: 700; text-decoration: none; }
-.research:hover { text-decoration: underline; }
-@media (max-width: 420px) {
-  .head { grid-template-columns: 44px minmax(0, 1fr); }
-  .chart { grid-column: 1 / -1; width: 100%; }
+.link { color: #329dff; text-decoration: none; font-weight: 700; }
+.approve { justify-self: start; min-height: 32px; padding: 0 16px; border-radius: 999px; border: 0; background: rgb(255,173,31); color: #0f1419; font-weight: 700; cursor: pointer; }
+.foot { padding: 12px 16px; text-align: center; font-size: 12px; line-height: 18px; color: #a7b1ba; background: #101317; border-top: 1px solid ${CARD_COLORS.border}; }
+.foot a { color: ${CARD_COLORS.text}; font-weight: 700; text-underline-offset: 3px; }
+a:hover { text-decoration: underline; color: #329dff; }
+@media (max-width: 380px) {
+  .body { padding: 16px 12px; }
+  .head { grid-template-columns: 40px minmax(0, 1fr); gap: 10px; }
+  .icon { width: 40px; height: 40px; }
+  .contract { font-size: 21px; }
+  .outcome { font-size: 19px; }
+  .payout { font-size: 13px; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .buy, .chip { transition: filter 120ms ease; }
-  .buy:hover:not(:disabled), .chip:hover:not(:disabled) { filter: brightness(1.12); }
+  button { transition: filter 120ms ease; }
+  button:hover:not(:disabled) { filter: brightness(1.12); }
 }
 `;

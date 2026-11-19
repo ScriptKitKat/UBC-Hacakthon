@@ -56,4 +56,24 @@ describe("card state machine", () => {
     expect(updated.history).toHaveLength(3);
     expect(updated.status.phase).toBe("buying");
   });
+
+  it("switches only to listed contracts and ignores quotes for a previous selection", () => {
+    const other = { ...market, instrumentSymbol: "GEMI-FED261211-CUT25", contractLabel: "Cut 25bps", yesCents: 10 };
+    const initial = initialCardState({ ...matched, contracts: [market, other] });
+    expect(cardReducer(initial, { type: "contract-selected", symbol: "unlisted" })).toBe(initial);
+    const selected = cardReducer(initial, { type: "contract-selected", symbol: other.instrumentSymbol });
+    expect(selected.market).toBe(other);
+    expect(cardReducer(selected, { type: "quote-received", quote })).toBe(selected);
+    const buying = cardReducer(initial, { type: "buy-started" });
+    expect(cardReducer(buying, { type: "contract-selected", symbol: other.instrumentSymbol })).toBe(buying);
+    expect(cardReducer(buying, { type: "outcome-selected", outcome: "no" })).toBe(buying);
+  });
+
+  it("locks selection during approval and blocks missing prices", () => {
+    const waiting = cardReducer(cardReducer(start, { type: "buy-started" }), { type: "buy-settled", entry: entry({ kind: "needs-approval" }) });
+    expect(cardReducer(waiting, { type: "contract-selected", symbol: market.instrumentSymbol })).toBe(waiting);
+    expect(cardReducer(waiting, { type: "outcome-selected", outcome: "no" })).toBe(waiting);
+    expect(cardReducer(waiting, { type: "amount-selected", amountCents: 500 })).toBe(waiting);
+    expect(canBuy({ ...start, market: { ...market, yesCents: null } })).toBe(false);
+  });
 });

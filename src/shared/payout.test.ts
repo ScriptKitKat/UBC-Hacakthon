@@ -92,6 +92,10 @@ describe("payoutFor", () => {
     expect(payoutFor(60, 100, { quantityIncrementHundredths: 0, quantityMinimumHundredths: 1 })).toEqual({ kind: "no-price" });
   });
 
+  it("accepts a market with no minimum beyond its quantity increment", () => {
+    expect(payoutFor(60, 100, { quantityIncrementHundredths: 1, quantityMinimumHundredths: 0 })).toMatchObject({ kind: "quote", contracts: 1.66 });
+  });
+
   it("buys a hundredth of a contract with the smallest stake", () => {
     expect(payoutFor(100, 1)).toMatchObject({ kind: "quote", contracts: 0.01 });
   });

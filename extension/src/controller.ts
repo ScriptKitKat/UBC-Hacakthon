@@ -135,8 +135,7 @@ export function createFeedController(deps: ControllerDeps): FeedController {
     }
     entry.matchState = "matched";
     const deskUrl = await deps.loadDeskUrl?.();
-    const researchHref = deskUrl === undefined ? undefined : researchUrl(deskUrl, reply.value.market.instrumentSymbol);
-    entry.card = createCard(reply.value, send, researchHref === undefined ? {} : { researchHref });
+    entry.card = createCard(reply.value, send, deskUrl === undefined ? {} : { researchHrefFor: (symbol) => researchUrl(deskUrl, symbol) });
     const target = articleOf.get(post.id) ?? article;
     if (target.isConnected && postIdOf.get(target) === post.id && visibleArticles.has(target)) showCard(target, post.id, entry);
   }

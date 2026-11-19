@@ -34,6 +34,7 @@ function contract(instrument: typeof symbol, label: string, marketState = "open"
 function event(marketState = "open"): MarketEvent {
   return {
     ticker: "FED261211",
+    slug: "fed-decision-in-december",
     title: "Fed decision in December?",
     category: "Economics",
     status: "active",
@@ -308,13 +309,26 @@ describe("desk feed", () => {
     expect(await desk.buyFromFeed({ ...order, clientOrderId: "order-ok", seenPriceCents: 60 })).toMatchObject({ kind: "approve" });
   });
 
-  it("only treats a cached match as the card for its own post and contract", async () => {
+  it("authorizes only the matched event's listed contracts for the card", async () => {
     const { desk } = setup();
     expect(await desk.isCardFor("post-1", "GEMI-FED261211-MAINTAIN")).toBe(false);
     await desk.matchPost(post);
     expect(await desk.isCardFor("post-1", "GEMI-FED261211-MAINTAIN")).toBe(true);
-    expect(await desk.isCardFor("post-1", "GEMI-FED261211-CUT25")).toBe(false);
+    expect(await desk.isCardFor("post-1", "GEMI-FED261211-CUT25")).toBe(true);
+    expect(await desk.isCardFor("post-1", "GEMI-FED261211-UNLISTED")).toBe(false);
     expect(await desk.isCardFor("other-post", "GEMI-FED261211-MAINTAIN")).toBe(false);
+  });
+
+  it("exposes Gemini links, rules, limits and selectable sibling contracts", async () => {
+    const { desk } = setup();
+    const match = await desk.matchPost(post);
+    expect(match).toMatchObject({ kind: "matched", market: {
+      geminiUrl: "https://www.gemini.com/predictions/FED261211/fed-decision-in-december?status=active",
+      quantityLimits: { quantityIncrementHundredths: 1, quantityMinimumHundredths: 1 },
+    }, contracts: [{ instrumentSymbol: symbol }, { instrumentSymbol: otherSymbol }] });
+    expect(await desk.quote(otherSymbol)).toMatchObject({ market: { instrumentSymbol: otherSymbol, contractLabel: "Cut 25bps" }, contracts: [{ instrumentSymbol: symbol }, { instrumentSymbol: otherSymbol }] });
+    expect(await desk.postContextFor(otherSymbol)).toMatchObject({ source: "x-feed", text: post.text });
+    expect(await desk.buyFromFeed({ clientOrderId: "sibling-order", instrumentSymbol: otherSymbol, outcome: "yes", notionalCents: 100 })).toMatchObject({ kind: "approve", symbol: otherSymbol });
   });
 
   it("caches matches per post id", async () => {

@@ -10,7 +10,7 @@ import { createMemoryJournal, reconcileJournal } from "@/features/journal";
 import type { Reconciliation, SpendEntry, SpendJournal } from "@/features/journal";
 import type { UsdcLedger } from "@/features/ledger";
 import { parseInstrumentSymbol } from "@/features/markets";
-import type { ContractLimits, GeminiMarketsClient, MarketContract } from "@/features/markets";
+import type { ContractLimits, GeminiMarketsClient, MarketContract, MarketEvent } from "@/features/markets";
 import { allowAll, matchNews } from "@/features/matcher";
 import type { MatchCandidate, MatchResult, NewsItem } from "@/features/matcher";
 import { aggregatePositions, fillsFromJournal, markFromContract, summarizeResearchSpend, todaysResearchSpendCents } from "@/features/positions";
@@ -121,6 +121,7 @@ export interface Desk {
 }
 
 interface LiveMarket {
+  readonly event?: MarketEvent;
   readonly eventStatus: string;
   readonly eventTicker: string;
   readonly eventTitle: string;
@@ -284,10 +285,17 @@ export function createDesk(deps: DeskDeps): Desk {
   }
 
   function feedMarketView(market: LiveMarket): FeedMarketView {
-    const { prices } = market.contract;
+    const { prices, limits } = market.contract;
     const blocked = tradeBlockedReason(market);
     return {
       ...marketView(market),
+      geminiUrl: `https://www.gemini.com/predictions/${encodeURIComponent(market.eventTicker)}${market.event?.slug ? `/${encodeURIComponent(market.event.slug)}` : ""}?status=active`,
+      description: market.contract.description || market.event?.description || "",
+      expiryDate: market.contract.expiryDate ?? market.event?.expiryDate ?? null,
+      ...(limits === null ? {} : { quantityLimits: {
+        quantityIncrementHundredths: Number(limits.quantityIncrementHundredths),
+        quantityMinimumHundredths: Number(limits.quantityMinimumHundredths),
+      } }),
       category: market.category,
       impliedYesPercent: prices.buyYesCents,
       bestBidCents: prices.bestBidCents,
@@ -296,6 +304,10 @@ export function createDesk(deps: DeskDeps): Desk {
       tradeable: blocked === undefined,
       ...(blocked === undefined ? {} : { tradeBlockedReason: blocked }),
     };
+  }
+
+  function feedContracts(market: LiveMarket): readonly FeedMarketView[] {
+    return market.event?.contracts.map((contract) => feedMarketView({ ...market, contract })) ?? [feedMarketView(market)];
   }
 
   function record(entry: Omit<DecisionLogEntry, "entryId" | "at">): DecisionLogEntry {
@@ -323,7 +335,8 @@ export function createDesk(deps: DeskDeps): Desk {
     if (!result.ok) return undefined;
     const contract = result.value.contracts.find((candidate) => candidate.instrumentSymbol === symbol);
     if (!contract) return undefined;
-    const market = { eventTicker, eventStatus: result.value.status, eventTitle: result.value.title, category: result.value.category, contract };
+    for (const sibling of result.value.contracts) tickers.set(sibling.instrumentSymbol, eventTicker);
+    const market = { event: result.value, eventTicker, eventStatus: result.value.status, eventTitle: result.value.title, category: result.value.category, contract };
     recordPrice(market);
     return market;
   }
@@ -341,6 +354,7 @@ export function createDesk(deps: DeskDeps): Desk {
       confidence: result.confidence,
       why: result.why,
       market: feedMarketView(market),
+      contracts: feedContracts(market),
     };
   }
 
@@ -778,13 +792,13 @@ export function createDesk(deps: DeskDeps): Desk {
       const hit = matchCache.get(postId);
       if (!hit || now().getTime() - hit.at >= MATCH_CACHE_TTL_MS) return false;
       const match = await hit.match.catch(() => undefined);
-      return match?.kind === "matched" && match.market.instrumentSymbol === symbol;
+      return match?.kind === "matched" && (match.market.instrumentSymbol === symbol || match.contracts?.some((contract) => contract.instrumentSymbol === symbol) === true);
     },
 
     async quote(symbol) {
       const market = await resolveMarket(instrumentSymbol(symbol));
       if (!market) return undefined;
-      return { market: feedMarketView(market), history: priceHistory(market.contract.instrumentSymbol) };
+      return { market: feedMarketView(market), contracts: feedContracts(market), history: priceHistory(market.contract.instrumentSymbol) };
     },
 
     async postContextFor(symbol) {
@@ -792,7 +806,7 @@ export function createDesk(deps: DeskDeps): Desk {
       for (const { at, post, match } of [...matchCache.values()].reverse()) {
         if (nowMs - at >= MATCH_CACHE_TTL_MS) continue;
         const resolved = await match.catch(() => undefined);
-        if (resolved?.kind === "matched" && resolved.market.instrumentSymbol === symbol) {
+        if (resolved?.kind === "matched" && (resolved.market.instrumentSymbol === symbol || resolved.contracts?.some((contract) => contract.instrumentSymbol === symbol))) {
           return { source: "x-feed", text: post.text, author: post.author ?? null, url: post.url ?? null, why: resolved.why };
         }
       }
