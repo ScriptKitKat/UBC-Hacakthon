@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { PositionStatus, PositionView, PositionsView } from "@/shared";
-import { AppBar } from "../_desk/app-bar";
 import { formatClock, shortenMiddle } from "../_desk/format";
 import { usePolling } from "../_desk/use-polling";
 import { formatDollarsFromCents, formatPercent, formatPriceCents } from "../_research/format";
@@ -194,7 +193,6 @@ export function PositionsPage() {
   }, POLL_INTERVAL_MS);
   return (
     <div className={styles.page}>
-      <AppBar state={null} />
       <section className={styles.panel} aria-labelledby="positions-heading">
         <h1 id="positions-heading" className={styles.panelTitle}>Positions</h1>
         {result === null ? <p className={styles.muted}>Loading positions…</p> : null}

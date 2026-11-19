@@ -5,6 +5,9 @@ import { requestGrokJson } from "@/features/grok";
 import { createSampler, openHistoryStore } from "@/features/history";
 import { createSolanaLedger, createUnconfiguredLedger, isExpectedGenesis } from "@/features/ledger";
 import type { UsdcLedger } from "@/features/ledger";
+import { cardsForSymbols, listBrowse, listCatalog, openWatchlist } from "@/features/catalog";
+import type { BrowseListResult, BrowseQuery, CatalogListResult, CatalogQuery, Watchlist } from "@/features/catalog";
+import type { CatalogCard } from "@/shared";
 import { createGeminiMarketsClient } from "@/features/markets";
 import { createResearch } from "@/features/research";
 import type { JsonCompleter, Research } from "@/features/research";
@@ -23,11 +26,23 @@ import { UNDELIVERED_RECOVERY_MS, openPurchaseStore } from "./purchase-store";
 
 const GEMINI_MIN_REQUEST_INTERVAL_MS = 500;
 const PAYMENT_TIMEOUT_SECONDS = 120;
+let homeCatalog: HomeCatalog | undefined;
 const NONCE_BYTES = 16;
 const SECRET_BYTES = 32;
 
 export type DeskAccess =
   | { readonly ok: true; readonly desk: Desk; readonly research: Research; readonly deepDive: DeepDiveResource | undefined }
+  | { readonly ok: false; readonly issues: readonly string[] };
+
+export interface HomeCatalog {
+  readonly list: (query?: CatalogQuery) => Promise<CatalogListResult>;
+  readonly browse: (query?: BrowseQuery) => Promise<BrowseListResult>;
+  readonly cardsFor: (symbols: readonly string[]) => Promise<readonly CatalogCard[]>;
+  readonly watchlist: Watchlist;
+}
+
+export type HomeServices =
+  | { readonly ok: true; readonly desk: Desk; readonly research: Research; readonly catalog: HomeCatalog }
   | { readonly ok: false; readonly issues: readonly string[] };
 
 async function openOrExplain<T>(open: () => Promise<T>): Promise<{ readonly ok: true; readonly value: T } | { readonly ok: false; readonly issue: string }> {
@@ -175,16 +190,33 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   const runtime = holder[deskKey];
   if (runtime) runtime.reconciliationTimer ??= startReconciliation(reconcile);
   createSampler({ history, markets, nowMs: () => Date.now() }).start();
+  const catalogDeps = { markets, history, now: () => new Date(), policy: config.value.policy };
+  homeCatalog = {
+    list: (query) => listCatalog(catalogDeps, query),
+    browse: (query) => listBrowse({ markets, history, now: () => new Date() }, query),
+    cardsFor: (symbols) => cardsForSymbols(catalogDeps, symbols),
+    watchlist: openWatchlist({ fs: nodeFileSystem, path: join(dataDirectory, "watchlist.json") }),
+  };
+  if (runtime) runtime.catalog = homeCatalog;
   return { ok: true, desk, research, deepDive };
 }
 
 const deskKey: unique symbol = Symbol.for("news-to-trade-desk.desk");
 interface DeskRuntime {
   readonly access: Promise<DeskAccess>;
+  catalog?: HomeCatalog;
   reconciliationTimer?: ReturnType<typeof startReconciliation>;
 }
 
 const holder = globalThis as typeof globalThis & { [deskKey]?: DeskRuntime };
+
+export async function getHomeServices(): Promise<HomeServices> {
+  const access = await getDesk();
+  if (!access.ok) return access;
+  const catalog = holder[deskKey]?.catalog ?? homeCatalog;
+  if (catalog === undefined) return { ok: false, issues: ["catalog: unavailable"] };
+  return { ok: true, desk: access.desk, research: access.research, catalog };
+}
 
 export function getDesk(): Promise<DeskAccess> {
   const existing = holder[deskKey];

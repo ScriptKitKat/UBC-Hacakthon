@@ -62,6 +62,13 @@ const decimalNumber = z.union([z.string(), z.number()]).nullish().transform((val
   return Number.isFinite(parsed) ? parsed : null;
 });
 
+
+function parseStrikeValue(value: string | number | undefined): number | null {
+  if (value === undefined) return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 const subcategorySchema = z.object({ name: z.string() }).nullish().transform((subcategory) => subcategory?.name ?? null);
 
 const contractSchema = z
@@ -72,6 +79,9 @@ const contractSchema = z
     expiryDate: z.string().nullish(),
     resolutionSide: z.string().nullish(),
     abbreviatedName: z.string().nullish(),
+    color: z.string().nullish(),
+    createdAt: z.string().nullish(),
+    strike: z.object({ value: z.union([z.string(), z.number()]).optional() }).nullish(),
     marketState: z.string(),
     status: z.string(),
     prices: pricesSchema,
@@ -104,6 +114,10 @@ const contractSchema = z
       status: raw.status,
       prices: raw.prices,
       limits,
+      abbreviatedName: raw.abbreviatedName ?? null,
+      color: raw.color ?? null,
+      strikeValue: parseStrikeValue(raw.strike?.value),
+      createdAt: raw.createdAt ?? null,
     };
   });
 
@@ -121,6 +135,9 @@ export const eventSchema = z
     volume24h: decimalNumber,
     tags: z.array(z.string()).nullish(),
     contracts: z.array(contractSchema).nullish(),
+    isLive: z.boolean().nullish(),
+    createdAt: z.string().nullish(),
+    startTime: z.string().nullish(),
   })
   .transform(
     (raw): MarketEvent => ({
@@ -136,6 +153,9 @@ export const eventSchema = z
       volume24h: raw.volume24h,
       tags: raw.tags ?? [],
       contracts: raw.contracts ?? [],
+      isLive: raw.isLive === true,
+      createdAt: raw.createdAt ?? null,
+      startTime: raw.startTime ?? null,
     }),
   );
 
@@ -170,3 +190,18 @@ export const recentTradesSchema = z
   .transform((rows): RecentTrade[] =>
     rows.map((row) => ({ tradeId: row.tid, timeMs: row.timestampms, priceCents: row.price, amount: row.amount, side: row.type })),
   );
+
+export const pubtickerSchema = z
+  .object({
+    last: z.string(),
+    bid: z.string().optional(),
+    ask: z.string().optional(),
+  })
+  .transform((raw, context) => {
+    const last = Number(raw.last);
+    if (!Number.isFinite(last) || last <= 0) {
+      context.addIssue({ code: "custom", message: "Ticker last price must be a positive number" });
+      return z.NEVER;
+    }
+    return { last };
+  });

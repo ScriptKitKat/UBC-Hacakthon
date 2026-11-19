@@ -1,5 +1,5 @@
-export { getDesk } from "./runtime";
-export type { DeskAccess } from "./runtime";
+export { getDesk, getHomeServices } from "./runtime";
+export type { DeskAccess, HomeCatalog, HomeServices } from "./runtime";
 export { createDesk } from "./desk";
 export type { ConfirmResult, Desk, DeskDeps, FeedBuyRequest, ProposeRequest } from "./desk";
 export { loadDeskConfig } from "./config";

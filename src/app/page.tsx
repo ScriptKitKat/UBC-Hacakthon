@@ -1,11 +1,12 @@
-import { Dashboard } from "./_desk/dashboard";
+import { HomePage } from "./_home/home-page";
+import { Shell } from "./_shell/shell";
 
 export const dynamic = "force-dynamic";
 
-export default function HomePage() {
+export default function HomeRoute() {
   return (
-    <main className="shell">
-      <Dashboard />
-    </main>
+    <Shell>
+      <HomePage />
+    </Shell>
   );
 }

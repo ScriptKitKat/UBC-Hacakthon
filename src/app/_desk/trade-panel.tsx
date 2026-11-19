@@ -88,6 +88,7 @@ export function TradePanel({ match, senders, pending, busy, onBet, onApprove }: 
       {symbol === undefined ? <p className={styles.empty}>Match news to a market to enable betting.</p> : null}
       {cents === undefined ? <p className={styles.warning}>Enter a dollar amount with at most two decimals.</p> : null}
 
+      <div id="approvals">
       <h3 className={styles.subTitle}>Waiting for approval</h3>
       {pending.length === 0 ? (
         <p className={styles.empty}>Nothing waiting for approval.</p>
@@ -118,6 +119,7 @@ export function TradePanel({ match, senders, pending, busy, onBet, onApprove }: 
           ))}
         </ul>
       )}
+      </div>
     </section>
   );
 }

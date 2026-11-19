@@ -17,4 +17,5 @@ export type {
   MarketEvent,
   OrderBook,
   RecentTrade,
+  SpotTicker,
 } from "./types";
