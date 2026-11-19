@@ -35,6 +35,22 @@ describe("number formatting", () => {
     expect(formatVolume(2_500_000)).toBe("2.5M");
   });
 
+  it.each([
+    [999.994, "999.99"],
+    [999.995, "1.0k"],
+    [1_000, "1.0k"],
+    [9_949.99, "9.9k"],
+    [9_950, "10k"],
+    [9_960, "10k"],
+    [10_000, "10k"],
+    [999_499.99, "999k"],
+    [999_500, "1.0M"],
+    [999_600, "1.0M"],
+    [1_000_000, "1.0M"],
+  ])("formats volume %s as %s at a display boundary", (volume, label) => {
+    expect(formatVolume(volume)).toBe(label);
+  });
+
   it("formats cents with one decimal at most", () => {
     expect(formatPriceCents(62)).toBe("62¢");
     expect(formatPriceCents(62.34)).toBe("62.3¢");

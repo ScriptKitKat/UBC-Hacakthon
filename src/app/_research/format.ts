@@ -18,10 +18,13 @@ export function formatCountdown(expiryIso: string | null, nowMs: number): string
 
 export function formatVolume(volume: number | null): string {
   if (volume === null) return "n/a";
-  if (volume >= 1_000_000) return `${(volume / 1_000_000).toFixed(1)}M`;
-  if (volume >= 10_000) return `${String(Math.round(volume / 1000))}k`;
-  if (volume >= 1000) return `${(volume / 1000).toFixed(1)}k`;
-  return String(Math.round(volume * 100) / 100);
+  const wholeThousands = Math.round(volume / 1_000);
+  if (wholeThousands >= 1_000) return `${(volume / 1_000_000).toFixed(1)}M`;
+  const decimalThousands = Math.round(volume / 100) / 10;
+  if (decimalThousands >= 10) return `${String(wholeThousands)}k`;
+  const roundedVolume = Math.round(volume * 100) / 100;
+  if (roundedVolume >= 1_000) return `${decimalThousands.toFixed(1)}k`;
+  return String(roundedVolume);
 }
 
 export function formatPriceCents(cents: number | null): string {
