@@ -96,6 +96,7 @@ export interface ProposeRequest {
   readonly source: TradeSource;
   readonly senderId: string;
   readonly seenPriceCents?: number;
+  readonly requireApproval?: boolean;
 }
 
 export type ConfirmResult =
@@ -611,12 +612,13 @@ export function createDesk(deps: DeskDeps): Desk {
   }
 
   async function proposeTrade(request: ProposeRequest): Promise<DecisionLogEntry> {
-    return proposeIntent(tradeIntent(request));
+    return proposeIntent(tradeIntent(request), false, request.requireApproval === true);
   }
 
-  async function proposeIntent(intent: TradeIntent, persistApproval = false): Promise<DecisionLogEntry> {
+  async function proposeIntent(intent: TradeIntent, persistApproval = false, requireApproval = false): Promise<DecisionLogEntry> {
     const quote = quoteFor(await resolveMarket(intent.instrumentSymbol, true), intent.outcome);
-    const decision = evaluate(intent, quote, policy, currentState(), now());
+    const evaluated = evaluate(intent, quote, policy, currentState(), now());
+    const decision = requireApproval && evaluated.kind === "approve" ? restorePendingApproval(intent) : evaluated;
     switch (decision.kind) {
       case "refuse":
         return record({ ...tradeFields(intent), kind: "refuse", code: decision.code, spokenReason: decision.spokenReason });
