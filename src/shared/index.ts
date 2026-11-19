@@ -45,6 +45,39 @@ export type {
 } from "./research";
 
 export {
+  LIBRARY_SECTION_GROUPS,
+  LIBRARY_STALE_POINTS,
+  authorLabel,
+  authorLine,
+  briefAuthorSchema,
+  briefEvidenceSchema,
+  briefLibraryFilterSchema,
+  briefLibraryItemSchema,
+  briefLibraryViewSchema,
+  briefSearchText,
+  defaultBriefAuthor,
+  filterLibraryItems,
+  isAgentAuthor,
+  leftoverBriefSections,
+  librarySectionGroups,
+  libraryStats,
+  matchesBriefQuery,
+  needsRefresh,
+  oddsDeltaPoints,
+  resolutionFromStatus,
+} from "./briefs-library";
+export type {
+  BriefAuthor,
+  BriefEvidence,
+  BriefLibraryFilter,
+  BriefLibraryItem,
+  BriefLibraryView,
+  BriefResolution,
+  LibrarySectionGroup,
+  LibrarySectionGroupId,
+} from "./briefs-library";
+
+export {
   browseCardSchema,
   browsePageSchema,
   browseSortSchema,

@@ -17,6 +17,7 @@ import { aggregatePositions, fillsFromJournal, markFromContract, summarizeResear
 import type { MarketMark } from "@/features/positions";
 import { instrumentSymbol, usdCents } from "@/shared";
 import type { FeedSettings } from "./config";
+import { buildBriefLibrary } from "./brief-library";
 import { buyDeepDive } from "./deep-dive";
 import type { DeepDiveSettings } from "./deep-dive";
 import { awaitingPaymentResult, createFeedOrders } from "./feed-orders";
@@ -24,6 +25,7 @@ import type { FeedOrder, FeedOrders } from "./feed-orders";
 import { singleReconciliation } from "./reconciliation";
 import { UNDELIVERED_RECOVERY_MS } from "./purchase-store";
 import { yesCentsFromBrief } from "@/shared";
+import type { BriefLibraryView } from "@/shared";
 import type { StoredPurchase } from "./purchase-store";
 import type {
   DecisionLogEntry,
@@ -110,6 +112,7 @@ export interface Desk {
   readonly postContextFor: (symbol: string) => Promise<ResearchPostContext | undefined>;
   readonly matchedPostsFor: (symbol: string) => Promise<readonly ResearchPostContext[]>;
   readonly peekResearchBriefs: (symbol: string) => { readonly current: StoredPurchase | null; readonly previous: StoredPurchase | null };
+  readonly listBriefLibrary: () => Promise<BriefLibraryView>;
   readonly getFeedPositions: () => Promise<FeedPositions>;
   readonly getPositions: () => Promise<PositionsView>;
   readonly buyDeepDive: (symbol: string) => Promise<DeepDiveResult>;
@@ -424,7 +427,8 @@ export function createDesk(deps: DeskDeps): Desk {
         atMs: Date.parse(at),
         brief: result.brief,
         receipt: { signature, explorerUrl, costCents },
-        yesCents: result.brief ? yesCentsFromBrief(result.brief) : null,
+        yesCents: result.brief?.evidence?.yesCentsWhenWritten ?? (result.brief ? yesCentsFromBrief(result.brief) : null),
+        author: result.brief?.author ?? "desk",
       },
       ...purchases.filter((purchase) => purchase.receipt.signature !== signature),
     ]);
@@ -852,6 +856,14 @@ export function createDesk(deps: DeskDeps): Desk {
         .filter((purchase) => purchase.symbol === symbol && purchase.brief !== null)
         .sort((a, b) => b.atMs - a.atMs);
       return { current: list[0] ?? null, previous: list[1] ?? null };
+    },
+
+    listBriefLibrary() {
+      return buildBriefLibrary({
+        purchases,
+        now: now(),
+        getEvent: (ticker) => markets.getEvent(ticker),
+      });
     },
 
     async getPositions() {

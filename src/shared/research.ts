@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { briefAuthorSchema, briefEvidenceSchema } from "./brief-record";
 
 export const RESEARCH_TIMEFRAMES = ["1H", "1D", "1W", "1M", "All"] as const;
 export type ResearchTimeframe = (typeof RESEARCH_TIMEFRAMES)[number];
@@ -141,6 +142,8 @@ export const researchBriefSchema = z.object({
   headline: z.string(),
   sections: z.array(z.object({ title: z.string(), body: z.string() })),
   polishedBy: z.enum(["template", "grok"]),
+  author: briefAuthorSchema.optional(),
+  evidence: briefEvidenceSchema.optional(),
 });
 
 const deepDiveStep = z.discriminatedUnion("step", [
