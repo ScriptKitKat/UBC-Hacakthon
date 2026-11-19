@@ -230,6 +230,10 @@ export function evaluate(intent: TradeIntent, market: PolicyMarket | undefined, 
   return intent.notional > policy.autoApproveMax ? new PendingApproval(intent) : new Approval(intent);
 }
 
+export function restorePendingApproval(intent: TradeIntent): PendingApproval {
+  return new PendingApproval(intent);
+}
+
 export function confirm(pending: PendingApproval, approverId: string, market: PolicyMarket | undefined, policy: Policy, state: PolicyState, now: Date): ApprovedTrade | Refusal {
   const current = rollDay(state, now);
   const remaining = remainingToday(policy, current);

@@ -7,7 +7,7 @@ import type { DecisionLogEntry } from "@/shared";
 
 const outcome = z.enum(["yes", "no"]);
 
-const entrySchema = z.object({
+export const entrySchema = z.object({
   entryId: z.string(),
   kind: z.enum(["approve", "needs-approval", "refuse", "execution-failed"]),
   code: z.exactOptional(z.string()),

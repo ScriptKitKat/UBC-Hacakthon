@@ -400,6 +400,36 @@ describe("recovering a paid brief without paying again", () => {
     expect(await f.server.recover(symbol, signature)).toMatchObject({ ok: true, value: { signature } });
   });
 
+  it("reconciles only ended settlements and records landed and expired claims without sending again", async () => {
+    const landing = fixture({ landing: "pending" });
+    const running = Promise.withResolvers<Buffer>();
+    const sent = Promise.withResolvers<Buffer>();
+    landing.connection.sendRawTransaction.mockImplementationOnce(async (raw) => {
+      sent.resolve(raw);
+      await running.promise;
+      return paymentSignature(raw.toString("base64"));
+    });
+    const payment = paid(landing);
+    await sent.promise;
+    await landing.server.reconcile();
+    expect(landing.connection.getSignatureStatuses).not.toHaveBeenCalled();
+    running.resolve(await sent.promise);
+    const { signature } = await payment;
+
+    landing.connection.getSignatureStatuses.mockResolvedValue({ context: { slot: 3 }, value: [{ slot: 3, confirmations: 1, err: null, confirmationStatus: "confirmed" }] });
+    await landing.server.reconcile();
+    expect(landing.persist).toHaveBeenLastCalledWith([expect.objectContaining({ signature, status: "settled" })]);
+    expect(landing.connection.sendRawTransaction).toHaveBeenCalledOnce();
+
+    const expiry = fixture({ landing: "pending" });
+    const expired = await paid(expiry);
+    expiry.connection.getEpochInfo.mockResolvedValue({ blockHeight: 151, absoluteSlot: 2 });
+    await expiry.server.reconcile();
+    expect(expiry.persist).toHaveBeenLastCalledWith([expect.objectContaining({ signature: expired.signature, status: "failed" })]);
+    expect(await expiry.server.recover(symbol, expired.signature)).toEqual({ ok: false, error: "settlement_failed" });
+    expect(expiry.connection.sendRawTransaction).toHaveBeenCalledOnce();
+  });
+
   it("stays unconfirmed while the chain does not show the payment", async () => {
     const f = fixture({ landing: "pending" });
     const { signature } = await paid(f);
@@ -477,6 +507,45 @@ describe("used payment store", () => {
     await store.claim(claim("n", "s"));
     await store.markSettled("s");
     expect((await openUsedPayments({ fs, path: "used.json" })).find("s")).toMatchObject({ status: "settled", symbol, payer: "payer" });
+  });
+
+  it("compacts only old settled records with a proven expired blockhash", async () => {
+    const nowMs = () => startMs + 48 * 60 * 60 * 1000;
+    const records = [
+      { ...claim("old", "expired"), status: "settled" },
+      { ...claim("live", "height-live"), lastValidBlockHeight: 300, status: "settled" },
+      { ...claim("unknown", "height-unknown"), lastValidBlockHeight: undefined, status: "settled" },
+      { ...claim(`${String(nowMs() + 1)}.random.tag`, "nonce-live"), status: "settled" },
+      { ...claim("unresolved", "unresolved"), status: "claimed" },
+      { ...claim("failed", "failed"), status: "failed" },
+      { ...claim("recent", "recent", nowMs()), status: "settled" },
+    ];
+    const original = JSON.stringify({ version: 1, records });
+    const fs = createMemoryFileSystem({ "used.json": original });
+    const unavailable = await openUsedPayments({ fs, path: "used.json", nowMs, finalizedHeight: () => Promise.reject(new Error("RPC offline")) });
+    expect(unavailable.reuse("old", "new")).toBe("nonce_reused");
+    expect(fs.files.get("used.json")).toBe(original);
+
+    const store = await openUsedPayments({ fs, path: "used.json", nowMs, finalizedHeight: () => Promise.resolve(400) });
+    expect(store.find("expired")).toBeUndefined();
+    expect(store.reuse("unresolved", "another")).toBe("nonce_reused");
+    expect(JSON.parse(fs.files.get("used.json") ?? "")).toEqual({ version: 1, records: records.slice(1) });
+    expect(fs.writes).toHaveLength(1);
+  });
+
+  it("compacts atomically after writes cross the threshold, retaining old unresolved claims", async () => {
+    const records = Array.from({ length: 1000 }, (_, index) => ({ ...claim(`n-${String(index)}`, `s-${String(index)}`), status: index === 0 ? "claimed" : "settled" }));
+    const fs = createMemoryFileSystem({ "used.json": JSON.stringify({ version: 1, records }) });
+    let now = startMs;
+    const options = { fs, path: "used.json", nowMs: () => now, finalizedHeight: () => Promise.resolve(400) };
+    const store = await openUsedPayments(options);
+    now += 48 * 60 * 60 * 1000;
+    await expect(store.claim(claim("fresh", "fresh", now))).resolves.toBeUndefined();
+    const restarted = await openUsedPayments(options);
+    expect(restarted.reuse("n-0", "other")).toBe("nonce_reused");
+    expect(restarted.reuse("n-1", "s-1")).toBeUndefined();
+    expect(restarted.reuse("fresh", "another")).toBe("nonce_reused");
+    expect(fs.writes).toHaveLength(1);
   });
 
   it("refuses to open a corrupt replay store instead of starting empty", async () => {

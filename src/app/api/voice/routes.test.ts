@@ -40,6 +40,7 @@ const stubDesk: Desk = {
   confirmPending: vi.fn(),
   matchPost: vi.fn(),
   isCardFor: vi.fn(),
+  feedOrder: vi.fn(),
   quote: vi.fn(),
   postContextFor: vi.fn(),
   getPositions: vi.fn(),

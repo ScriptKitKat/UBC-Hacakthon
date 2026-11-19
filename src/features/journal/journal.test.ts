@@ -102,3 +102,44 @@ describe("reconcileJournal", () => {
     expect(journal.entries().every((entry) => entry.status === "failed")).toBe(true);
   });
 });
+
+describe("journal compaction", () => {
+  const old = "2026-11-14T10:00:00.000Z";
+  const yesterday = "2026-11-17T00:00:00.000Z";
+  const entry = (operationId: string, status: "reserved" | "settled" | "failed", kind: "trade" | "research", reservedAt = old) =>
+    ({ ...trade, operationId, status, kind, reservedAt });
+  const kept = [
+    entry("open", "reserved", "research"),
+    { ...entry("fill", "settled", "trade"), ...payment, ticket: { ticketId: "ticket", symbol: trade.symbol, outcome: "yes", quantity: "1.25", price: "0.80", mode: "paper" } },
+    entry("yesterday", "failed", "trade", yesterday),
+    entry("today", "settled", "research", NOW),
+    { ...entry("just-settled", "settled", "research"), resolvedAt: NOW },
+  ];
+  const discarded = [entry("old-failure", "failed", "trade"), entry("old-research", "settled", "research")];
+
+  it("compacts on startup and preserves unresolved spend, fill details, and both UTC days", async () => {
+    const fs = createMemoryFileSystem({ [PATH]: JSON.stringify({ version: 1, entries: [...kept, ...discarded] }) });
+    const journal = await openSpendJournal({ fs, path: PATH, nowIso: () => NOW });
+    expect(journal.entries()).toEqual(kept);
+    expect(JSON.parse(fs.files.get(PATH) ?? "")).toEqual({ version: 1, entries: kept });
+    expect(fs.writes).toHaveLength(1);
+  });
+
+  it("compacts on writes above the threshold and leaves the original file intact when opening fails", async () => {
+    const entries = Array.from({ length: 1000 }, (_, index) => entry(String(index), "failed", "trade"));
+    const original = JSON.stringify({ version: 1, entries });
+    const fs = createMemoryFileSystem({ [PATH]: original });
+    await expect(openSpendJournal({
+      fs: { ...fs, readText: () => Promise.reject(new Error("EIO")) }, path: PATH, nowIso: () => NOW,
+    })).rejects.toMatchObject({ problem: "unreadable" });
+    expect(fs.files.get(PATH)).toBe(original);
+    expect(fs.writes).toHaveLength(0);
+
+    let now = old;
+    const journal = await openSpendJournal({ fs, path: PATH, nowIso: () => now });
+    now = NOW;
+    expect(await journal.begin(trade)).toEqual({ ok: true });
+    expect(journal.entries()).toEqual([{ ...trade, reservedAt: NOW, status: "reserved" }]);
+    expect((await openSpendJournal({ fs, path: PATH, nowIso: () => NOW })).entries()).toEqual(journal.entries());
+  });
+});

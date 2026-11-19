@@ -19,6 +19,8 @@ export const OPTIONS = feedPreflight;
 
 export function POST(request: Request): Promise<Response> {
   return feedTradingPost(request, body, async ({ postId, instrumentSymbol, outcome, amountCents, clientOrderId, seenPriceCents }, desk) => {
+    const existing = desk.feedOrder(clientOrderId);
+    if (existing) return Response.json({ entry: await existing });
     if (!(await desk.isCardFor(postId, instrumentSymbol))) return Response.json({ error: "no-matching-card" }, { status: 409 });
     const entry = await desk.buyFromFeed({
       clientOrderId,

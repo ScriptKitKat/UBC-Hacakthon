@@ -24,7 +24,8 @@ const deskQuote = vi.fn<Desk["quote"]>();
 const buyFromFeed = vi.fn<Desk["buyFromFeed"]>();
 const confirmFromFeed = vi.fn<Desk["confirmFromFeed"]>();
 const isCardFor = vi.fn<Desk["isCardFor"]>();
-const stubDesk = { matchPost, isCardFor, quote: deskQuote, buyFromFeed, confirmFromFeed } as unknown as Desk;
+const feedOrder = vi.fn<Desk["feedOrder"]>();
+const stubDesk = { matchPost, isCardFor, feedOrder, quote: deskQuote, buyFromFeed, confirmFromFeed } as unknown as Desk;
 
 const API_TOKEN = "api-token";
 const CLIENT_ORDER_ID = "8f14e45f-ceea-467f-a0e6-1d0b6f1c6a2e";
@@ -43,6 +44,7 @@ beforeEach(() => {
   vi.stubEnv("FEED_EXTENSION_ORIGINS", "");
   vi.stubEnv("FEED_API_TOKEN", API_TOKEN);
   isCardFor.mockReset().mockResolvedValue(true);
+  feedOrder.mockReset();
   matchPost.mockReset().mockResolvedValue(matched);
   deskQuote.mockReset();
   buyFromFeed.mockReset().mockResolvedValue(entry);
@@ -213,6 +215,15 @@ describe("feed behaviour", () => {
   it("forwards the price the card showed", async () => {
     await buy(post("http://desk.test", { ...validBuy, seenPriceCents: 5 }));
     expect(buyFromFeed).toHaveBeenCalledWith(expect.objectContaining({ seenPriceCents: 5 }));
+  });
+
+  it("returns a persisted order when the original card is no longer cached", async () => {
+    feedOrder.mockReturnValueOnce(Promise.resolve(entry));
+    isCardFor.mockResolvedValueOnce(false);
+    const response = await buy(post("http://desk.test", validBuy));
+    expect(await response.json()).toEqual({ entry });
+    expect(isCardFor).not.toHaveBeenCalled();
+    expect(buyFromFeed).not.toHaveBeenCalled();
   });
 
   it("binds buys to the cached match for the post", async () => {

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { Connection } from "@solana/web3.js";
 import { requestGrokJson } from "@/features/grok";
 import { createSampler, openHistoryStore } from "@/features/history";
-import { createSolanaLedger, createUnconfiguredLedger } from "@/features/ledger";
+import { createSolanaLedger, createUnconfiguredLedger, isExpectedGenesis } from "@/features/ledger";
 import type { UsdcLedger } from "@/features/ledger";
 import { createGeminiMarketsClient } from "@/features/markets";
 import { createResearch } from "@/features/research";
@@ -16,6 +16,8 @@ import { createDeepDiveResource, createDeferredDeepDive, deepDiveUrl } from "./d
 import type { DeepDiveResource } from "./deep-dive-resource";
 import { createDesk } from "./desk";
 import type { Desk } from "./desk";
+import { openFeedOrders } from "./feed-orders";
+import { startReconciliation } from "./reconciliation";
 import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
 import { openPurchaseStore } from "./purchase-store";
 
@@ -71,6 +73,9 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   const markets = createGeminiMarketsClient({ baseUrl: config.value.geminiBaseUrl, fetch, minRequestIntervalMs: GEMINI_MIN_REQUEST_INTERVAL_MS });
   const dataDirectory = resolveDataDirectory(env, process.cwd());
   const history = await openHistoryStore({ fs: nodeFileSystem, path: join(dataDirectory, "price-history.json") });
+  const connection = settings.configured && researchRecipient
+    ? new Connection(settings.rpcUrl, { commitment: "confirmed", fetch: (url, init) => fetch(url, { ...init, redirect: "error" }) })
+    : undefined;
   const stores = await openOrExplain(async () => {
     const decisionLog = await openDecisionLog({ fs: nodeFileSystem, path: join(dataDirectory, "decision-log.json") });
     const journal = await openMigratedSpendJournal({
@@ -82,13 +87,48 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
       decisionLog,
       journal,
       purchaseStore: await openPurchaseStore({ fs: nodeFileSystem, path: join(dataDirectory, "research-purchases.json") }),
-      usedPayments: await openUsedPayments({ fs: nodeFileSystem, path: join(dataDirectory, "x402-payments.json") }),
+      feedOrders: await openFeedOrders({
+        fs: nodeFileSystem,
+        path: join(dataDirectory, "feed-orders.json"),
+        now: () => new Date(),
+        isReserved: (intentId) => journal.find(intentId)?.status === "reserved",
+      }),
+      usedPayments: await openUsedPayments({
+        fs: nodeFileSystem,
+        path: join(dataDirectory, "x402-payments.json"),
+        async finalizedHeight() {
+          if (!connection || !settings.configured || !isExpectedGenesis(settings.cluster, await connection.getGenesisHash())) return undefined;
+          return (await connection.getEpochInfo("finalized")).blockHeight;
+        },
+      }),
     };
   });
   if (!stores.ok) return { ok: false, issues: [stores.issue] };
-  const { decisionLog, purchaseStore, journal, usedPayments } = stores.value;
+  const { decisionLog, purchaseStore, journal, usedPayments, feedOrders } = stores.value;
   const publicOrigin = config.value.research.publicOrigin;
   const deferredDeepDive = createDeferredDeepDive(publicOrigin);
+  const payments = settings.configured && researchRecipient && connection
+    ? createX402Server({
+        config: {
+          network: x402NetworkFor(settings.cluster),
+          mint: settings.mint,
+          payTo: researchRecipient,
+          priceBaseUnits: priceToBaseUnits(config.value.research.priceCents),
+          maxTimeoutSeconds: PAYMENT_TIMEOUT_SECONDS,
+          mimeType: "application/json",
+          resourceFor: (symbol) => deepDiveUrl(publicOrigin, symbol),
+        },
+        connection,
+        used: usedPayments,
+        nonces: createNonceCodec({
+          secret: config.value.research.paymentSecret ?? randomBytes(SECRET_BYTES).toString("hex"),
+          ttlMs: PAYMENT_TIMEOUT_SECONDS * 1000,
+          randomHex: () => randomBytes(NONCE_BYTES).toString("hex"),
+        }),
+        nowMs: () => Date.now(),
+        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      })
+    : undefined;
   const desk = createDesk({
     policy: config.value.policy,
     feed: config.value.feed,
@@ -101,6 +141,8 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     initialLog: decisionLog.initialLog,
     saveLog: decisionLog.saveLog,
     journal,
+    feedOrders,
+    ...(payments ? { paymentInFlight: payments.paymentInFlight } : {}),
     initialPurchases: purchaseStore.initialPurchases,
     savePurchases: purchaseStore.savePurchases,
     ...(researchRecipient
@@ -118,42 +160,30 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     ? undefined
     : (request) => requestGrokJson({ settings: grok, fetch, ...request });
   const research = createResearch({ markets, history, nowMs: () => Date.now(), postContextFor: desk.postContextFor, ...(completeJson ? { completeJson } : {}) });
-  const payments = settings.configured && researchRecipient
-    ? createX402Server({
-        config: {
-          network: x402NetworkFor(settings.cluster),
-          mint: settings.mint,
-          payTo: researchRecipient,
-          priceBaseUnits: priceToBaseUnits(config.value.research.priceCents),
-          maxTimeoutSeconds: PAYMENT_TIMEOUT_SECONDS,
-          mimeType: "application/json",
-          resourceFor: (symbol) => deepDiveUrl(publicOrigin, symbol),
-        },
-        connection: new Connection(settings.rpcUrl, { commitment: "confirmed", fetch: (url, init) => fetch(url, { ...init, redirect: "error" }) }),
-        used: usedPayments,
-        nonces: createNonceCodec({
-          secret: config.value.research.paymentSecret ?? randomBytes(SECRET_BYTES).toString("hex"),
-          ttlMs: PAYMENT_TIMEOUT_SECONDS * 1000,
-          randomHex: () => randomBytes(NONCE_BYTES).toString("hex"),
-        }),
-        nowMs: () => Date.now(),
-        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-      })
-    : undefined;
   const deepDive = payments ? createDeepDiveResource({ payments, research, publicOrigin }) : undefined;
   deferredDeepDive.bind(deepDive);
-  await desk.reconcile();
+  const reconcile = async () => {
+    await Promise.allSettled([desk.reconcile(), payments?.reconcile()]);
+  };
+  await reconcile();
+  const runtime = holder[deskKey];
+  if (runtime) runtime.reconciliationTimer ??= startReconciliation(reconcile);
   createSampler({ history, markets, nowMs: () => Date.now() }).start();
   return { ok: true, desk, research, deepDive };
 }
 
 const deskKey: unique symbol = Symbol.for("news-to-trade-desk.desk");
-const holder = globalThis as typeof globalThis & { [deskKey]?: Promise<DeskAccess> };
+interface DeskRuntime {
+  readonly access: Promise<DeskAccess>;
+  reconciliationTimer?: ReturnType<typeof startReconciliation>;
+}
+
+const holder = globalThis as typeof globalThis & { [deskKey]?: DeskRuntime };
 
 export function getDesk(): Promise<DeskAccess> {
   const existing = holder[deskKey];
-  if (existing) return existing;
+  if (existing) return existing.access;
   const created = buildDesk(process.env);
-  holder[deskKey] = created;
+  holder[deskKey] = { access: created };
   return created;
 }

@@ -13,7 +13,7 @@ export interface DeepDiveResource {
 }
 
 export interface DeepDiveResourceDeps {
-  readonly payments: X402Server;
+  readonly payments: Pick<X402Server, "requirements" | "verify" | "settle" | "recover">;
   readonly research: Research;
   readonly publicOrigin: string;
 }

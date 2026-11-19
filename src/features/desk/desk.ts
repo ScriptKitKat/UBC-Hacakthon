@@ -2,7 +2,7 @@ import { executeApproved } from "@/features/execution";
 import type { ExecutionError, PaperOrderTicket } from "@/features/execution";
 import { CARD_CATEGORIES, createPostMatcher } from "@/features/grok";
 import type { PostCandidate, PostInput } from "@/features/grok";
-import { confirm, evaluate, evaluateResearch, marketPolicyRefusal, policyStateFromSpends, remainingBudget } from "@/features/guardrails";
+import { confirm, evaluate, evaluateResearch, marketPolicyRefusal, policyStateFromSpends, remainingBudget, restorePendingApproval } from "@/features/guardrails";
 import type { ApprovedTrade, Decision, Policy, PolicyState } from "@/features/guardrails";
 import { createMemoryHistory } from "@/features/history";
 import type { HistoryStore } from "@/features/history";
@@ -19,6 +19,9 @@ import { instrumentSymbol, usdCents } from "@/shared";
 import type { FeedSettings } from "./config";
 import { buyDeepDive } from "./deep-dive";
 import type { DeepDiveSettings } from "./deep-dive";
+import { awaitingPaymentResult, createFeedOrders } from "./feed-orders";
+import type { FeedOrder, FeedOrders } from "./feed-orders";
+import { singleReconciliation } from "./reconciliation";
 import type { StoredPurchase } from "./purchase-store";
 import type {
   DecisionLogEntry,
@@ -49,7 +52,6 @@ const LOG_VIEW_LIMIT = 200;
 const HISTORY_LIMIT = 90;
 const MATCH_CACHE_LIMIT = 300;
 const MATCH_CACHE_TTL_MS = 10 * 60 * 1000;
-const ORDER_MEMORY_LIMIT = 500;
 const PURCHASE_REUSE_MS = 15 * 60 * 1000;
 const UNDELIVERED_RECOVERY_MS = 24 * 60 * 60 * 1000;
 const PURCHASE_LIMIT = 50;
@@ -69,6 +71,8 @@ export interface DeskDeps {
   readonly initialLog?: readonly DecisionLogEntry[];
   readonly saveLog?: (log: readonly DecisionLogEntry[]) => Promise<void>;
   readonly journal?: SpendJournal;
+  readonly feedOrders?: FeedOrders;
+  readonly paymentInFlight?: (signature: string) => boolean;
   readonly research?: DeepDiveSettings;
   readonly initialPurchases?: readonly StoredPurchase[];
   readonly savePurchases?: (purchases: readonly StoredPurchase[]) => Promise<void>;
@@ -104,6 +108,7 @@ export interface Desk {
   readonly getPositions: () => Promise<PositionsView>;
   readonly buyDeepDive: (symbol: string) => Promise<DeepDiveResult>;
   readonly reconcile: () => Promise<Reconciliation>;
+  readonly feedOrder: (clientOrderId: string) => Promise<DecisionLogEntry> | undefined;
   readonly buyFromFeed: (request: FeedBuyRequest) => Promise<DecisionLogEntry>;
   readonly confirmFromFeed: (intentId: string) => Promise<ConfirmResult>;
   readonly proposeTrade: (request: ProposeRequest) => Promise<DecisionLogEntry>;
@@ -247,11 +252,16 @@ export function createDesk(deps: DeskDeps): Desk {
   let purchases: readonly StoredPurchase[] = (deps.initialPurchases ?? []).slice(0, PURCHASE_LIMIT);
   const savePurchases = deps.savePurchases ?? (() => Promise.resolve());
   const deepDives = new Map<string, Promise<DeepDiveResult>>();
-  const openedResearch = new Set<string>();
+  const inFlight = new Set<string>();
   const pending = new Map<string, PendingRecord>();
   const tickers = new Map<InstrumentSymbol, string>();
   const matchCache = new Map<string, { readonly at: number; readonly post: PostInput; readonly match: Promise<FeedMatch> }>();
-  const feedOrders = new Map<string, Promise<DecisionLogEntry>>();
+  const feedOrders = deps.feedOrders ?? createFeedOrders({
+    now,
+    isReserved: (intentId) => journal.find(intentId)?.status === "reserved",
+  });
+  const buying = new Map<string, Promise<DecisionLogEntry>>();
+  const confirming = new Map<string, Promise<ConfirmResult>>();
 
   function recordPrice(market: LiveMarket): void {
     const { instrumentSymbol: symbol, prices } = market.contract;
@@ -419,6 +429,7 @@ export function createDesk(deps: DeskDeps): Desk {
     if (reusable?.brief) return Promise.resolve(deliveredFrom(reusable, reusable.brief, "You already bought this brief in the last 15 minutes, so I did not pay again."));
     const running = deepDives.get(symbol);
     if (running) return running;
+    let operationId: string | undefined;
     const work = reusable
       ? recoverPurchase(reusable)
       : paymentStillInFlight(symbol)
@@ -431,6 +442,8 @@ export function createDesk(deps: DeskDeps): Desk {
               account: {
                 decide: (spend) => evaluateResearch(spend, policy, currentState(), now()),
                 async begin(approved, researchSymbol) {
+                  operationId = approved.intentId;
+                  inFlight.add(operationId);
                   const written = await journal.begin({
                     operationId: approved.intentId,
                     kind: "research",
@@ -440,14 +453,14 @@ export function createDesk(deps: DeskDeps): Desk {
                     senderId: "research-agent",
                     source: "research",
                   });
-                  if (written.ok) openedResearch.add(approved.intentId);
+                  if (!written.ok) inFlight.delete(operationId);
                   return written.ok;
                 },
                 async signed(approved, payment) {
                   return (await journal.attachPayment(approved.intentId, payment)).ok;
                 },
                 async resolve(approved, outcome) {
-                  if (!openedResearch.delete(approved.intentId)) return;
+                  if (!inFlight.has(approved.intentId)) return;
                   await (outcome === "settled" ? journal.settle(approved.intentId) : journal.fail(approved.intentId));
                 },
                 remaining: () => remainingBudget(policy, currentState(), now()),
@@ -460,7 +473,10 @@ export function createDesk(deps: DeskDeps): Desk {
             return result;
           });
     deepDives.set(symbol, work);
-    const forget = () => deepDives.delete(symbol);
+    const forget = () => {
+      if (operationId !== undefined) inFlight.delete(operationId);
+      deepDives.delete(symbol);
+    };
     work.then(forget, forget);
     return work;
   }
@@ -477,6 +493,15 @@ export function createDesk(deps: DeskDeps): Desk {
   }
 
   async function execute(approved: ApprovedTrade, intent: TradeIntent, quote: Quote): Promise<DecisionLogEntry> {
+    inFlight.add(approved.intentId);
+    try {
+      return await executeTrade(approved, intent, quote);
+    } finally {
+      inFlight.delete(approved.intentId);
+    }
+  }
+
+  async function executeTrade(approved: ApprovedTrade, intent: TradeIntent, quote: Quote): Promise<DecisionLogEntry> {
     const operationId = approved.intentId;
     const reservation = { opened: false };
     const trade = await executeApproved(approved, {
@@ -533,11 +558,10 @@ export function createDesk(deps: DeskDeps): Desk {
     });
   }
 
-  async function proposeTrade(request: ProposeRequest): Promise<DecisionLogEntry> {
-    const symbol = instrumentSymbol(request.instrumentSymbol);
-    const intent: TradeIntent = {
+  function tradeIntent(request: ProposeRequest): TradeIntent {
+    return {
       intentId: idGen(),
-      instrumentSymbol: symbol,
+      instrumentSymbol: instrumentSymbol(request.instrumentSymbol),
       outcome: request.outcome,
       notional: usdCents(request.notionalCents),
       source: request.source,
@@ -545,13 +569,20 @@ export function createDesk(deps: DeskDeps): Desk {
       createdAt: now(),
       ...(request.seenPriceCents === undefined ? {} : { seenPriceCents: request.seenPriceCents }),
     };
-    const quote = quoteFor(await resolveMarket(symbol, true), intent.outcome);
+  }
+
+  async function proposeTrade(request: ProposeRequest): Promise<DecisionLogEntry> {
+    return proposeIntent(tradeIntent(request));
+  }
+
+  async function proposeIntent(intent: TradeIntent, persistApproval = false): Promise<DecisionLogEntry> {
+    const quote = quoteFor(await resolveMarket(intent.instrumentSymbol, true), intent.outcome);
     const decision = evaluate(intent, quote, policy, currentState(), now());
     switch (decision.kind) {
       case "refuse":
         return record({ ...tradeFields(intent), kind: "refuse", code: decision.code, spokenReason: decision.spokenReason });
       case "needs-approval":
-        pending.set(intent.intentId, { decision, intent });
+        if (!persistApproval) pending.set(intent.intentId, { decision, intent });
         return record({ ...tradeFields(intent), kind: "needs-approval", spokenReason: decision.spokenReason });
       case "approve":
         if (!quote) throw new Error("Approval requires a quote");
@@ -563,7 +594,118 @@ export function createDesk(deps: DeskDeps): Desk {
     }
   }
 
+  function existingFeedResult({ entry }: FeedOrder): FeedOrder["entry"] {
+    if (!awaitingPaymentResult(entry)) return entry;
+    const spend = journal.find(entry.intentId);
+    if (spend?.status === "settled") {
+      const result: FeedOrder["entry"] = {
+        ...entry,
+        kind: "approve",
+        at: spend.resolvedAt ?? entry.at,
+        spokenReason: "The payment landed and the paper trade was recorded.",
+        ...(spend.signature === undefined ? {} : { signature: spend.signature }),
+        ...(spend.explorerUrl === undefined ? {} : { explorerUrl: spend.explorerUrl }),
+        ...(spend.ticket === undefined ? {} : { ticket: spend.ticket }),
+      };
+      delete result.code;
+      return result;
+    }
+    if (spend?.status === "failed") {
+      return { ...entry, at: spend.resolvedAt ?? entry.at, code: "debit-rejected", spokenReason: "The payment failed or expired and the reservation was released." };
+    }
+    return entry;
+  }
+
+  function feedOrder(clientOrderId: string): Promise<DecisionLogEntry> | undefined {
+    const active = buying.get(clientOrderId);
+    if (active) return active;
+    const order = feedOrders.find(clientOrderId);
+    if (order) return Promise.resolve(existingFeedResult(order));
+    return undefined;
+  }
+
+  async function saveFeedResult(order: FeedOrder, result: DecisionLogEntry): Promise<DecisionLogEntry> {
+    const entry = { ...result, source: "feed" as const, outcome: order.entry.outcome };
+    await feedOrders.update(order, { ...order, entry });
+    return entry;
+  }
+
+  function buyFromFeed({ clientOrderId, ...request }: FeedBuyRequest): Promise<DecisionLogEntry> {
+    const previous = feedOrder(clientOrderId);
+    if (previous) return previous;
+    const intent = tradeIntent({ ...request, source: "feed", senderId: deps.feed.operatorId });
+    const trade = recordPendingOrder(clientOrderId, intent);
+    buying.set(clientOrderId, trade);
+    const forget = () => buying.delete(clientOrderId);
+    void trade.then(forget, forget);
+    return trade;
+  }
+
+  function pendingFeedEntry(entry: Omit<FeedOrder["entry"], "kind" | "spokenReason">): FeedOrder["entry"] {
+    return { ...entry, kind: "execution-failed", code: "order-in-progress", spokenReason: "This order is pending. Check again for its result." };
+  }
+
+  async function recordPendingOrder(clientOrderId: string, intent: TradeIntent): Promise<DecisionLogEntry> {
+    const eventTicker = tickers.get(intent.instrumentSymbol);
+    const order: FeedOrder = {
+      clientOrderId,
+      seenPriceCents: intent.seenPriceCents,
+      eventTicker,
+      entry: pendingFeedEntry({
+        ...tradeFields(intent),
+        source: "feed",
+        entryId: idGen(),
+        at: intent.createdAt.toISOString(),
+      }),
+    };
+    const existing = await feedOrders.claim(order);
+    if (existing) return existingFeedResult(existing);
+    return saveFeedResult(order, await proposeIntent(intent, true));
+  }
+
+  function confirmFeedOrder(order: FeedOrder, approverId: string): Promise<ConfirmResult> {
+    const { entry } = order;
+    const active = confirming.get(entry.intentId);
+    if (active) return active;
+    if (entry.kind !== "needs-approval") return Promise.resolve({ ok: true, entry: existingFeedResult(order) });
+    const work = completeFeedApproval(order, approverId);
+    confirming.set(entry.intentId, work);
+    const forget = () => confirming.delete(entry.intentId);
+    void work.then(forget, forget);
+    return work;
+  }
+
+  async function completeFeedApproval(order: FeedOrder, approverId: string): Promise<ConfirmResult> {
+    const { entry, seenPriceCents, eventTicker } = order;
+    const intent: TradeIntent = {
+      intentId: entry.intentId,
+      instrumentSymbol: instrumentSymbol(entry.symbol),
+      outcome: entry.outcome,
+      notional: usdCents(entry.notionalCents),
+      source: entry.source,
+      senderId: entry.senderId,
+      createdAt: new Date(entry.at),
+      ...(seenPriceCents === undefined ? {} : { seenPriceCents }),
+    };
+    if (eventTicker !== undefined) tickers.set(intent.instrumentSymbol, eventTicker);
+    const quote = quoteFor(await resolveMarket(intent.instrumentSymbol, true), intent.outcome);
+    const confirmed = confirm(restorePendingApproval(intent), approverId, quote, policy, currentState(), now());
+    if (confirmed.kind === "refuse") {
+      return { ok: true, entry: record({ ...tradeFields(intent), kind: "refuse", code: confirmed.code, spokenReason: confirmed.spokenReason }) };
+    }
+    if (!quote) throw new Error("Approval requires a quote");
+    const executing = { ...order, entry: pendingFeedEntry({ ...entry, at: now().toISOString() }) };
+    if (!await feedOrders.update(order, executing)) return { ok: false, error: "unknown-intent" };
+    const fresh = confirm(restorePendingApproval(intent), approverId, quote, policy, currentState(), now());
+    const result = fresh.kind === "refuse"
+      ? record({ ...tradeFields(intent), kind: "refuse", code: fresh.code, spokenReason: fresh.spokenReason })
+      : await execute(fresh, intent, quote);
+    return { ok: true, entry: await saveFeedResult(executing, result) };
+  }
+
   async function confirmPending(intentId: string, approverId: string): Promise<ConfirmResult> {
+    const feed = feedOrders.findIntent(intentId);
+    if (feed) return confirmFeedOrder(feed, approverId);
     const waiting = pending.get(intentId);
     if (!waiting) return { ok: false, error: "unknown-intent" };
     const quote = quoteFor(await resolveMarket(waiting.intent.instrumentSymbol, true), waiting.intent.outcome);
@@ -646,28 +788,28 @@ export function createDesk(deps: DeskDeps): Desk {
 
     buyDeepDive: deepDive,
 
-    async reconcile() {
-      const result = await reconcileJournal(journal, (payment) => ledger.checkSignature(payment));
+    reconcile: singleReconciliation(async () => {
+      const result = await reconcileJournal(journal, (payment) => ledger.checkSignature(payment), inFlight, deps.paymentInFlight);
       syncPurchasesWithJournal();
-      return result;
-    },
-
-    buyFromFeed({ clientOrderId, ...request }) {
-      const previous = feedOrders.get(clientOrderId);
-      if (previous) return previous;
-      const order = proposeTrade({ ...request, source: "feed", senderId: deps.feed.operatorId });
-      feedOrders.set(clientOrderId, order);
-      for (const oldest of feedOrders.keys()) {
-        if (feedOrders.size <= ORDER_MEMORY_LIMIT) break;
-        feedOrders.delete(oldest);
+      for (const order of feedOrders.all()) {
+        if (buying.has(order.clientOrderId) || confirming.has(order.entry.intentId)) continue;
+        if (!awaitingPaymentResult(order.entry)) continue;
+        const entry = journal.find(order.entry.intentId) === undefined
+          ? { ...order.entry, code: "order-interrupted", spokenReason: "The order stopped before a payment was recorded." }
+          : existingFeedResult(order);
+        if (entry !== order.entry) await feedOrders.update(order, { ...order, entry }).catch(() => undefined);
       }
-      order.catch(() => feedOrders.delete(clientOrderId));
-      return order;
-    },
+      return result;
+    }),
+
+    feedOrder,
+    buyFromFeed,
 
     confirmFromFeed(intentId) {
-      if (pending.get(intentId)?.intent.source !== "feed") return Promise.resolve({ ok: false, error: "unknown-intent" });
-      return confirmPending(intentId, deps.feed.operatorId);
+      const order = feedOrders.findIntent(intentId);
+      if (order) return confirmFeedOrder(order, deps.feed.operatorId);
+      if (pending.get(intentId)?.intent.source === "feed") return confirmPending(intentId, deps.feed.operatorId);
+      return Promise.resolve({ ok: false, error: "unknown-intent" });
     },
 
     proposeTrade,
@@ -702,6 +844,17 @@ export function createDesk(deps: DeskDeps): Desk {
         senderId: intent.senderId,
         createdAt: intent.createdAt.toISOString(),
       }));
+      for (const { entry } of feedOrders.all()) {
+        if (entry.kind !== "needs-approval") continue;
+        pendingViews.push({
+          intentId: entry.intentId,
+          symbol: entry.symbol,
+          outcome: entry.outcome,
+          notionalCents: entry.notionalCents,
+          senderId: entry.senderId,
+          createdAt: entry.at,
+        });
+      }
       return {
         news: current ? newsView(current.news) : null,
         match: matchView(current?.match, best),

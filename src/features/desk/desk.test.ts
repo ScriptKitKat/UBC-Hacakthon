@@ -10,6 +10,8 @@ import { instrumentSymbol, usdCents } from "@/shared";
 import type { LedgerView } from "@/shared";
 import { createDesk } from "./desk";
 import type { DeskDeps } from "./desk";
+import { openFeedOrders } from "./feed-orders";
+import { startReconciliation } from "./reconciliation";
 import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
 import { createMemoryFileSystem } from "@/features/storage";
 
@@ -380,7 +382,7 @@ describe("desk feed", () => {
     expect(debit).not.toHaveBeenCalled();
     const confirmed = await desk.confirmFromFeed(waiting.intentId);
     expect(confirmed).toMatchObject({ ok: true, entry: { kind: "approve", source: "feed" } });
-    expect(await desk.confirmFromFeed(waiting.intentId)).toEqual({ ok: false, error: "unknown-intent" });
+    expect(await desk.confirmFromFeed(waiting.intentId)).toEqual(confirmed);
   });
 
   it("does not let the feed confirm intents from other sources", async () => {
@@ -618,5 +620,168 @@ describe("desk persistence, positions and research context", () => {
     await desk.quote("GEMI-FED261211-MAINTAIN");
     expect(history.watched()).toContain("GEMI-FED261211-MAINTAIN");
     expect(history.series("GEMI-FED261211-MAINTAIN")).toHaveLength(2);
+  });
+});
+
+describe("durable feed orders", () => {
+  const now = () => new Date("2026-11-17T12:00:00Z");
+  const order = { clientOrderId: "first", instrumentSymbol: symbol, outcome: "yes", notionalCents: 100 } as const;
+
+  async function open(fs: ReturnType<typeof createMemoryFileSystem>) {
+    const journal = await openSpendJournal({ fs, path: "journal.json", nowIso: () => now().toISOString() });
+    const feedOrders = await openFeedOrders({ fs, path: "orders.json", now, isReserved: (id) => journal.find(id)?.status === "reserved" });
+    return { journal, feedOrders, now };
+  }
+
+  it("returns the original result after more orders than the former cache could hold", async () => {
+    const extra = await open(createMemoryFileSystem());
+    const { desk, debit } = await readyDesk({ extra });
+    const first = await desk.buyFromFeed(order);
+    for (let index = 0; index < 501; index += 1) {
+      await desk.buyFromFeed({ ...order, clientOrderId: `later-${String(index)}`, notionalCents: 1001 });
+    }
+    expect(await desk.buyFromFeed(order)).toEqual(first);
+    expect(debit).toHaveBeenCalledOnce();
+  });
+
+  it("records a single order before the debit and returns it after reopening the stores", async () => {
+    const fs = createMemoryFileSystem();
+    const extra = await open(fs);
+    const debit = vi.fn<UsdcLedger["debit"]>(async (intentId, _amount, _memo, beforeBroadcast) => {
+      const reopened = await open(fs);
+      expect(reopened.feedOrders.find(order.clientOrderId)?.entry).toMatchObject({ intentId, code: "order-in-progress" });
+      await beforeBroadcast({ signature: "paid", blockhash: "hash", lastValidBlockHeight: 123, explorerUrl: receipt("paid").explorerUrl });
+      return { ok: true, value: receipt("paid") };
+    });
+    const { desk } = await readyDesk({ extra, ledger: { ...createUnconfiguredLedger(), debit } });
+    const [first, duplicate] = await Promise.all([desk.buyFromFeed(order), desk.buyFromFeed(order)]);
+    expect(first).toMatchObject({ kind: "approve", signature: "paid" });
+    expect(duplicate).toEqual(first);
+    expect(debit).toHaveBeenCalledOnce();
+
+    const restarted = setup({ extra: await open(fs) });
+    expect(await restarted.desk.buyFromFeed(order)).toEqual(first);
+    expect(restarted.debit).not.toHaveBeenCalled();
+  });
+
+  it("recovers a settled order when a write fails after the debit", async () => {
+    const memory = createMemoryFileSystem();
+    let denyOrderWrites = false;
+    const fs = {
+      ...memory,
+      writeTextAtomic: (path: string, text: string) => {
+        if (denyOrderWrites && path === "orders.json") return Promise.reject(new Error("ENOSPC"));
+        return memory.writeTextAtomic(path, text);
+      },
+    };
+    const debit = vi.fn<UsdcLedger["debit"]>(async (_id, _amount, _memo, beforeBroadcast) => {
+      await beforeBroadcast({ signature: "paid", blockhash: "hash", lastValidBlockHeight: 123, explorerUrl: receipt("paid").explorerUrl });
+      denyOrderWrites = true;
+      return { ok: true, value: receipt("paid") };
+    });
+    const { desk } = await readyDesk({ extra: await open(fs), ledger: { ...createUnconfiguredLedger(), debit } });
+    await expect(desk.buyFromFeed(order)).rejects.toThrow("ENOSPC");
+    expect(debit).toHaveBeenCalledOnce();
+
+    denyOrderWrites = false;
+    const extra = await open(fs);
+    const restarted = setup({ extra });
+    const restored = await restarted.desk.buyFromFeed(order);
+    expect(restored).toMatchObject({ kind: "approve", signature: "paid", ticket: { symbol } });
+    expect(restarted.debit).not.toHaveBeenCalled();
+    await restarted.desk.reconcile();
+    expect((await open(fs)).feedOrders.find(order.clientOrderId)?.entry).toEqual(restored);
+  });
+
+  it("restores a pending approval and records one result across concurrent confirmations and another restart", async () => {
+    const fs = createMemoryFileSystem();
+    const { desk } = await readyDesk({ extra: await open(fs) });
+    const waiting = await desk.buyFromFeed({ ...order, notionalCents: 500 });
+    expect(waiting.kind).toBe("needs-approval");
+
+    const restarted = setup({ extra: { ...await open(fs), idGen: () => "confirmed" } });
+    expect(await restarted.desk.buyFromFeed(order)).toEqual(waiting);
+    expect((await restarted.desk.getSnapshot()).pending).toMatchObject([{ intentId: waiting.intentId }]);
+    const [first, duplicate] = await Promise.all([
+      restarted.desk.confirmFromFeed(waiting.intentId),
+      restarted.desk.confirmFromFeed(waiting.intentId),
+    ]);
+    expect(first).toMatchObject({ ok: true, entry: { kind: "approve" } });
+    expect(duplicate).toEqual(first);
+    expect(restarted.debit).toHaveBeenCalledOnce();
+
+    const reopened = setup({ extra: await open(fs) });
+    expect(await reopened.desk.confirmFromFeed(waiting.intentId)).toEqual(first);
+    expect(reopened.debit).not.toHaveBeenCalled();
+  });
+
+  it("compacts expired order results, keeps unresolved reservations, and fails closed on corruption", async () => {
+    const fs = createMemoryFileSystem();
+    const extra = await open(fs);
+    const { desk } = await readyDesk({ extra });
+    const settled = await desk.buyFromFeed(order);
+    const pending = await desk.buyFromFeed({ ...order, clientOrderId: "pending", notionalCents: 500 });
+    await extra.journal.begin({ operationId: pending.intentId, kind: "trade", notionalCents: 500, symbol, outcome: "yes", senderId: "priscilla", source: "feed" });
+    const options = { fs, path: "orders.json", now: () => new Date("2026-11-25T12:00:00Z"), isReserved: (id: string) => extra.journal.find(id)?.status === "reserved" };
+    const compacted = await openFeedOrders(options);
+    expect(compacted.findIntent(settled.intentId)).toBeUndefined();
+    expect(compacted.findIntent(pending.intentId)?.entry).toEqual(pending);
+    await fs.writeTextAtomic("orders.json", "{corrupt");
+    const writes = fs.writes.length;
+    await expect(openFeedOrders(options)).rejects.toMatchObject({ name: "StoreUnavailableError" });
+    expect(fs.writes).toHaveLength(writes);
+  });
+});
+
+describe("periodic payment reconciliation", () => {
+  it("skips live trades, coalesces overlapping ticks, and settles or releases stuck trades in-session", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    let timer: ReturnType<typeof setInterval> | undefined;
+    try {
+      const fs = createMemoryFileSystem();
+      const now = () => new Date("2026-11-17T12:00:00Z");
+      const journal = await openSpendJournal({ fs, path: "journal.json", nowIso: () => now().toISOString() });
+      const expiry = { signature: "expired", blockhash: "hash", lastValidBlockHeight: 123, explorerUrl: "explorer" };
+      await journal.begin({ operationId: "expired", kind: "trade", notionalCents: 100, symbol, outcome: "yes", senderId: "priscilla", source: "desk" });
+      await journal.attachPayment("expired", expiry);
+
+      const signed = Promise.withResolvers<undefined>();
+      const stopped = Promise.withResolvers<undefined>();
+      const scanned = Promise.withResolvers<"failed">();
+      const debit = vi.fn<UsdcLedger["debit"]>(async (_id, _amount, _memo, beforeBroadcast) => {
+        await beforeBroadcast({ ...expiry, signature: "stuck" });
+        signed.resolve(undefined);
+        await stopped.promise;
+        return { ok: false, error: { code: "debit-unconfirmed", signature: "stuck" } };
+      });
+      const checkSignature = vi.fn<UsdcLedger["checkSignature"]>(({ signature }) =>
+        signature === "expired" ? scanned.promise : Promise.resolve("landed"));
+      const { desk } = await readyDesk({ extra: { journal, now }, ledger: { ...createUnconfiguredLedger(), debit, checkSignature } });
+      const order = desk.buyFromFeed({ clientOrderId: "stuck-order", instrumentSymbol: symbol, outcome: "yes", notionalCents: 200 });
+      await signed.promise;
+      timer = startReconciliation(desk.reconcile);
+      await vi.advanceTimersByTimeAsync(90_000);
+      expect(checkSignature).toHaveBeenCalledExactlyOnceWith({ signature: "expired", lastValidBlockHeight: 123 });
+
+      scanned.resolve("failed");
+      await desk.reconcile();
+      expect(journal.find("expired")?.status).toBe("failed");
+      expect((await desk.getPositions()).positions).toEqual([]);
+      expect((await desk.getSnapshot()).policy).toMatchObject({ spentCents: 0, remainingCents: 1800 });
+      expect(checkSignature).toHaveBeenCalledOnce();
+
+      stopped.resolve(undefined);
+      expect(await order).toMatchObject({ code: "debit-unconfirmed" });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await desk.reconcile();
+      expect(checkSignature).toHaveBeenCalledTimes(2);
+      expect((await desk.getPositions()).positions).toMatchObject([{ symbol, costCents: 200 }]);
+      expect((await desk.getSnapshot()).policy).toMatchObject({ spentCents: 200, remainingCents: 1800 });
+      expect(await desk.feedOrder("stuck-order")).toMatchObject({ kind: "approve", signature: "stuck" });
+      expect(debit).toHaveBeenCalledOnce();
+    } finally {
+      if (timer) clearInterval(timer);
+      vi.useRealTimers();
+    }
   });
 });
