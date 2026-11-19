@@ -5,6 +5,7 @@ import { ensureCardFont } from "./card-font";
 import { CARD_CSS } from "./card-styles";
 import { h, svg } from "./dom";
 import type { Child } from "./dom";
+import { formatDeadline, friendlyEventTitle } from "./card-title";
 import { formatCents, formatPercent, formatUsdc } from "./format";
 import type { Sender } from "./protocol";
 import { isSafeExplorerLink, isSafeGeminiLink } from "./safe-link";
@@ -40,13 +41,6 @@ function userOnly(handler: () => void): (event: Event) => void {
 
 function entrySummary(entry: WireEntry): string {
   return `${formatUsdc(entry.notionalCents)} on ${entry.outcome === "yes" ? "Yes" : "No"}`;
-}
-
-function deadline(expiry: string | null | undefined): string | null {
-  if (!expiry) return null;
-  const date = new Date(expiry);
-  if (!Number.isFinite(date.getTime())) return null;
-  return `Closes ${new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(date)}`;
 }
 
 export interface CardOptions {
@@ -218,14 +212,9 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
       "div",
       { className: "head" },
       h("div", { className: "icon" }, gemIcon()),
-      h(
-        "div",
-        { className: "titles" },
-        eventTitle,
-        picker,
-        expiry,
-      ),
+      h("div", { className: "titles" }, eventTitle, expiry),
     ),
+    picker,
     trade,
     status,
   );
@@ -245,13 +234,14 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
     if (select.value !== market.instrumentSymbol) select.value = market.instrumentSymbol;
     if (select.disabled !== locked) select.disabled = locked;
     picker.setAttribute("data-disabled", String(locked));
-    eventTitle.textContent = market.eventTitle;
-    eventTitle.title = market.description ?? market.eventTitle;
+    const title = friendlyEventTitle(market.eventTitle, market.expiryDate);
+    eventTitle.textContent = title;
+    eventTitle.title = market.description ?? title;
     contractLabel.textContent = market.contractLabel;
-    const closes = deadline(market.expiryDate);
+    const closes = formatDeadline(market.expiryDate);
     expiry.hidden = closes === null;
     expiry.textContent = closes;
-    card.setAttribute("aria-label", `Prediction market: ${market.eventTitle}`);
+    card.setAttribute("aria-label", `Prediction market: ${title}`);
     const nextTrade = tradeView();
     trade.replaceWith(nextTrade);
     trade = nextTrade;
@@ -265,7 +255,7 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
           : h("strong", { text: "Gemini" }),
         researchHref === undefined
           ? null
-          : h("span", {}, " · ", h("a", { className: "research", text: "Research", attributes: { href: researchHref, target: "_blank", rel: "noopener noreferrer", "data-key": "research" } }), " to understand more"),
+          : h("span", {}, " · ", h("a", { className: "research", text: "Research", attributes: { href: researchHref, target: "_blank", rel: "noopener noreferrer", "data-key": "research" } })),
     ].filter((child) => child !== null));
     if (focusKey) {
       const next = shadow.querySelector<HTMLElement>(`[data-key="${focusKey}"]`);

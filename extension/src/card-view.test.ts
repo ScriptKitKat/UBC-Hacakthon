@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { friendlyEventTitle } from "./card-title";
+import { CARD_MAX_WIDTH_PX } from "./card-styles";
 import { CARD_HOST_ATTRIBUTE, createCard } from "./card-view";
 import { entry, market, matched, quote } from "./fixtures";
 import type { BackgroundReply } from "./protocol";
@@ -94,17 +96,39 @@ describe("market card", () => {
     expect(root.querySelector(".amount-field")?.textContent).not.toContain("$");
   });
 
-  it("keeps the card black and both outcome colors visible regardless of selection", () => {
-    const { root, button } = setup();
+  it("stays compact with a blue Gemini-like theme and no green glow", () => {
+    const { root, button, handle } = setup();
     const card = root.querySelector(".card");
     if (!card) throw new Error("missing card");
-    expect(getComputedStyle(card).backgroundColor).toBe("rgb(0, 0, 0)");
-    expect(getComputedStyle(card).backgroundImage).not.toContain("gradient");
+    const styles = getComputedStyle(card);
+    expect(CARD_MAX_WIDTH_PX).toBe(360);
+    expect(getComputedStyle(handle.host).width).toBe("360px");
+    expect(styles.backgroundColor).toBe("rgb(255, 255, 255)");
+    expect(styles.backgroundImage).not.toContain("gradient");
+    expect(styles.borderColor).toBe("rgb(38, 221, 249)");
+    expect(getComputedStyle(button("trade")).backgroundColor).toBe("rgb(26, 107, 255)");
+    expect(getComputedStyle(button("trade")).boxShadow).toBe("none");
+    expect(getComputedStyle(root.querySelector(".payout") as Element).color).toBe("rgb(26, 107, 255)");
     for (const side of ["yes", "no"]) {
       press(button(`outcome-${side}`));
-      expect(getComputedStyle(button("outcome-yes")).color).toBe("rgb(74, 222, 128)");
-      expect(getComputedStyle(button("outcome-no")).color).toBe("rgb(248, 113, 113)");
+      expect(getComputedStyle(button("outcome-yes")).color).toBe("rgb(17, 166, 66)");
+      expect(getComputedStyle(button("outcome-no")).color).toBe("rgb(196, 70, 70)");
+      const selected = button(`outcome-${side}`);
+      expect(getComputedStyle(selected).backgroundColor).toBe("rgb(220, 231, 255)");
+      expect(getComputedStyle(selected).boxShadow).toBe("none");
     }
+  });
+
+  it("asks a friendly price question and keeps other Gemini titles", () => {
+    const { root } = setup({
+      ...matched,
+      market: { ...market, eventTitle: "BTC price on November 19", expiryDate: "2026-11-19T22:00:00.000Z", contractLabel: "$61,750 or above" },
+    });
+    expect(root.querySelector(".title")?.textContent).toBe(friendlyEventTitle("BTC price on November 19", "2026-11-19T22:00:00.000Z"));
+    expect(root.querySelector(".contract-label")?.textContent).toBe("$61,750 or above");
+    expect(root.querySelector(".deadline")?.textContent).toContain("Closes Nov 19");
+    const fed = setup();
+    expect(fed.root.querySelector(".title")?.textContent).toBe("Fed decision in December?");
   });
 
   it("updates the chance and payout for the selected side, stake and live quote", () => {

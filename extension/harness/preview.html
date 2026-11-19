@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>News-to-Trade Desk card preview</title>
+  <style>
+    html, body { margin: 0; padding: 0; }
+    body { font-family: ui-sans-serif, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .tweet {
+      box-sizing: border-box;
+      width: 850px;
+      padding: 12px 16px 16px 16px;
+      border: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--fg);
+    }
+    .meta { display: flex; gap: 10px; margin-bottom: 8px; }
+    .avatar { width: 40px; height: 40px; border-radius: 50%; background: #1a6bff; flex: none; }
+    .name { font-weight: 700; font-size: 15px; }
+    .handle { color: var(--muted); font-size: 15px; }
+    .post { font-size: 15px; line-height: 20px; margin: 0 0 4px 50px; }
+    #mount { margin-left: 50px; }
+    .light { --bg: #ffffff; --fg: #0f1419; --muted: #536471; --line: #eff3f4; color-scheme: light; }
+    .dark { --bg: #000000; --fg: #e7e9ea; --muted: #71767b; --line: #2f3336; color-scheme: dark; }
+  </style>
+</head>
+<body>
+  <section class="tweet" id="tweet">
+    <div class="meta">
+      <div class="avatar"></div>
+      <div>
+        <div><span class="name">Market watch</span> <span class="handle">@example</span></div>
+      </div>
+    </div>
+    <p class="post">Bitcoin just slipped under $62k — does this still resolve yes today?</p>
+    <div id="mount"></div>
+  </section>
+  <script src="./preview.js"></script>
+</body>
+</html>
