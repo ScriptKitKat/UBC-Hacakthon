@@ -10,11 +10,11 @@ import { createMemoryJournal, reconcileJournal } from "@/features/journal";
 import type { Reconciliation, SpendEntry, SpendJournal } from "@/features/journal";
 import type { UsdcLedger } from "@/features/ledger";
 import { parseInstrumentSymbol } from "@/features/markets";
-import type { ContractLimits, GeminiMarketsClient, MarketContract, MarketEvent } from "@/features/markets";
+import type { Candle, CandleTimeframe, ContractLimits, GeminiMarketsClient, MarketContract, MarketEvent } from "@/features/markets";
 import { allowAll, matchNews } from "@/features/matcher";
 import type { MatchCandidate, MatchResult, NewsItem } from "@/features/matcher";
-import { aggregatePositions, fillsFromJournal, markFromContract, summarizeResearchSpend, todaysResearchSpendCents } from "@/features/positions";
-import type { MarketMark } from "@/features/positions";
+import { aggregatePositions, buildPortfolio, fillsFromJournal, markFromContract, parsePortfolioRange, summarizeResearchSpend, todaysResearchSpendCents } from "@/features/positions";
+import type { MarketMark, PortfolioMarket } from "@/features/positions";
 import { instrumentSymbol, usdCents } from "@/shared";
 import type { FeedSettings } from "./config";
 import { buyDeepDive } from "./deep-dive";
@@ -41,6 +41,8 @@ import type {
   Outcome,
   PendingView,
   PolicyView,
+  PortfolioRange,
+  PortfolioView,
   PositionsView,
   PositionStatus,
   PricePoint,
@@ -63,7 +65,7 @@ type PendingTrade = Extract<Decision, { kind: "needs-approval" }>;
 
 export interface DeskDeps {
   readonly policy: Policy;
-  readonly markets: Pick<GeminiMarketsClient, "searchEvents" | "getEvent">;
+  readonly markets: Pick<GeminiMarketsClient, "searchEvents" | "getEvent"> & Partial<Pick<GeminiMarketsClient, "candles">>;
   readonly ledger: UsdcLedger;
   readonly ledgerView: LedgerView;
   readonly feed: FeedSettings;
@@ -112,6 +114,7 @@ export interface Desk {
   readonly peekResearchBriefs: (symbol: string) => { readonly current: StoredPurchase | null; readonly previous: StoredPurchase | null };
   readonly getFeedPositions: () => Promise<FeedPositions>;
   readonly getPositions: () => Promise<PositionsView>;
+  readonly getPortfolio: (range?: PortfolioRange) => Promise<PortfolioView>;
   readonly buyDeepDive: (symbol: string) => Promise<DeepDiveResult>;
   readonly reconcile: () => Promise<Reconciliation>;
   readonly feedOrder: (clientOrderId: string) => Promise<DecisionLogEntry> | undefined;
@@ -791,6 +794,46 @@ export function createDesk(deps: DeskDeps): Desk {
     return aggregatePositions(fills, lastMarks, now().toISOString(), status);
   }
 
+  async function loadPortfolioMarkets(symbols: readonly string[]): Promise<Map<string, PortfolioMarket>> {
+    const byEvent = new Map<string, Set<string>>();
+    for (const symbol of symbols) {
+      const parsed = parseInstrumentSymbol(symbol);
+      if (parsed) byEvent.set(parsed.eventTicker, (byEvent.get(parsed.eventTicker) ?? new Set()).add(symbol));
+    }
+    const found = new Map<string, PortfolioMarket>();
+    await Promise.all(
+      [...byEvent].map(async ([eventTicker, wanted]) => {
+        const result = await markets.getEvent(eventTicker);
+        if (!result.ok) return;
+        for (const contract of result.value.contracts) {
+          if (!wanted.has(contract.instrumentSymbol)) continue;
+          const mark = markFromContract(result.value, contract, now().getTime());
+          found.set(contract.instrumentSymbol, {
+            ...mark,
+            category: result.value.category,
+            expiryDate: contract.expiryDate ?? result.value.expiryDate,
+          });
+          lastMarks.set(contract.instrumentSymbol, mark);
+        }
+      }),
+    );
+    return found;
+  }
+
+  async function loadCandles(symbols: readonly string[]): Promise<Map<string, readonly Candle[]>> {
+    const loader = markets.candles;
+    const found = new Map<string, readonly Candle[]>();
+    if (loader === undefined || symbols.length === 0) return found;
+    const timeframe: CandleTimeframe = "1day";
+    await Promise.all(
+      symbols.map(async (symbol) => {
+        const result = await loader(symbol, timeframe);
+        if (result.ok && result.value.length > 0) found.set(symbol, result.value);
+      }),
+    );
+    return found;
+  }
+
   return {
     async submitNews(news) {
       const match = await matchNews(news, { client: markets, allowlist: allowAll });
@@ -856,6 +899,23 @@ export function createDesk(deps: DeskDeps): Desk {
 
     async getPositions() {
       return { ...await readPositions(), researchSpend: summarizeResearchSpend(journal.entries(), now().toISOString()) };
+    },
+
+    async getPortfolio(range) {
+      const selected = parsePortfolioRange(range);
+      const entries = journal.entries();
+      const symbols = [...new Set(entries.map((entry) => entry.symbol))];
+      const [portfolioMarkets, candles] = await Promise.all([loadPortfolioMarkets(symbols), loadCandles(symbols)]);
+      const historySeries = new Map(symbols.map((symbol) => [symbol, history.series(symbol)]));
+      return buildPortfolio({
+        entries,
+        markets: portfolioMarkets,
+        history: historySeries,
+        candles,
+        dailyCapCents: policy.dailyCap,
+        range: selected,
+        nowMs: now().getTime(),
+      });
     },
 
     async getFeedPositions() {
