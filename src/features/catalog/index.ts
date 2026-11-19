@@ -1,4 +1,5 @@
-export { listBrowse } from "./browse";
+export { listBrowse, loadSpotPrices } from "./browse";
+export { createBrowseCache, browseCacheKey } from "./browse-cache";
 export type { BrowseDeps, BrowseListResult, BrowseQuery } from "./browse";
 export { cardsForSymbols, listCatalog } from "./list";
 export type { CatalogDeps, CatalogListResult, CatalogQuery } from "./list";

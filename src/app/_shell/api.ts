@@ -86,17 +86,35 @@ export type { CatalogPage, HomeRail, HomeView };
 export async function loadBrowse(params: { search?: string; category?: string; sort?: BrowseSort; offset?: number; limit?: number }): Promise<
   { readonly kind: "ok"; readonly page: BrowsePage } | { readonly kind: "error"; readonly message: string }
 > {
-  const url = new URL("/api/markets", window.location.origin);
-  if (params.search) url.searchParams.set("search", params.search);
-  if (params.category) url.searchParams.set("category", params.category);
-  if (params.sort) url.searchParams.set("sort", params.sort);
-  if (params.offset !== undefined) url.searchParams.set("offset", String(params.offset));
-  if (params.limit !== undefined) url.searchParams.set("limit", String(params.limit));
-  const response = await fetch(url, { headers: { accept: "application/json" } });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({ error: "unavailable" })) as { error?: string };
-    return { kind: "error", message: body.error === "busy" ? "Gemini is busy. Try again in a moment." : "Live markets are unavailable right now." };
+  try {
+    const url = new URL("/api/markets", window.location.origin);
+    if (params.search) url.searchParams.set("search", params.search);
+    if (params.category) url.searchParams.set("category", params.category);
+    if (params.sort) url.searchParams.set("sort", params.sort);
+    if (params.offset !== undefined) url.searchParams.set("offset", String(params.offset));
+    if (params.limit !== undefined) url.searchParams.set("limit", String(params.limit));
+    const response = await fetch(url, { headers: { accept: "application/json" } });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({ error: "unavailable" })) as { error?: string };
+      return { kind: "error", message: body.error === "busy" ? "Gemini is busy. Try again in a moment." : "Live markets are unavailable right now." };
+    }
+    const parsed = browsePageSchema.safeParse(await response.json());
+    return parsed.success ? { kind: "ok", page: parsed.data } : { kind: "error", message: "The desk returned a response this page could not read." };
+  } catch {
+    return { kind: "error", message: "Live markets are unavailable right now." };
   }
-  const parsed = browsePageSchema.safeParse(await response.json());
-  return parsed.success ? { kind: "ok", page: parsed.data } : { kind: "error", message: "The desk returned a response this page could not read." };
+}
+
+export async function loadSpots(assets: readonly string[]): Promise<Readonly<Record<string, string>>> {
+  if (assets.length === 0) return {};
+  try {
+    const url = new URL("/api/markets/spots", window.location.origin);
+    url.searchParams.set("assets", assets.join(","));
+    const response = await fetch(url, { headers: { accept: "application/json" } });
+    if (!response.ok) return {};
+    const body = await response.json() as { spots?: Record<string, string> };
+    return body.spots ?? {};
+  } catch {
+    return {};
+  }
 }

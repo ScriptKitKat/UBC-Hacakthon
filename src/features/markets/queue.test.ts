@@ -49,18 +49,19 @@ describe("createRateLimiter", () => {
 });
 
 describe("createTtlCache", () => {
-  it("drops expired entries on write and caps the number of entries", () => {
+  it("keeps stale entries readable and caps the number of entries", () => {
     const clock = manualClock();
     const cache = createTtlCache<number>(clock, 100, 3);
     cache.set("a", 1);
     clock.advance(200);
     cache.set("b", 2);
-    expect(cache.size()).toBe(1);
+    expect(cache.get("a")).toBeUndefined();
+    expect(cache.getStale("a")).toBe(1);
+    expect(cache.size()).toBe(2);
     cache.set("c", 3);
     cache.set("d", 4);
     cache.set("e", 5);
     expect(cache.size()).toBe(3);
-    expect(cache.get("b")).toBeUndefined();
     expect(cache.get("e")).toBe(5);
   });
 });

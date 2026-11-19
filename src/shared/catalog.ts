@@ -96,6 +96,7 @@ export const browsePageSchema = z.object({
   offset: z.number().int().nonnegative(),
   hasMore: z.boolean(),
   tabs: z.array(browseTabSchema),
+  stale: z.boolean().optional(),
 });
 
 export type BrowseRow = z.output<typeof browseRowSchema>;

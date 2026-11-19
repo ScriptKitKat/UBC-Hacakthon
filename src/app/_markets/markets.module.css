@@ -45,3 +45,9 @@
 .status { color: #a1a1aa; text-align: center; padding: 24px 8px; }
 .moreBtn { height: 44px; padding: 0 20px; border: 1px solid #2a2a2a; border-radius: 10px; background: #111111; color: #ededed; font-size: 14px; font-weight: 500; align-self: center; }
 .moreWrap { display: flex; justify-content: center; padding-top: 8px; }
+
+.skeletonCard { min-width: 0; border: 1px solid #1f1f1f; border-radius: 14px; background: #111111; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.skeletonLine { height: 12px; border-radius: 6px; background: linear-gradient(90deg, #1a1a1a 0%, #242424 50%, #1a1a1a 100%); background-size: 200% 100%; animation: shimmer 1.2s ease-in-out infinite; }
+.skeletonTitle { width: 70%; height: 16px; }
+.skeletonRow { height: 44px; border-radius: 22px; }
+@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }

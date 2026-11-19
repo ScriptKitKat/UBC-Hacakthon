@@ -5,7 +5,7 @@ import { requestGrokJson } from "@/features/grok";
 import { createSampler, openHistoryStore } from "@/features/history";
 import { createSolanaLedger, createUnconfiguredLedger, isExpectedGenesis } from "@/features/ledger";
 import type { UsdcLedger } from "@/features/ledger";
-import { cardsForSymbols, listBrowse, listCatalog, openWatchlist } from "@/features/catalog";
+import { cardsForSymbols, createBrowseCache, listBrowse, listCatalog, loadSpotPrices, openWatchlist } from "@/features/catalog";
 import type { BrowseListResult, BrowseQuery, CatalogListResult, CatalogQuery, Watchlist } from "@/features/catalog";
 import type { CatalogCard } from "@/shared";
 import { createGeminiMarketsClient } from "@/features/markets";
@@ -24,7 +24,7 @@ import { startReconciliation } from "./reconciliation";
 import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
 import { UNDELIVERED_RECOVERY_MS, openPurchaseStore } from "./purchase-store";
 
-const GEMINI_MIN_REQUEST_INTERVAL_MS = 500;
+const browseCache = createBrowseCache(20_000);
 const PAYMENT_TIMEOUT_SECONDS = 120;
 let homeCatalog: HomeCatalog | undefined;
 const NONCE_BYTES = 16;
@@ -37,6 +37,7 @@ export type DeskAccess =
 export interface HomeCatalog {
   readonly list: (query?: CatalogQuery) => Promise<CatalogListResult>;
   readonly browse: (query?: BrowseQuery) => Promise<BrowseListResult>;
+  readonly spots: (assets: readonly string[]) => Promise<Readonly<Record<string, string>>>;
   readonly cardsFor: (symbols: readonly string[]) => Promise<readonly CatalogCard[]>;
   readonly watchlist: Watchlist;
 }
@@ -85,7 +86,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   if (ledgerView.configured && researchRecipient?.toBase58() === ledgerView.authority) {
     return { ok: false, issues: ["research: RESEARCH_RECIPIENT must differ from the agent authority"] };
   }
-  const markets = createGeminiMarketsClient({ baseUrl: config.value.geminiBaseUrl, fetch, minRequestIntervalMs: GEMINI_MIN_REQUEST_INTERVAL_MS });
+  const markets = createGeminiMarketsClient({ baseUrl: config.value.geminiBaseUrl, fetch, maxInFlight: 4, minRequestIntervalMs: 100 });
   const dataDirectory = resolveDataDirectory(env, process.cwd());
   const history = await openHistoryStore({ fs: nodeFileSystem, path: join(dataDirectory, "price-history.json") });
   const connection = settings.configured && researchRecipient
@@ -193,7 +194,16 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   const catalogDeps = { markets, history, now: () => new Date(), policy: config.value.policy };
   homeCatalog = {
     list: (query) => listCatalog(catalogDeps, query),
-    browse: (query) => listBrowse({ markets, history, now: () => new Date() }, query),
+    browse: async (query = {}) => {
+      const cached = browseCache.get(query);
+      if (cached) return cached;
+      const result = await browseCache.takeInFlight(query, () => listBrowse({ markets, history, now: () => new Date() }, query));
+      if (result.ok) return result;
+      const stale = browseCache.getStale(query);
+      if (stale?.ok) return { ok: true, page: { ...stale.page, stale: true } };
+      return result;
+    },
+    spots: (assets) => loadSpotPrices({ markets }, assets),
     cardsFor: (symbols) => cardsForSymbols(catalogDeps, symbols),
     watchlist: openWatchlist({ fs: nodeFileSystem, path: join(dataDirectory, "watchlist.json") }),
   };
