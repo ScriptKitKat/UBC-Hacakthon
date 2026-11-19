@@ -99,3 +99,33 @@ export {
 export type { BeginnerTimeframe, CrowdMove, DriverLists, Resolution, TrustLine, TrustTone } from "./beginner";
 export { needsApprovalNote, overTradeLimitMessage, tradeCapCents } from "./stake";
 export type { TradeBudget } from "./stake";
+export {
+  GEMINI_UNAVAILABLE_REASON,
+  PRO_TIMEFRAMES,
+  isProTimeframe,
+  proShellSchema,
+  proLiveSchema,
+  proStatSchema,
+} from "./market-pro";
+export type {
+  ProBandPoint,
+  ProBook,
+  ProBookLevel,
+  ProBudget,
+  ProCandle,
+  ProChart,
+  ProFeedItem,
+  ProFlow,
+  ProIndicatorRow,
+  ProLadderRung,
+  ProLive,
+  ProMarket,
+  ProOverlayPoint,
+  ProPosition,
+  ProShell,
+  ProSpot,
+  ProStat,
+  ProStats,
+  ProTimeframe,
+  ProTrade,
+} from "./market-pro";
