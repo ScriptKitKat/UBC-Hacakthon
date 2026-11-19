@@ -3,7 +3,7 @@ import tseslint from "typescript-eslint";
 import { projectRules } from "./eslint/boundaries.js";
 
 export default tseslint.config(
-  { ignores: [".next/**", "node_modules/**", "coverage/**", "extension/dist/**", "next-env.d.ts"] },
+  { ignores: [".next/**", "node_modules/**", "coverage/**", "extension/dist/**", "extension/harness/**", "next-env.d.ts"] },
   js.configs.recommended,
   {
     files: ["**/*.{ts,tsx}"],

@@ -5,14 +5,19 @@ import { ensureCardFont } from "./card-font";
 import { CARD_CSS } from "./card-styles";
 import { h, svg } from "./dom";
 import type { Child } from "./dom";
-import { formatCents, formatPercent, formatUsdc } from "./format";
+import { subscribePageTheme } from "./card-theme";
+import { formatDeadline, friendlyEventTitle } from "./card-title";
+import { formatCents, formatChangePercent, formatHistoryWindow, formatPercent, formatUsdc } from "./format";
 import type { Sender } from "./protocol";
 import { isSafeExplorerLink, isSafeGeminiLink } from "./safe-link";
+import { buildSparkline } from "./sparkline";
 import { needsApprovalNote, overTradeLimitMessage } from "./trade-budget";
 import type { TradeBudget } from "./trade-budget";
 import type { WireEntry, WireMatched, WireQuote } from "./wire";
 
 export const CARD_HOST_ATTRIBUTE = "data-ntd-card";
+const CHART_WIDTH = 96;
+const CHART_HEIGHT = 32;
 const BUBBLING_EVENTS = ["click", "change", "input", "mousedown", "mouseup", "pointerdown", "pointerup", "keydown", "keyup", "keypress", "touchstart", "touchend"];
 
 export interface CardHandle {
@@ -40,13 +45,6 @@ function userOnly(handler: () => void): (event: Event) => void {
 
 function entrySummary(entry: WireEntry): string {
   return `${formatUsdc(entry.notionalCents)} on ${entry.outcome === "yes" ? "Yes" : "No"}`;
-}
-
-function deadline(expiry: string | null | undefined): string | null {
-  if (!expiry) return null;
-  const date = new Date(expiry);
-  if (!Number.isFinite(date.getTime())) return null;
-  return `Closes ${new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(date)}`;
 }
 
 export interface CardOptions {
@@ -172,7 +170,7 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
     amount.addEventListener("input", userOnly(() => { dispatch({ type: "amount-edited", amountText: amount.value }); }));
     const outcomeButton = (side: "yes" | "no", cents: number | null) =>
       h("button", {
-        className: "outcome",
+        className: outcome === side ? "outcome is-selected" : "outcome",
         text: `${side === "yes" ? "Yes" : "No"} ${formatPercent(cents)}`,
         attributes: {
           type: "button",
@@ -202,12 +200,100 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
     );
   }
 
-  const select = h("select", { className: "contract", attributes: { "aria-label": "Prediction contract", "data-key": "contract" } });
-  select.addEventListener("change", userOnly(() => { dispatch({ type: "contract-selected", symbol: select.value }); }));
+  const listId = `ntd-contract-list-${initial.postId}`;
+  let listOpen = false;
+  let activeIndex = 0;
   const eventTitle = h("div", { className: "title" });
-  const contractLabel = h("span", { className: "contract-label", attributes: { "aria-hidden": "true" } });
-  const picker = h("span", { className: "contract-picker" }, contractLabel, svg("svg", { className: "contract-chevron", attributes: { viewBox: "0 0 24 24", "aria-hidden": "true" } }, svg("path", { attributes: { d: "m6 9 6 6 6-6", fill: "none", stroke: "currentColor", "stroke-width": "2.5", "stroke-linecap": "round", "stroke-linejoin": "round" } })), select);
+  const contractLabel = h("span", { className: "contract-label" });
+  const trigger = h("button", {
+    className: "contract-trigger",
+    attributes: {
+      type: "button",
+      "data-key": "contract",
+      "aria-label": "Prediction contract",
+      "aria-haspopup": "listbox",
+      "aria-expanded": "false",
+      "aria-controls": listId,
+    },
+  }, contractLabel, svg("svg", { className: "contract-chevron", attributes: { viewBox: "0 0 24 24", "aria-hidden": "true" } }, svg("path", { attributes: { d: "m6 9 6 6 6-6", fill: "none", stroke: "currentColor", "stroke-width": "2.5", "stroke-linecap": "round", "stroke-linejoin": "round" } })));
+  const list = h("div", { className: "contract-list", attributes: { role: "listbox", id: listId, "aria-label": "Prediction contract", hidden: "" } });
+  const picker = h("div", { className: "contract-picker" }, trigger, list);
   const expiry = h("div", { className: "deadline" });
+  const chartWrap = h("div", { className: "chart-block" });
+
+  function closeList(restoreFocus = true): void {
+    if (!listOpen) return;
+    listOpen = false;
+    renderPicker();
+    if (restoreFocus) trigger.focus();
+  }
+
+  function openList(): void {
+    if (isBusy(state) || state.status.phase === "needs-approval") return;
+    listOpen = true;
+    const index = state.contracts.findIndex((contract) => contract.instrumentSymbol === state.market.instrumentSymbol);
+    activeIndex = index < 0 ? 0 : index;
+    renderPicker();
+    list.focus();
+  }
+
+  function selectContract(symbol: string): void {
+    const previous = state.market.instrumentSymbol;
+    listOpen = false;
+    dispatch({ type: "contract-selected", symbol });
+    trigger.focus();
+    if (state.market.instrumentSymbol !== previous) void requestQuote();
+  }
+
+  async function requestQuote(): Promise<void> {
+    const symbol = state.market.instrumentSymbol;
+    try {
+      const reply = await send({ type: "quote", symbol });
+      if (reply.ok && state.market.instrumentSymbol === symbol) dispatch({ type: "quote-received", quote: reply.value });
+    } catch {
+      return;
+    }
+  }
+
+  function moveActive(delta: number): void {
+    const count = state.contracts.length;
+    if (count === 0) return;
+    activeIndex = (activeIndex + delta + count) % count;
+    renderPicker();
+  }
+
+  function onTriggerKey(event: Event): void {
+    if (!(event instanceof KeyboardEvent)) return;
+    const locked = isBusy(state) || state.status.phase === "needs-approval";
+    if (locked) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openList();
+    } else if (event.key === "Escape") closeList();
+  }
+
+  function onListKey(event: Event): void {
+    if (!(event instanceof KeyboardEvent) || !listOpen) return;
+    if (event.key === "ArrowDown") { event.preventDefault(); moveActive(1); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); moveActive(-1); }
+    else if (event.key === "Home") { event.preventDefault(); activeIndex = 0; renderPicker(); }
+    else if (event.key === "End") { event.preventDefault(); activeIndex = Math.max(0, state.contracts.length - 1); renderPicker(); }
+    else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      const contract = state.contracts[activeIndex];
+      if (contract !== undefined) selectContract(contract.instrumentSymbol);
+    } else if (event.key === "Escape") { event.preventDefault(); closeList(); }
+    else if (event.key === "Tab") closeList(false);
+  }
+
+  trigger.addEventListener("click", userOnly(() => { if (listOpen) closeList(); else openList(); }));
+  trigger.addEventListener("keydown", onTriggerKey);
+  list.addEventListener("keydown", onListKey);
+  document.addEventListener("pointerdown", (event) => {
+    if (!listOpen || !host.isConnected) return;
+    const path = event.composedPath();
+    if (!path.includes(picker)) closeList(false);
+  }, true);
   const status = h("div", { className: "status", attributes: { "aria-live": "polite" } });
   const foot = h("div", { className: "foot" });
   let trade = h("div");
@@ -218,40 +304,88 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
       "div",
       { className: "head" },
       h("div", { className: "icon" }, gemIcon()),
-      h(
-        "div",
-        { className: "titles" },
-        eventTitle,
-        picker,
-        expiry,
-      ),
+      h("div", { className: "titles" }, eventTitle, expiry),
+      chartWrap,
     ),
+    picker,
     trade,
     status,
   );
-  const card = h("div", { className: "card", attributes: { role: "group" } }, body, foot);
+  const card = h("div", { className: "card", attributes: { role: "group", "data-theme": "light" } }, body, foot);
   root.append(card);
+  subscribePageTheme(document, host, (theme) => { card.dataset.theme = theme; });
+
+
+  function renderPicker(): void {
+    const { market, contracts } = state;
+    const locked = isBusy(state) || state.status.phase === "needs-approval";
+    trigger.disabled = locked;
+    trigger.setAttribute("aria-expanded", String(listOpen));
+    picker.setAttribute("data-open", String(listOpen));
+    list.hidden = !listOpen;
+    if (listOpen) list.setAttribute("tabindex", "0");
+    else list.removeAttribute("tabindex");
+    const active = contracts[activeIndex] ?? contracts[0];
+    if (active !== undefined) list.setAttribute("aria-activedescendant", `${listId}-${active.instrumentSymbol}`);
+    else list.removeAttribute("aria-activedescendant");
+    list.replaceChildren(...contracts.map((contract, index) => {
+      const selected = contract.instrumentSymbol === market.instrumentSymbol;
+      const className = index === activeIndex ? "contract-option is-active" : "contract-option";
+      return h("div", {
+        className,
+        attributes: {
+          role: "option",
+          id: `${listId}-${contract.instrumentSymbol}`,
+          "data-symbol": contract.instrumentSymbol,
+          "aria-selected": String(selected),
+        },
+        on: { click: userOnly(() => { selectContract(contract.instrumentSymbol); }) },
+      }, h("span", { className: "contract-option-label", text: contract.contractLabel }), h("span", { className: "contract-option-chance", text: formatPercent(contract.yesCents ?? contract.impliedYesPercent) }));
+    }));
+  }
+
+  function chartView(): Child[] {
+    const sparkline = buildSparkline(state.history.map((point) => point.yesCents), CHART_WIDTH, CHART_HEIGHT);
+    if (sparkline === undefined) return [];
+    const first = state.history[0];
+    const last = state.history.at(-1);
+    const change = first !== undefined && last !== undefined && state.history.length > 1
+      ? formatChangePercent(first.yesCents, last.yesCents)
+      : null;
+    const window = first !== undefined && last !== undefined ? formatHistoryWindow(first.at, last.at) : null;
+    const label = change === null ? null : window === null ? `${change} Yes` : `${change} ${window}`;
+    const chart = svg("svg", { attributes: { viewBox: `0 0 ${String(CHART_WIDTH)} ${String(CHART_HEIGHT)}`, role: "img", "aria-label": "Yes price history" } });
+    chart.append(
+      svg("path", { className: "area", attributes: { d: sparkline.area, "data-trend": sparkline.trend } }),
+      svg("path", { className: "line", attributes: { d: sparkline.line, "data-trend": sparkline.trend } }),
+    );
+    return [
+      h("div", { className: "chart" }, chart),
+      label === null ? null : h("div", { className: "change", text: label, attributes: { "data-trend": sparkline.trend } }),
+    ];
+  }
 
   function render(): void {
+
+
     const focused = shadow.activeElement;
     const focusKey = focused?.getAttribute("data-key");
     const selection = focused instanceof HTMLInputElement ? { start: focused.selectionStart, end: focused.selectionEnd, direction: focused.selectionDirection } : undefined;
     const { market, contracts } = state;
     const locked = isBusy(state) || state.status.phase === "needs-approval";
-    const existing = Array.from(select.options);
-    if (existing.length !== contracts.length || contracts.some((contract, index) => existing[index]?.value !== contract.instrumentSymbol || existing[index].textContent !== contract.contractLabel)) {
-      select.replaceChildren(...contracts.map((contract) => h("option", { text: contract.contractLabel, attributes: { value: contract.instrumentSymbol } })));
-    }
-    if (select.value !== market.instrumentSymbol) select.value = market.instrumentSymbol;
-    if (select.disabled !== locked) select.disabled = locked;
+    if (locked) listOpen = false;
+    if (activeIndex >= contracts.length) activeIndex = Math.max(0, contracts.length - 1);
     picker.setAttribute("data-disabled", String(locked));
-    eventTitle.textContent = market.eventTitle;
-    eventTitle.title = market.description ?? market.eventTitle;
+    const title = friendlyEventTitle(market.eventTitle, market.expiryDate);
+    eventTitle.textContent = title;
+    eventTitle.title = market.description ?? title;
     contractLabel.textContent = market.contractLabel;
-    const closes = deadline(market.expiryDate);
+    renderPicker();
+    chartWrap.replaceChildren(...chartView().filter((child): child is Node => child !== null));
+    const closes = formatDeadline(market.expiryDate);
     expiry.hidden = closes === null;
     expiry.textContent = closes;
-    card.setAttribute("aria-label", `Prediction market: ${market.eventTitle}`);
+    card.setAttribute("aria-label", `Prediction market: ${title}`);
     const nextTrade = tradeView();
     trade.replaceWith(nextTrade);
     trade = nextTrade;
@@ -265,7 +399,7 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
           : h("strong", { text: "Gemini" }),
         researchHref === undefined
           ? null
-          : h("span", {}, " · ", h("a", { className: "research", text: "Research", attributes: { href: researchHref, target: "_blank", rel: "noopener noreferrer", "data-key": "research" } }), " to understand more"),
+          : h("span", {}, " · ", h("a", { className: "research", text: "Research to understand more ↗", attributes: { href: researchHref, target: "_blank", rel: "noopener noreferrer", "data-key": "research" } })),
     ].filter((child) => child !== null));
     if (focusKey) {
       const next = shadow.querySelector<HTMLElement>(`[data-key="${focusKey}"]`);
