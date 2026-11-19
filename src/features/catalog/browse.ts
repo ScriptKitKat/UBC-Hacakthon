@@ -146,17 +146,28 @@ function leadContract(event: MarketEvent, rows: readonly MarketContract[]): Mark
   return rows[0] ?? event.contracts[0];
 }
 
-async function loadSpot(deps: BrowseDeps, events: readonly MarketEvent[]): Promise<Map<string, number>> {
-  const spots = new Map<string, number>();
-  const seen = new Set<string>();
-  for (const event of events) {
-    if (event.category.trim().toLowerCase() !== "crypto") continue;
-    const asset = tickerAsset(event.ticker);
-    if (asset === undefined || seen.has(asset)) continue;
-    seen.add(asset);
-    const quoted = await deps.markets.pubticker(spotPair(asset));
-    if (quoted.ok) spots.set(asset, quoted.value.last);
+async function mapPool<T, R>(items: readonly T[], concurrency: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let next = 0;
+  async function run(): Promise<void> {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await worker(items[index] as T);
+    }
   }
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => run());
+  await Promise.all(workers);
+  return results;
+}
+
+export async function loadSpotPrices(deps: { readonly markets: Pick<GeminiMarketsClient, "pubticker"> }, assets: readonly string[]): Promise<Readonly<Record<string, string>>> {
+  const spots: Record<string, string> = {};
+  await mapPool([...new Set(assets.map((asset) => asset.trim().toUpperCase()).filter(Boolean))], 4, async (asset) => {
+    const quoted = await deps.markets.pubticker(spotPair(asset));
+    if (quoted.ok) spots[asset] = formatSpot(quoted.value.last);
+  });
   return spots;
 }
 
@@ -232,9 +243,9 @@ export async function listBrowse(deps: BrowseDeps, query: BrowseQuery = {}): Pro
   const limit = Math.min(Math.max(query.limit ?? PAGE_SIZE, 1), PAGE_SIZE);
   const offset = Math.max(query.offset ?? 0, 0);
   const category = query.category;
-  const needed = category === "Live" ? Math.min(offset + limit, WINDOW_CAP) : WINDOW_CAP;
+  const needed = category === "Live" ? Math.min(Math.max(offset + limit, FETCH_SIZE * 2), WINDOW_CAP) : Math.min(offset + limit, WINDOW_CAP);
   const geminiCategory = category === undefined || category === "" || category === "All" || category === "Live" ? undefined : categoryQuery(category);
-  const scanCap = category === "Live" ? 192 : WINDOW_CAP;
+  const scanCap = category === "Live" ? 192 : Math.min(Math.max(needed, FETCH_SIZE), WINDOW_CAP);
   const collected: MarketEvent[] = [];
   let pageOffset = 0;
   let total = 0;
@@ -253,45 +264,27 @@ export async function listBrowse(deps: BrowseDeps, query: BrowseQuery = {}): Pro
     collected.push(...batch);
     pageOffset += searched.value.events.length;
     if (searched.value.events.length < FETCH_SIZE || searched.value.events.length === 0) exhausted = true;
-    if (pageOffset >= scanCap) {
-      exhausted = true;
-      break;
-    }
+    if (pageOffset >= scanCap) break;
   }
   const window = collected.slice(0, WINDOW_CAP);
-  const spots = await loadSpot(deps, window);
   const now = deps.now();
-  if (query.sort === "move") {
-    let candleUses = 0;
-    for (const event of window) {
-      const lead = event.contracts[0];
-      if (lead === undefined) continue;
-      if (changeFor(deps, lead.instrumentSymbol, now.getTime()) !== null) continue;
-      if (candleUses >= 12) break;
-      candleUses += 1;
-      const candles = await deps.markets.candles(lead.instrumentSymbol, "15m");
-      if (!candles.ok) continue;
-      deps.history.watch(lead.instrumentSymbol);
-      for (const candle of candles.value) {
-        deps.history.record(lead.instrumentSymbol, { atMs: candle.timeMs, yesCents: candle.closeCents, bidCents: null, askCents: null });
-      }
-    }
-  }
+  const spots = new Map<string, number>();
   const cards = sortEvents(
     window.map((event) => toCard(event, now, spots, deps)).filter((card): card is BrowseCard => card !== undefined),
     query.sort ?? "trending",
   );
   const slice = cards.slice(offset, offset + limit);
   const moreInWindow = offset + slice.length < cards.length;
-  const moreToFetch = !exhausted && offset + limit < WINDOW_CAP;
+  const moreUpstream = !exhausted && pageOffset < total && offset + limit < WINDOW_CAP;
   return {
     ok: true,
     page: {
       markets: slice,
       total,
       offset,
-      hasMore: moreInWindow || moreToFetch,
+      hasMore: moreInWindow || moreUpstream,
       tabs: KNOWN_TABS.map((tab) => ({ ...tab })),
+      stale: false,
     },
   };
 }

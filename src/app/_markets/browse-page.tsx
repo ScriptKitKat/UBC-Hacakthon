@@ -6,7 +6,7 @@ import type { BrowseCard, BrowsePage, BrowseSort } from "@/shared";
 import { contrastInk, formatPercent } from "@/shared";
 import { useViewMode } from "../_research/use-view-mode";
 import { usePolling } from "../_desk/use-polling";
-import { loadBrowse } from "../_shell/api";
+import { loadBrowse, loadSpots } from "../_shell/api";
 import styles from "./markets.module.css";
 
 const POLL_MS = 30_000;
@@ -84,13 +84,27 @@ function MarketPreview({ card, beginner }: { readonly card: BrowseCard; readonly
   );
 }
 
-export function BrowsePage() {
+function SkeletonGrid() {
+  return (
+    <div className={styles.grid} aria-hidden="true">
+      {Array.from({ length: 8 }, (_, index) => (
+        <div key={index} className={styles.skeletonCard}>
+          <div className={[styles.skeletonLine, styles.skeletonTitle].join(" ")} />
+          <div className={[styles.skeletonLine, styles.skeletonRow].join(" ")} />
+          <div className={[styles.skeletonLine, styles.skeletonRow].join(" ")} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function BrowsePage({ initialPage }: { readonly initialPage?: BrowsePage } = {}) {
   const [mode] = useViewMode();
   const [search, setSearch] = useState("");
   const [submitted, setSubmitted] = useState("");
   const [category, setCategory] = useState("All");
   const [sort, setSort] = useState<BrowseSort>("trending");
-  const [page, setPage] = useState<BrowsePage | undefined>(undefined);
+  const [page, setPage] = useState<BrowsePage | undefined>(initialPage);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -102,13 +116,34 @@ export function BrowsePage() {
       offset: 0,
       limit: 24,
       ...(submitted ? { search: submitted } : {}),
-    }).then((result) => {
-      if (result.kind === "ok") {
-        setPage(result.page);
-        setError(null);
-      } else {
+    }).then(async (result) => {
+      if (result.kind !== "ok") {
         setError(result.message);
+        return;
       }
+      setPage(result.page);
+      setError(null);
+      const assets = [...new Set(result.page.markets.flatMap((card) => {
+        const match = /^([A-Z]+)/u.exec(card.eventTicker);
+        return card.kind === "crypto" && match?.[1] ? [match[1]] : [];
+      }))];
+      if (assets.length === 0) return;
+      const spots = await loadSpots(assets);
+      if (Object.keys(spots).length === 0) return;
+      setPage((current) => {
+        if (current === undefined) return current;
+        return {
+          ...current,
+          markets: current.markets.map((card) => {
+            const match = /^([A-Z]+)/u.exec(card.eventTicker);
+            const asset = match?.[1];
+            const label = asset === undefined ? undefined : spots[asset];
+            return label === undefined ? card : { ...card, spotLabel: label };
+          }),
+        };
+      });
+    }).catch(() => {
+      setError("Live markets are unavailable right now.");
     });
   }, POLL_MS + tick);
 
@@ -144,6 +179,9 @@ export function BrowsePage() {
         markets: [...markets, ...result.page.markets],
         offset: 0,
       });
+    }).catch(() => {
+      setLoadingMore(false);
+      setError("Live markets are unavailable right now.");
     });
   };
 
@@ -193,7 +231,13 @@ export function BrowsePage() {
           </div>
         ) : null}
         {error ? <p className={styles.status} role="alert">{error}</p> : null}
-        {error === null && page === undefined ? <p className={styles.status}>Loading live markets…</p> : null}
+        {page?.stale === true ? <p className={styles.status} role="status">Showing recent markets while Gemini cools down.</p> : null}
+        {error === null && page === undefined ? (
+          <>
+            <p className={styles.status}>Loading live markets…</p>
+            <SkeletonGrid />
+          </>
+        ) : null}
         {error === null && page !== undefined && markets.length === 0 ? <p className={styles.status}>No live markets match that search right now.</p> : null}
         {markets.length > 0 ? (
           <div className={styles.grid}>

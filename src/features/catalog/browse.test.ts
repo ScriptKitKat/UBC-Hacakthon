@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createMemoryHistory } from "@/features/history";
 import type { MarketEvent, SearchEventsQuery } from "@/features/markets";
 import { instrumentSymbol } from "@/shared";
-import { listBrowse } from "./browse";
+import { listBrowse, loadSpotPrices } from "./browse";
 
 function contract(label: string, symbol: string, yes: number, extras: Partial<MarketEvent["contracts"][number]> = {}) {
   return {
@@ -102,7 +102,7 @@ describe("listBrowse", () => {
     expect(crypto?.kind).toBe("crypto");
     expect(crypto?.displayTitle).toBe("Bitcoin price today?");
     expect(crypto?.isLive).toBe(true);
-    expect(crypto?.spotLabel).toBe("$62,827");
+    expect(crypto?.spotLabel).toBeNull();
     expect(crypto?.rows.map((row) => row.label)).toEqual(["$62,800 or above", "$63,000 or above"]);
     expect(crypto?.rows[0]?.payoutBeginner).toBe("$1 → $2.08");
     expect(crypto?.rows[0]?.href).toBe("/markets/GEMI-BTC2611192200-HI62800");
@@ -192,5 +192,62 @@ describe("listBrowse", () => {
       now: () => new Date("2026-11-19T16:00:00.000Z"),
     });
     expect(result).toEqual({ ok: false, reason: "unavailable" });
+  });
+});
+
+describe("listBrowse latency shape", () => {
+  it("fetches only one Gemini page for the first trending screen", async () => {
+    let calls = 0;
+    const events = Array.from({ length: 24 }, (_, index) =>
+      event({
+        ticker: `POL${String(index).padStart(2, "0")}`,
+        title: `Question ${String(index)}`,
+        category: "Politics",
+        volume: 24 - index,
+        volume24h: 24 - index,
+        contracts: [contract("Yes", `GEMI-POL${String(index)}-YES`, 50), contract("No", `GEMI-POL${String(index)}-NO`, 50)],
+      }),
+    );
+    const result = await listBrowse(
+      {
+        markets: {
+          searchEvents: (query: SearchEventsQuery = {}) => {
+            calls += 1;
+            const offset = query.offset ?? 0;
+            const limit = query.limit ?? 24;
+            return Promise.resolve({ ok: true as const, value: { events: events.slice(offset, offset + limit), total: 200 } });
+          },
+          candles: () => Promise.resolve({ ok: true as const, value: [] }),
+          pubticker: () => Promise.resolve({ ok: false as const, error: { kind: "http" as const, status: 404 } }),
+        },
+        history: createMemoryHistory(),
+        now: () => new Date("2026-11-19T16:00:00.000Z"),
+      },
+      { sort: "trending", offset: 0, limit: 24 },
+    );
+    expect(calls).toBe(1);
+    expect(result.ok && result.page.markets).toHaveLength(24);
+    expect(result.ok && result.page.hasMore).toBe(true);
+  });
+
+  it("loads crypto spot tickers concurrently after the card list", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const spots = await loadSpotPrices(
+      {
+        markets: {
+          pubticker: async () => {
+            inFlight += 1;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            inFlight -= 1;
+            return { ok: true as const, value: { last: 100 } };
+          },
+        },
+      },
+      ["BTC", "ETH", "SOL", "XRP"],
+    );
+    expect(maxInFlight).toBeGreaterThan(1);
+    expect(spots.BTC).toBe("$100.00");
   });
 });
