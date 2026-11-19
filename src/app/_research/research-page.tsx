@@ -2,7 +2,6 @@
 
 import { useRef, useState } from "react";
 import type { ResearchTimeframe, ResearchView } from "@/shared";
-import { AppBar } from "../_desk/app-bar";
 import { usePolling } from "../_desk/use-polling";
 import { loadResearch } from "./api";
 import type { ResearchResult } from "./api";
@@ -14,7 +13,6 @@ import { IndicatorsPanel } from "./indicators-panel";
 import { MarketHeader, RulesPanel } from "./market-panels";
 import { PriceChart } from "./price-chart";
 import { useViewMode } from "./use-view-mode";
-import type { ViewMode } from "./use-view-mode";
 import styles from "./research.module.css";
 
 const POLL_INTERVAL_MS = 15_000;
@@ -23,26 +21,6 @@ const DEFAULT_TIMEFRAME: ResearchTimeframe = "1D";
 interface Loaded {
   readonly view: ResearchView | null;
   readonly problem: "unknown" | "unavailable" | "error" | null;
-}
-
-function ModeToggle({ mode, onChange }: { readonly mode: ViewMode; readonly onChange: (mode: ViewMode) => void }) {
-  return (
-    <div className={styles.segmented} role="group" aria-label="Detail level">
-      {(["beginner", "pro"] as const).map((option) => (
-        <button
-          key={option}
-          type="button"
-          className={styles.segmentedButton}
-          aria-pressed={mode === option}
-          onClick={() => {
-            onChange(option);
-          }}
-        >
-          {option === "beginner" ? "Beginner" : "Pro"}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function problemMessage(problem: NonNullable<Loaded["problem"]>): string {
@@ -75,7 +53,7 @@ function dataBanners(view: ResearchView): readonly string[] {
 export function ResearchPage({ symbol }: { readonly symbol: string }) {
   const [loaded, setLoaded] = useState<Loaded>({ view: null, problem: null });
   const [timeframe, setTimeframe] = useState<ResearchTimeframe>(DEFAULT_TIMEFRAME);
-  const [mode, setMode] = useViewMode();
+  const [mode] = useViewMode();
   const wanted = useRef<ResearchTimeframe>(DEFAULT_TIMEFRAME);
 
   const apply = (result: ResearchResult, requested: ResearchTimeframe) => {
@@ -102,10 +80,8 @@ export function ResearchPage({ symbol }: { readonly symbol: string }) {
   const pro = mode === "pro";
   return (
     <div className={styles.page}>
-      <AppBar state={null} />
       <div className={styles.toolbar}>
         <p className={styles.symbol}>{symbol}</p>
-        <ModeToggle mode={mode} onChange={setMode} />
       </div>
       {problem !== null ? <p className={styles.banner} role="alert">{problemMessage(problem)}</p> : null}
       {view === null && problem === null ? <p className={styles.status}>Loading market data…</p> : null}

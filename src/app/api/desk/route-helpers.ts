@@ -1,5 +1,5 @@
-import { getDesk } from "@/features/desk";
-import type { Desk } from "@/features/desk";
+import { getDesk, getHomeServices } from "@/features/desk";
+import type { Desk, HomeServices } from "@/features/desk";
 import type { Research } from "@/features/research";
 import type { z } from "zod";
 
@@ -62,4 +62,36 @@ export async function withDashboardGet(
 export function withDashboardPost(request: Request, handler: (desk: Desk) => Promise<Response>): Promise<Response> {
   if (!isDashboardRequest(request)) return Promise.resolve(forbidden());
   return withDesk(handler);
+}
+
+export async function withHomeGet(
+  request: Request,
+  handler: (services: Extract<HomeServices, { ok: true }>) => Promise<Response>,
+): Promise<Response> {
+  if (!isDashboardRequest(request)) return forbidden();
+  const access = await getHomeServices();
+  if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
+  return handler(access);
+}
+
+export async function withHomeBody<S extends z.ZodType>(
+  request: Request,
+  schema: S,
+  handler: (body: z.output<S>, services: Extract<HomeServices, { ok: true }>) => Promise<Response>,
+): Promise<Response> {
+  if (!isDashboardRequest(request)) return forbidden();
+  let json: unknown;
+  try {
+    json = await request.json();
+  } catch {
+    return Response.json({ error: "invalid-request", issues: ["body must be valid JSON"] }, { status: 400 });
+  }
+  const parsed = schema.safeParse(json);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`);
+    return Response.json({ error: "invalid-request", issues }, { status: 400 });
+  }
+  const access = await getHomeServices();
+  if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
+  return handler(parsed.data, access);
 }

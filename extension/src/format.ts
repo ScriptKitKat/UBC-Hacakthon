@@ -1,17 +1,11 @@
+import { formatChangePercent as sharedChangePercent, formatPercent as sharedPercent } from "@/shared";
+
 export function formatCents(cents: number | null): string {
   return cents === null ? "—" : `${String(Math.round(cents))}¢`;
 }
 
-export function formatPercent(percent: number | null): string {
-  return percent === null ? "—" : `${String(Math.round(percent))}%`;
-}
-
-export function formatChangePercent(from: number, to: number): string | null {
-  if (from <= 0) return null;
-  const change = Math.round(((to - from) / from) * 1000) / 10;
-  if (change === 0) return "0%";
-  return `${change > 0 ? "+" : "−"}${String(Math.abs(change))}%`;
-}
+export const formatPercent = sharedPercent;
+export const formatChangePercent = sharedChangePercent;
 
 function formatAmount(cents: number): string {
   const whole = Math.floor(cents / 100);

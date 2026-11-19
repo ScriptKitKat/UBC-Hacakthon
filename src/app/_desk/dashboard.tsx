@@ -17,7 +17,7 @@ import styles from "./desk.module.css";
 
 const POLL_INTERVAL_MS = 4000;
 
-export function Dashboard() {
+export function Dashboard({ hideChrome = false }: { readonly hideChrome?: boolean } = {}) {
   const [result, setResult] = useState<SnapshotResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -44,7 +44,7 @@ export function Dashboard() {
   if (result === null) {
     return (
       <div className={styles.grid}>
-        <AppBar state={null} />
+        {hideChrome ? null : <AppBar state={null} />}
         <p className={styles.status}>Connecting to the desk…</p>
       </div>
     );
@@ -53,7 +53,7 @@ export function Dashboard() {
   if (result.kind === "not-configured") {
     return (
       <div className={styles.grid}>
-        <AppBar state={null} />
+        {hideChrome ? null : <AppBar state={null} />}
         <section className={styles.panelWide} role="alert">
           <h2 className={styles.panelTitle}>Desk is not configured</h2>
           <ul className={styles.issues}>
@@ -70,7 +70,7 @@ export function Dashboard() {
   if (result.kind === "error") {
     return (
       <div className={styles.grid}>
-        <AppBar state={null} />
+        {hideChrome ? null : <AppBar state={null} />}
         <section className={styles.panelWide} role="alert">
           <h2 className={styles.panelTitle}>Desk unavailable</h2>
           <p className={styles.warning}>{result.message}</p>
@@ -83,7 +83,7 @@ export function Dashboard() {
   const { snapshot } = result;
   return (
     <div className={styles.grid}>
-      <AppBar state={{ ledger: snapshot.ledger, killSwitch: snapshot.policy.killSwitch }} />
+      {hideChrome ? null : <AppBar state={{ ledger: snapshot.ledger, killSwitch: snapshot.policy.killSwitch }} />}
       {actionError ? <p className={styles.banner} role="alert">{actionError}</p> : null}
       <div className={styles.topRow}>
         <NewsPanel
@@ -117,7 +117,7 @@ export function Dashboard() {
             run(() => postAction("kill-switch", { on }));
           }}
         />
-        <VoicePanel onTrade={refresh} />
+        <div id="voice"><VoicePanel onTrade={refresh} /></div>
       </div>
       <LogPanel log={snapshot.log} />
       <XThreadPanel senders={snapshot.policy.senderAllowlist} />
