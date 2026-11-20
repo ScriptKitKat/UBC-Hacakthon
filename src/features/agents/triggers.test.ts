@@ -73,17 +73,17 @@ describe("evaluateTriggers", () => {
     });
     const fired = evaluateTriggers(xAgent, snap(), NOW, {
       xFeedAvailable: true,
-      x: { lastHourCount: 30, baselineHourlyCount: 10, breakingPost: null },
+      x: { counts: { lastHourCount: 30, baselineHourlyCount: 10 }, breakingPost: null },
     });
     expect(fired.fired).toEqual(["xMentions"]);
 
     const belowMultiple = evaluateTriggers(xAgent, snap(), NOW, {
       xFeedAvailable: true,
-      x: { lastHourCount: 29, baselineHourlyCount: 10, breakingPost: null },
+      x: { counts: { lastHourCount: 29, baselineHourlyCount: 10 }, breakingPost: null },
     });
     const belowMinimum = evaluateTriggers(xAgent, snap(), NOW, {
       xFeedAvailable: true,
-      x: { lastHourCount: 19, baselineHourlyCount: 1, breakingPost: null },
+      x: { counts: { lastHourCount: 19, baselineHourlyCount: 1 }, breakingPost: null },
     });
     expect(belowMultiple.fired).toEqual([]);
     expect(belowMinimum.fired).toEqual([]);
@@ -95,7 +95,7 @@ describe("evaluateTriggers", () => {
       lastTriggerAt: { xMentions: new Date(NOW.getTime() - 60 * 60 * 1000).toISOString() },
     }, snap(), NOW, {
       xFeedAvailable: true,
-      x: { lastHourCount: 30, baselineHourlyCount: 10, breakingPost: null },
+      x: { counts: { lastHourCount: 30, baselineHourlyCount: 10 }, breakingPost: null },
     });
     expect(cooled.skipped).toEqual([{ id: "xMentions", reason: "already reported this move" }]);
   });
@@ -108,14 +108,14 @@ describe("evaluateTriggers", () => {
     });
     const result = evaluateTriggers(xAgent, snap(), NOW, {
       xFeedAvailable: true,
-      x: { lastHourCount: 0, baselineHourlyCount: 0, breakingPost: post },
+      x: { counts: { lastHourCount: 0, baselineHourlyCount: 0 }, breakingPost: post },
     });
     expect(result.fired).toEqual(["breakingNews"]);
     expect(result.x?.breakingPost).toEqual(post);
 
     const repeated = evaluateTriggers({ ...xAgent, lastBreakingPostId: "post-2" }, snap(), NOW, {
       xFeedAvailable: true,
-      x: { lastHourCount: 0, baselineHourlyCount: 0, breakingPost: post },
+      x: { counts: { lastHourCount: 0, baselineHourlyCount: 0 }, breakingPost: post },
     });
     expect(repeated.fired).toEqual([]);
     expect(repeated.skipped).toEqual([]);
@@ -125,7 +125,7 @@ describe("evaluateTriggers", () => {
       lastTriggerAt: { breakingNews: new Date(NOW.getTime() - 60 * 60 * 1000).toISOString() },
     }, snap(), NOW, {
       xFeedAvailable: true,
-      x: { lastHourCount: 0, baselineHourlyCount: 0, breakingPost: post },
+      x: { counts: { lastHourCount: 0, baselineHourlyCount: 0 }, breakingPost: post },
     });
     expect(cooled.fired).toEqual([]);
     expect(cooled.skipped).toEqual([{ id: "breakingNews", reason: "already reported this move" }]);
@@ -140,6 +140,34 @@ describe("evaluateTriggers", () => {
       { id: "xMentions", reason: "X data unavailable" },
       { id: "breakingNews", reason: "X data unavailable" },
     ]);
+  });
+
+  it("fires each X trigger when only its required signal is available", () => {
+    const xAgent = agent({
+      triggers: {
+        ...DEFAULT_TRIGGERS,
+        oddsMove: false,
+        volumeSpike: false,
+        xMentions: true,
+        breakingNews: true,
+        oddsCross: false,
+        endingSoon: false,
+      },
+    });
+    const post = { id: "post-3", text: "Update", authorUsername: "reporter", url: "https://x.com/reporter/status/post-3" };
+    const countsFailed = evaluateTriggers(xAgent, snap(), NOW, {
+      xFeedAvailable: true,
+      x: { counts: undefined, breakingPost: post },
+    });
+    const breakingFailed = evaluateTriggers(xAgent, snap(), NOW, {
+      xFeedAvailable: true,
+      x: { counts: { lastHourCount: 30, baselineHourlyCount: 10 }, breakingPost: undefined },
+    });
+
+    expect(countsFailed.fired).toEqual(["breakingNews"]);
+    expect(countsFailed.skipped).toEqual([{ id: "xMentions", reason: "X data unavailable" }]);
+    expect(breakingFailed.fired).toEqual(["xMentions"]);
+    expect(breakingFailed.skipped).toEqual([{ id: "breakingNews", reason: "X data unavailable" }]);
   });
 
   it("fires an odds-cross when the yes price crosses the set level", () => {

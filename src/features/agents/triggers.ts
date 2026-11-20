@@ -110,11 +110,11 @@ export function evaluateTriggers(
   if (watch.xMentions) {
     if (!options.xFeedAvailable) {
       skipped.push({ id: "xMentions", reason: "needs X_BEARER_TOKEN" });
-    } else if (options.x === undefined) {
+    } else if (options.x?.counts === undefined) {
       skipped.push({ id: "xMentions", reason: "X data unavailable" });
     } else if (
-      options.x.lastHourCount >= X_SURGE_MULTIPLE * Math.max(options.x.baselineHourlyCount, 1) &&
-      options.x.lastHourCount >= X_SURGE_MIN_POSTS &&
+      options.x.counts.lastHourCount >= X_SURGE_MULTIPLE * Math.max(options.x.counts.baselineHourlyCount, 1) &&
+      options.x.counts.lastHourCount >= X_SURGE_MIN_POSTS &&
       cooled("xMentions", agent, now, TRIGGER_COOLDOWN_MS, skipped)
     ) {
       fired.push("xMentions");
@@ -123,7 +123,7 @@ export function evaluateTriggers(
   if (watch.breakingNews) {
     if (!options.xFeedAvailable) {
       skipped.push({ id: "breakingNews", reason: "needs X_BEARER_TOKEN" });
-    } else if (options.x === undefined) {
+    } else if (options.x?.breakingPost === undefined) {
       skipped.push({ id: "breakingNews", reason: "X data unavailable" });
     } else if (
       options.x.breakingPost !== null &&

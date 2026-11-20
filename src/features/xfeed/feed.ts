@@ -91,7 +91,7 @@ function breakingPost(raw: z.output<typeof SEARCH_RESPONSE_SCHEMA>): XSignals["b
   };
 }
 
-async function loadSignals(fetcher: typeof fetch, bearerToken: string, query: string, now: Date): Promise<XSignals | undefined> {
+async function loadCounts(fetcher: typeof fetch, bearerToken: string, query: string): Promise<XSignals["counts"]> {
   const counts = COUNTS_RESPONSE_SCHEMA.parse(await responseJson(fetcher, countsUrl(query), bearerToken));
   const ordered = [...counts.data].sort((left, right) => {
     if (left.start === undefined || right.start === undefined) return 0;
@@ -101,12 +101,34 @@ async function loadSignals(fetcher: typeof fetch, bearerToken: string, query: st
   const last = complete.at(-1);
   if (last === undefined) return undefined;
   const previous = complete.slice(0, -1).slice(-24).map((bucket) => bucket.tweet_count);
-  const search = SEARCH_RESPONSE_SCHEMA.parse(await responseJson(fetcher, searchUrl(query, now), bearerToken));
   return {
     lastHourCount: last.tweet_count,
     baselineHourlyCount: median(previous),
-    breakingPost: breakingPost(search),
   };
+}
+
+async function loadBreakingPost(fetcher: typeof fetch, bearerToken: string, query: string, now: Date): Promise<XSignals["breakingPost"]> {
+  const search = SEARCH_RESPONSE_SCHEMA.parse(await responseJson(fetcher, searchUrl(query, now), bearerToken));
+  return breakingPost(search);
+}
+
+interface CacheEntry<T> {
+  readonly expiresAt: number;
+  readonly result: Promise<T>;
+}
+
+function cached<T>(
+  cache: Map<string, CacheEntry<T>>,
+  query: string,
+  nowMs: number,
+  cacheMs: number,
+  load: () => Promise<T>,
+): Promise<T> {
+  const existing = cache.get(query);
+  if (existing !== undefined && existing.expiresAt > nowMs) return existing.result;
+  const result = load();
+  cache.set(query, { expiresAt: nowMs + cacheMs, result });
+  return result;
 }
 
 export function createXFeed(options: {
@@ -116,19 +138,29 @@ export function createXFeed(options: {
   readonly cacheMs?: number;
 }): XFeed {
   const cacheMs = options.cacheMs ?? 15 * 60_000;
-  const cache = new Map<string, { readonly expiresAt: number; readonly result: Promise<XSignals | undefined> }>();
+  const countsCache = new Map<string, CacheEntry<XSignals["counts"]>>();
+  const breakingCache = new Map<string, CacheEntry<XSignals["breakingPost"]>>();
   return {
     signals(query) {
       if (query.trim() === "") return Promise.resolve(undefined);
       const requestedAt = options.now();
-      for (const [cachedQuery, entry] of cache) {
-        if (entry.expiresAt <= requestedAt.getTime()) cache.delete(cachedQuery);
+      const nowMs = requestedAt.getTime();
+      for (const [cachedQuery, entry] of countsCache) {
+        if (entry.expiresAt <= nowMs) countsCache.delete(cachedQuery);
       }
-      const cached = cache.get(query);
-      if (cached !== undefined && cached.expiresAt > requestedAt.getTime()) return cached.result;
-      const result = loadSignals(options.fetch, options.bearerToken, query, requestedAt).catch(() => undefined);
-      cache.set(query, { expiresAt: requestedAt.getTime() + cacheMs, result });
-      return result;
+      for (const [cachedQuery, entry] of breakingCache) {
+        if (entry.expiresAt <= nowMs) breakingCache.delete(cachedQuery);
+      }
+      const counts = cached(countsCache, query, nowMs, cacheMs, () =>
+        loadCounts(options.fetch, options.bearerToken, query).catch(() => undefined)
+      );
+      const breaking = cached(breakingCache, query, nowMs, cacheMs, () =>
+        loadBreakingPost(options.fetch, options.bearerToken, query, requestedAt).catch(() => undefined)
+      );
+      return Promise.all([counts, breaking]).then(([countSignals, breakingPostSignal]) => ({
+        counts: countSignals,
+        breakingPost: breakingPostSignal,
+      }));
     },
   };
 }

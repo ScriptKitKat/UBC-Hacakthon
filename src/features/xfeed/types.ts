@@ -5,10 +5,14 @@ export interface XBreakingPost {
   readonly url: string;
 }
 
-export interface XSignals {
+export interface XCounts {
   readonly lastHourCount: number;
   readonly baselineHourlyCount: number;
-  readonly breakingPost: XBreakingPost | null;
+}
+
+export interface XSignals {
+  readonly counts: XCounts | undefined;
+  readonly breakingPost: XBreakingPost | null | undefined;
 }
 
 export interface XFeed {

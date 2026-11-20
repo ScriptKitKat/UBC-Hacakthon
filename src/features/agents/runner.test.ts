@@ -163,8 +163,7 @@ describe("runAgentTick", () => {
       draft: { permission: "autonomous", writeBriefs: false, triggers },
     });
     const signals: XSignals = {
-      lastHourCount: 30,
-      baselineHourlyCount: 10,
+      counts: { lastHourCount: 30, baselineHourlyCount: 10 },
       breakingPost: {
         id: "post-1",
         text: "An official statement.",

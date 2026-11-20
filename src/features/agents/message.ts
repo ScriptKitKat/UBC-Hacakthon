@@ -31,9 +31,10 @@ function triggerLine(id: TriggerId, result: TriggerResult, snapshot: MarketSnaps
     case "briefMonday":
       return "It's Monday, so this agent is due to write a brief.";
     case "xMentions": {
-      if (result.x === undefined) return "X mentions were unusually high.";
-      const multiple = result.x.lastHourCount / Math.max(result.x.baselineHourlyCount, 1);
-      return `Posts about this on X jumped to ${String(result.x.lastHourCount)} in the last hour, about ${multiple.toFixed(1)}× the usual rate.`;
+      const counts = result.x?.counts;
+      if (counts === undefined) return "X mentions were unusually high.";
+      const multiple = counts.lastHourCount / Math.max(counts.baselineHourlyCount, 1);
+      return `Posts about this on X jumped to ${String(counts.lastHourCount)} in the last hour, about ${multiple.toFixed(1)}× the usual rate.`;
     }
     case "breakingNews": {
       const post = result.x?.breakingPost;
