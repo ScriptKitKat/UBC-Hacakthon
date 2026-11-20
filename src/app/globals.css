@@ -50,6 +50,6 @@ button { cursor: pointer; }
 
 a { color: inherit; }
 
-#approvals, #voice { scroll-margin-top: 72px; }
+#approvals { scroll-margin-top: 72px; }
 
 .shell { max-width: 1760px; margin: 0 auto; padding: 20px 28px 64px; }

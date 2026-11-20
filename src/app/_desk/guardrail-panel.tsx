@@ -94,7 +94,7 @@ export function GuardrailPanel({ policy, ledger, busy, onKillSwitch }: Guardrail
         <p className={styles.killText}>
           {policy.killSwitch
             ? "No new trades can go through. Turn this back on to start trading again."
-            : "Turn this off to stop every new trade right away, including trades from agents and voice."}
+            : "Turn this off to stop every new trade right away, including trades from agents and X."}
         </p>
       </section>
       {ledger.configured ? (

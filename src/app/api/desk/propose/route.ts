@@ -9,7 +9,7 @@ const body = z.object({
   outcome: z.enum(["yes", "no"]),
   notionalCents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   senderId: z.string().trim().min(1),
-  source: z.enum(["voice", "x", "desk"]).default("desk"),
+  source: z.enum(["x", "desk"]).default("desk"),
   seenPriceCents: z.number().positive().max(100).optional(),
 });
 

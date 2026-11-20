@@ -15,12 +15,9 @@
     "test:integration": "vitest run --config src/features/ledger/vitest.integration.config.ts",
     "setup:devnet": "node scripts/ledger-devnet-setup",
     "setup:localnet": "node scripts/localnet-setup",
-    "voice:setup-agent": "tsx scripts/voice-setup-agent.mjs",
-    "voice:simulate": "node scripts/voice-simulate.mjs",
     "extension:build": "node extension/build.mjs"
   },
   "dependencies": {
-    "@elevenlabs/react": "^1.23.0",
     "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.99.0",
     "bs58": "^6.0.0",
@@ -38,7 +35,6 @@
     "esbuild": "^0.28.2",
     "eslint": "^10.15.0",
     "happy-dom": "^21.0.4",
-    "tsx": "^4.23.15",
     "typescript": "~6.0",
     "typescript-eslint": "^8.73.0",
     "vitest": "^5.1.0"

@@ -1,6 +1,6 @@
 export type Outcome = "yes" | "no";
 
-export type TradeSource = "voice" | "x" | "desk" | "feed";
+export type TradeSource = "x" | "desk" | "feed";
 
 declare const usdCentsBrand: unique symbol;
 export type UsdCents = number & { readonly [usdCentsBrand]: true };

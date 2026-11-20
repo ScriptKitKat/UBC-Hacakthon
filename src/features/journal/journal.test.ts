@@ -67,6 +67,13 @@ describe("spend journal", () => {
     expect(reopened.entries().map((entry) => entry.operationId)).toContain("op-2");
   });
 
+  it("opens a journal that still holds a trade from the retired voice source", async () => {
+    const stored = { ...trade, source: "voice", status: "settled", reservedAt: NOW, resolvedAt: NOW };
+    const fs = createMemoryFileSystem({ [PATH]: JSON.stringify({ version: 1, entries: [stored] }) });
+    const journal = await openSpendJournal({ fs, path: PATH, nowIso: () => NOW });
+    expect(journal.entries()).toEqual([stored]);
+  });
+
   it("refuses to open a corrupt journal and preserves it", async () => {
     const fs = createMemoryFileSystem({ [PATH]: "{oops" });
     await expect(openSpendJournal({ fs, path: PATH, nowIso: () => NOW })).rejects.toMatchObject({ name: "StoreUnavailableError" });

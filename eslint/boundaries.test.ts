@@ -64,7 +64,7 @@ describe("project lint rules", () => {
   });
 
   it("rejects console.log in features", async () => {
-    const ids = await ruleIds("console.log(1);\n", "src/features/voice/a.ts");
+    const ids = await ruleIds("console.log(1);\n", "src/features/desk/a.ts");
     expect(ids).toContain("no-restricted-syntax");
   });
 
