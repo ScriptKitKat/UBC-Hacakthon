@@ -40,7 +40,6 @@
   border-radius: 26px;
   background: #ffffff;
   box-shadow: var(--card-shadow);
-  overflow: hidden;
 }
 .stat {
   padding: 12px 16px;
