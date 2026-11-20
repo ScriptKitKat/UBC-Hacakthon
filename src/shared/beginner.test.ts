@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ResearchBrief, ResearchPostContext, ResearchSeriesPoint, ResearchView } from "@/shared";
 import {
   crowdMoves,
+  historySourceLabel,
+  driversFromBrief,
   crowdSentence,
   dayChangeCents,
   formatEndLine,
@@ -163,7 +165,7 @@ describe("parseResolution", () => {
 });
 
 describe("crowdMoves", () => {
-  it("records sizable Yes moves from the candle series and labels them as price history", () => {
+  it("hides sizable Yes moves when no matched post is close enough in time", () => {
     const points = [
       point(NOW - 5 * DAY, 50),
       point(NOW - 4 * DAY, 51),
@@ -172,10 +174,7 @@ describe("crowdMoves", () => {
       point(NOW - 1 * DAY, 62),
       point(NOW, 62),
     ];
-    const moves = crowdMoves(points, []);
-    expect(moves.length).toBeGreaterThanOrEqual(2);
-    expect(moves.every((move) => move.source.startsWith("Gemini price history"))).toBe(true);
-    expect(moves.some((move) => move.deltaCents >= 3 && move.title.includes("moved"))).toBe(true);
+    expect(crowdMoves(points, [])).toEqual([]);
   });
 
   it("attaches a matched post when it happened near a move, and never invents a headline", () => {
@@ -238,6 +237,57 @@ describe("marketDrivers", () => {
   it("hides the section when the rules have no measurable threshold", () => {
     const view = baseView({ market: { rulesText: "The official event rules will be used.", termsLink: null } as ResearchView["market"] });
     expect(marketDrivers(parseResolution(view.market.rulesText, null), view, NOW)).toBeNull();
+  });
+});
+
+describe("driversFromBrief", () => {
+  it("hides the section for a template brief that only restates rules or data gaps", () => {
+    const brief: ResearchBrief = {
+      symbol: "GEMI-SOL261231-ABOVE200",
+      generatedAt: "2026-11-12T16:00:00.000Z",
+      headline: "Solana price on Dec 31: Above $200 is priced at 48¢ for YES",
+      sections: [
+        { title: "What the market thinks", body: "Buying YES costs 48¢." },
+        { title: "What changed recently", body: "Odds moved." },
+        { title: "Crowd and liquidity", body: "Thin book." },
+        { title: "Related markets", body: "None." },
+        { title: "What would move it", body: "No post or news item is attached to this market. It expires on 2026-12-31. Resolution rules: the Solana price is strictly above $200.00." },
+        { title: "Risks / what this doesn't know", body: "This brief only knows Gemini market data and the attached post; it knows nothing about breaking news, polls or events elsewhere, and it is not financial advice." },
+      ],
+      polishedBy: "template",
+    };
+    expect(driversFromBrief(brief)).toBeNull();
+    expect(driversFromBrief(null)).toBeNull();
+  });
+
+  it("uses a purchased brief's real move and risk reasons", () => {
+    const brief: ResearchBrief = {
+      symbol: "GEMI-SOL261231-ABOVE200",
+      generatedAt: "2026-11-12T16:00:00.000Z",
+      headline: "Solana",
+      sections: [
+        { title: "What would move it", body: "A surprise ETF filing could push Yes higher this week. Large token unlocks hitting the market would work the other way." },
+        { title: "Risks / what this doesn't know", body: "On-chain flow data in this brief is stale after the weekend halt." },
+      ],
+      polishedBy: "grok",
+    };
+    const drivers = driversFromBrief(brief);
+    expect(drivers?.up).toEqual([
+      "A surprise ETF filing could push Yes higher this week.",
+      "Large token unlocks hitting the market would work the other way.",
+    ]);
+    expect(drivers?.down).toEqual(["On-chain flow data in this brief is stale after the weekend halt."]);
+  });
+});
+
+describe("historySourceLabel", () => {
+  it("names Gemini candles, trades, and desk snapshots honestly", () => {
+    const labeled = (source: ResearchView["series"]["source"], pointSource: ResearchView["series"]["points"][number]["source"]) =>
+      historySourceLabel(baseView({ series: { source, points: [{ t: NOW, cents: 50, volume: null, source: pointSource, bidCents: null, askCents: null, ma: null, upper: null, lower: null }] } }));
+    expect(labeled("gemini", "gemini")).toBe("Source: Gemini candles.");
+    expect(labeled("trades", "trades")).toBe("Source: rebuilt from Gemini trades.");
+    expect(labeled("snapshot", "snapshot")).toBe("Source: the desk's own price snapshots. Gemini had no candles or trades for this range.");
+    expect(historySourceLabel(baseView({ series: { source: "none", points: [] } }))).toBe("No price history yet for this range.");
   });
 });
 

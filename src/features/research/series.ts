@@ -1,4 +1,4 @@
-import type { Candle, CandleTimeframe } from "@/features/markets";
+import type { Candle, CandleTimeframe, RecentTrade } from "@/features/markets";
 import type { PriceSnapshot } from "@/features/history";
 import type { ResearchSeriesPoint, ResearchTimeframe } from "@/shared";
 import { rollingBands } from "./indicators";
@@ -22,38 +22,88 @@ export const TIMEFRAME_PLANS: Readonly<Record<ResearchTimeframe, TimeframePlan>>
 
 export const INDICATOR_CANDLE: CandleTimeframe = "1hr";
 
+export const ALL_CANDLE_TIMEFRAMES = ["1m", "5m", "15m", "30m", "1hr", "6hr", "1day"] as const satisfies readonly CandleTimeframe[];
+
+export const CANDLE_INTERVAL_MS: Readonly<Record<CandleTimeframe, number>> = {
+  "1m": 60_000,
+  "5m": 5 * 60_000,
+  "15m": 15 * 60_000,
+  "30m": 30 * 60_000,
+  "1hr": HOUR_MS,
+  "6hr": 6 * HOUR_MS,
+  "1day": DAY_MS,
+};
+
 export interface SeriesInput {
   readonly candles: readonly Candle[];
   readonly snapshots: readonly PriceSnapshot[];
+  readonly trades?: readonly RecentTrade[];
   readonly windowMs: number | null;
   readonly nowMs: number;
+  readonly candleIntervalMs?: number;
 }
 
 export interface MergedSeries {
-  readonly source: "gemini" | "snapshot" | "mixed" | "none";
+  readonly source: "gemini" | "trades" | "snapshot" | "mixed" | "none";
   readonly points: readonly ResearchSeriesPoint[];
 }
 
 type BasePoint = Omit<ResearchSeriesPoint, "ma" | "upper" | "lower">;
+type PointSource = BasePoint["source"];
 
 function overallSource(points: readonly BasePoint[]): MergedSeries["source"] {
-  const gemini = points.some((point) => point.source === "gemini");
-  const snapshot = points.some((point) => point.source === "snapshot");
-  if (gemini && snapshot) return "mixed";
-  return gemini ? "gemini" : snapshot ? "snapshot" : "none";
+  const kinds = new Set(points.map((point) => point.source));
+  if (kinds.size === 0) return "none";
+  if (kinds.size === 1) {
+    const only = [...kinds][0];
+    return only === "gemini" || only === "trades" || only === "snapshot" ? only : "none";
+  }
+  return "mixed";
+}
+
+function inferIntervalMs(candles: readonly Candle[]): number {
+  if (candles.length < 3) return 60_000;
+  const diffs = [];
+  for (let index = 1; index < candles.length; index += 1) {
+    const gap = (candles[index]?.timeMs ?? 0) - (candles[index - 1]?.timeMs ?? 0);
+    if (gap > 0) diffs.push(gap);
+  }
+  if (diffs.length === 0) return 60_000;
+  diffs.sort((left, right) => left - right);
+  return diffs[Math.floor(diffs.length / 2)] ?? 60_000;
+}
+
+function keepAuxiliary(t: number, candles: readonly Candle[], intervalMs: number, lastStart: number): boolean {
+  if (t > lastStart) return true;
+  return !candles.some((candle) => t >= candle.timeMs && t < candle.timeMs + intervalMs);
+}
+
+function sourceRank(source: PointSource): number {
+  return source === "gemini" ? 0 : source === "trades" ? 1 : 2;
 }
 
 export function mergeSeries(input: SeriesInput): MergedSeries {
   const earliest = input.windowMs === null ? Number.NEGATIVE_INFINITY : input.nowMs - input.windowMs;
-  const fromCandles: BasePoint[] = [...input.candles]
+  const candles = [...input.candles]
     .sort((a, b) => a.timeMs - b.timeMs)
-    .filter((candle) => candle.timeMs >= earliest)
-    .map((candle) => ({ t: candle.timeMs, cents: candle.closeCents, volume: candle.volume, source: "gemini", bidCents: null, askCents: null }));
-  const lastCandleStart = input.candles.reduce((latest, candle) => Math.max(latest, candle.timeMs), Number.NEGATIVE_INFINITY);
+    .filter((candle) => candle.timeMs >= earliest && candle.timeMs <= input.nowMs);
+  const intervalMs = input.candleIntervalMs ?? inferIntervalMs(candles);
+  const lastStart = candles.reduce((latest, candle) => Math.max(latest, candle.timeMs), Number.NEGATIVE_INFINITY);
+  const fromCandles: BasePoint[] = candles.map((candle) => ({ t: candle.timeMs, cents: candle.closeCents, volume: candle.volume, source: "gemini", bidCents: null, askCents: null }));
+  const fromTrades: BasePoint[] = (input.trades ?? [])
+    .filter((trade) => trade.timeMs >= earliest && trade.timeMs <= input.nowMs && keepAuxiliary(trade.timeMs, candles, intervalMs, lastStart))
+    .map((trade) => ({ t: trade.timeMs, cents: trade.priceCents, volume: trade.amount, source: "trades", bidCents: null, askCents: null }));
   const fromSnapshots: BasePoint[] = input.snapshots
-    .filter((snapshot) => snapshot.atMs >= earliest && snapshot.atMs > lastCandleStart && snapshot.atMs <= input.nowMs)
+    .filter((snapshot) => snapshot.atMs >= earliest && snapshot.atMs <= input.nowMs && keepAuxiliary(snapshot.atMs, candles, intervalMs, lastStart))
     .map((snapshot) => ({ t: snapshot.atMs, cents: snapshot.yesCents, volume: null, source: "snapshot", bidCents: snapshot.bidCents, askCents: snapshot.askCents }));
-  const base = [...fromCandles, ...fromSnapshots].sort((a, b) => a.t - b.t);
+  const ranked = [...fromCandles, ...fromTrades, ...fromSnapshots].sort((left, right) => left.t - right.t || sourceRank(left.source) - sourceRank(right.source));
+  const seen = new Set<number>();
+  const base: BasePoint[] = [];
+  for (const point of ranked) {
+    if (seen.has(point.t)) continue;
+    seen.add(point.t);
+    base.push(point);
+  }
   const bands = rollingBands(base.map((point) => point.cents));
   return {
     source: overallSource(base),

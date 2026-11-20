@@ -26,6 +26,7 @@ import type { Desk } from "./desk";
 import { openFeedOrders } from "./feed-orders";
 import { startReconciliation } from "./reconciliation";
 import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
+import { openMatchStore } from "./match-store";
 import { UNDELIVERED_RECOVERY_MS, openPurchaseStore } from "./purchase-store";
 
 const browseCache = createBrowseCache(20_000);
@@ -116,6 +117,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
       decisionLog,
       journal,
       purchaseStore: await openPurchaseStore({ fs: nodeFileSystem, path: join(dataDirectory, "research-purchases.json") }),
+      matchStore: await openMatchStore({ fs: nodeFileSystem, path: join(dataDirectory, "matched-posts.json") }),
       feedOrders: await openFeedOrders({
         fs: nodeFileSystem,
         path: join(dataDirectory, "feed-orders.json"),
@@ -139,7 +141,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     };
   });
   if (!stores.ok) return { ok: false, issues: [stores.issue] };
-  const { decisionLog, purchaseStore, journal, usedPayments, feedOrders } = stores.value;
+  const { decisionLog, purchaseStore, matchStore, journal, usedPayments, feedOrders } = stores.value;
   const publicOrigin = config.value.research.publicOrigin;
   const deferredDeepDive = createDeferredDeepDive(publicOrigin);
   const payments = settings.configured && researchRecipient && connection
@@ -180,6 +182,8 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     ...(payments ? { paymentInFlight: payments.paymentInFlight } : {}),
     initialPurchases: purchaseStore.initialPurchases,
     savePurchases: purchaseStore.savePurchases,
+    initialMatches: matchStore.initialMatches,
+    saveMatches: matchStore.saveMatches,
     ...(researchRecipient
       ? {
           research: {
