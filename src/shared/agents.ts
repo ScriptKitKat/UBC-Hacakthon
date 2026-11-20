@@ -95,16 +95,6 @@ export const agentsViewSchema = z.object({
   assignedCents: z.number().int().nonnegative(),
 });
 
-export const agentFeedItemSchema = agentActivitySchema.extend({
-  agentId: z.string().min(1),
-  agentName: z.string().min(1),
-  eventTicker: z.string().min(1),
-});
-
-export const agentActivityViewSchema = z.object({
-  activity: z.array(agentFeedItemSchema),
-});
-
 export const agentCycleReportSchema = z.object({
   ran: z.number().int().nonnegative(),
   ticks: z.array(z.object({
@@ -120,5 +110,3 @@ export const agentCycleReportSchema = z.object({
 
 export type AgentRecordView = z.output<typeof agentRecordSchema>;
 export type AgentsView = z.output<typeof agentsViewSchema>;
-export type AgentFeedItem = z.output<typeof agentFeedItemSchema>;
-export type AgentActivityView = z.output<typeof agentActivityViewSchema>;
