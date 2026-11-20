@@ -55,7 +55,10 @@ async function setup(options: { readonly yesNow: number; readonly yesBefore: num
   const history = createMemoryHistory();
   history.watch(SYMBOL);
   history.record(SYMBOL, { atMs: NOW.getTime() - DAY_MS - 60_000, yesCents: options.yesBefore, bidCents: null, askCents: null });
-  const proposeTrade = vi.fn<Desk["proposeTrade"]>((request) => Promise.resolve(entry(request.requireApproval === true ? "needs-approval" : "approve", request.outcome)));
+  const proposeTrade = vi.fn<Desk["proposeTrade"]>((request) => Promise.resolve({
+    ...entry(request.requireApproval === true ? "needs-approval" : "approve", request.outcome),
+    notionalCents: request.notionalCents,
+  }));
   const buyDeepDive = vi.fn<Desk["buyDeepDive"]>(() => Promise.resolve(DELIVERED));
   const getEvent: GeminiMarketsClient["getEvent"] = () => Promise.resolve(ok(event(options.yesNow, options.volume24h ?? 50)));
   const deps: AgentRunnerDeps = {
@@ -111,12 +114,12 @@ describe("runAgentTick", () => {
     expect(down.proposeTrade).toHaveBeenCalledWith(expect.objectContaining({ outcome: "no", requireApproval: true }));
   });
 
-  it("holds instead of picking a side when volume spikes and the price has not moved", async () => {
+  it("logs a skip instead of proposing when the price has not moved", async () => {
     const { agent, deps, proposeTrade, store } = await setup({ yesNow: 50, yesBefore: 50, volume24h: 600, draft: { permission: "suggest" } });
     const tick = await runAgentTick(deps, agent, DESK, NOW);
-    expect(tick).toMatchObject({ fired: ["volumeSpike"], action: "hold" });
+    expect(tick).toMatchObject({ fired: ["volumeSpike"], action: "skip", reason: "price hasn't moved" });
     expect(proposeTrade).not.toHaveBeenCalled();
-    expect((await store.get("agent-1"))?.activity.map((item) => item.kind)).toEqual(["message", "refused"]);
+    expect((await store.get("agent-1"))?.activity.map((item) => item.kind)).toEqual(["message", "skip"]);
   });
 
   it("records a desk refusal as refused, not as a suggestion", async () => {
@@ -148,7 +151,7 @@ describe("runAgentTick", () => {
     expect(saved?.activity.map((item) => item.kind)).toEqual(["message", "bet", "refused"]);
   });
 
-  it("runs X triggers as notifications and records breaking post links", async () => {
+  it("lets X-only watch triggers lead to an autonomous decision and records breaking post links", async () => {
     const triggers = {
       oddsMove: false,
       volumeSpike: false,
@@ -159,7 +162,7 @@ describe("runAgentTick", () => {
       endingSoon: false,
     };
     const { agent, deps, proposeTrade, buyDeepDive, store } = await setup({
-      yesNow: 55,
+      yesNow: 75,
       yesBefore: 55,
       draft: { permission: "autonomous", writeBriefs: false, triggers },
     });
@@ -174,16 +177,73 @@ describe("runAgentTick", () => {
     };
     const xFeed = { signals: vi.fn(() => Promise.resolve(signals)) };
     const tick = await runAgentTick({ ...deps, xFeed }, agent, DESK, NOW);
-    expect(tick).toMatchObject({ fired: ["xMentions", "breakingNews"], action: "notify" });
+    expect(tick).toMatchObject({ fired: ["xMentions", "breakingNews"], action: "autonomous", side: "yes" });
     expect(tick.message).toContain("Posts about this on X jumped to 30 in the last hour, about 3.0× the usual rate.");
     expect(tick.message).toContain("Breaking on X from @reporter: “An official statement.”.");
     expect(xFeed.signals).toHaveBeenCalledWith("bitcoin");
-    expect(proposeTrade).not.toHaveBeenCalled();
+    expect(proposeTrade).toHaveBeenCalledWith(expect.objectContaining({ outcome: "yes" }));
     expect(buyDeepDive).not.toHaveBeenCalled();
     expect(await store.get(agent.id)).toMatchObject({
       lastBreakingPostId: "post-1",
-      activity: [expect.objectContaining({ kind: "message", url: "https://x.com/reporter/status/post-1" })],
+      activity: [
+        expect.objectContaining({ kind: "message", url: "https://x.com/reporter/status/post-1" }),
+        expect.objectContaining({ kind: "bet", side: "yes", origin: "trigger" }),
+      ],
     });
+  });
+
+  it("uses an LLM-selected No side on a positive move and records a bet", async () => {
+    const { agent, deps, proposeTrade, store } = await setup({
+      yesNow: 60,
+      yesBefore: 40,
+      draft: { permission: "autonomous", maxPerBetCents: 200 },
+    });
+    const fakeFetch = vi.fn<typeof fetch>(() => Promise.resolve(Response.json({
+      choices: [{ message: { content: JSON.stringify({ message: "The price may be overreacting.", action: "bet", side: "no", amountUsd: 1.25, reason: "The move looks overextended." }) } }],
+    })));
+    const tick = await runAgentTick({ ...deps, grok: { apiKey: "key", model: "test" }, fetch: fakeFetch }, agent, DESK, NOW);
+
+    expect(tick).toMatchObject({ action: "autonomous", side: "no", amountCents: 125 });
+    expect(proposeTrade).toHaveBeenCalledWith(expect.objectContaining({ outcome: "no", notionalCents: 125 }));
+    expect(proposeTrade.mock.calls[0]?.[0]).not.toHaveProperty("requireApproval");
+    expect((await store.get(agent.id))?.activity).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "bet", side: "no", amountCents: 125, origin: "trigger" }),
+    ]));
+  });
+
+  it("logs an LLM skip without proposing a trade", async () => {
+    const { agent, deps, proposeTrade, store } = await setup({ yesNow: 60, yesBefore: 40, draft: { permission: "autonomous" } });
+    const fakeFetch = vi.fn<typeof fetch>(() => Promise.resolve(Response.json({
+      choices: [{ message: { content: JSON.stringify({ message: "The move is uncertain.", action: "skip", reason: "There is no clear edge." }) } }],
+    })));
+    const tick = await runAgentTick({ ...deps, grok: { apiKey: "key", model: "test" }, fetch: fakeFetch }, agent, DESK, NOW);
+
+    expect(tick).toMatchObject({ action: "skip", reason: "There is no clear edge." });
+    expect(proposeTrade).not.toHaveBeenCalled();
+    expect((await store.get(agent.id))?.activity.find((item) => item.kind === "skip"))
+      .toMatchObject({ kind: "skip", text: "There is no clear edge." });
+  });
+
+  it("falls back to the rule decision when the LLM call fails", async () => {
+    const { agent, deps, proposeTrade } = await setup({ yesNow: 60, yesBefore: 40, draft: { permission: "autonomous" } });
+    const fakeFetch = vi.fn<typeof fetch>(() => Promise.reject(new Error("provider unavailable")));
+    const tick = await runAgentTick({ ...deps, grok: { apiKey: "key", model: "test" }, fetch: fakeFetch }, agent, DESK, NOW);
+
+    expect(tick).toMatchObject({ action: "autonomous", side: "yes" });
+    expect(proposeTrade).toHaveBeenCalledWith(expect.objectContaining({ outcome: "yes", notionalCents: 200 }));
+  });
+
+  it("allows volume-only and breaking-news-only triggers to propose", async () => {
+    const volumeTriggers = { oddsMove: false, volumeSpike: true, xMentions: false, breakingNews: false, oddsCross: false, oddsCrossLevel: null, endingSoon: false };
+    const volume = await setup({ yesNow: 60, yesBefore: 40, volume24h: 600, draft: { permission: "autonomous", triggers: volumeTriggers } });
+    await runAgentTick(volume.deps, volume.agent, DESK, NOW);
+    expect(volume.proposeTrade).toHaveBeenCalledTimes(1);
+
+    const newsTriggers = { oddsMove: false, volumeSpike: false, xMentions: false, breakingNews: true, oddsCross: false, oddsCrossLevel: null, endingSoon: false };
+    const news = await setup({ yesNow: 60, yesBefore: 40, draft: { permission: "autonomous", triggers: newsTriggers } });
+    const xFeed = { signals: vi.fn(() => Promise.resolve({ counts: undefined, breakingPost: { id: "breaking-1", text: "News", authorUsername: "wire", url: "https://x.com/wire/status/breaking-1" } })) };
+    await runAgentTick({ ...news.deps, xFeed }, news.agent, DESK, NOW);
+    expect(news.proposeTrade).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -195,6 +255,42 @@ describe("runAgentCycle", () => {
     expect(report).toMatchObject({ ran: 1, ticks: [{ agentId: other.id }] });
     expect(await store.get(agent.id)).toMatchObject({ lastRunAt: null });
     expect(await store.get(other.id)).toMatchObject({ lastRunAt: NOW.toISOString() });
+  });
+
+  it("runs a manual review through cooldowns without consuming them", async () => {
+    const { agent, deps, store } = await setup({ yesNow: 60, yesBefore: 40, draft: { permission: "watch" } });
+    const withCooldown = await store.recordRun(agent.id, { lastTriggerAt: { oddsMove: NOW.toISOString() } });
+    const report = await runAgentCycle({ ...deps, now: () => NOW }, agent.id, { review: true, origin: "manual" });
+
+    expect(report.ticks[0]).toMatchObject({ fired: ["oddsMove"], origin: "manual" });
+    expect((await store.get(agent.id))?.lastTriggerAt).toEqual(withCooldown?.lastTriggerAt);
+  });
+
+  it("runs a manual review even when no trigger fires", async () => {
+    const noTriggers = { oddsMove: false, volumeSpike: false, xMentions: false, breakingNews: false, oddsCross: false, oddsCrossLevel: null, endingSoon: false };
+    const { agent, deps } = await setup({ yesNow: 60, yesBefore: 40, draft: { permission: "watch", triggers: noTriggers } });
+    const report = await runAgentCycle({ ...deps, now: () => NOW }, agent.id, { review: true, origin: "manual" });
+    expect(report.ticks[0]).toMatchObject({ fired: [], origin: "manual", action: "notify" });
+  });
+
+  it("runs a due routine once and records its completion time", async () => {
+    const { agent, deps, store } = await setup({ yesNow: 60, yesBefore: 40, draft: { permission: "watch", schedule: { kind: "every", hours: 4 } } });
+    await store.recordRun(agent.id, { lastRoutineAt: "2026-11-19T13:00:00.000Z" });
+    const first = await runAgentCycle({ ...deps, now: () => NOW }, agent.id);
+    expect(first.ticks[0]?.origin).toBe("scheduled");
+    expect((await store.get(agent.id))?.lastRoutineAt).toBe(NOW.toISOString());
+
+    const second = await runAgentCycle({ ...deps, now: () => NOW }, agent.id);
+    expect(second.ticks[0]?.origin).toBe("trigger");
+    expect((await store.get(agent.id))?.lastRoutineAt).toBe(NOW.toISOString());
+  });
+
+  it("does not run a routine before its due time", async () => {
+    const { agent, deps, store } = await setup({ yesNow: 60, yesBefore: 40, draft: { permission: "watch", schedule: { kind: "every", hours: 4 } } });
+    const before = await store.get(agent.id);
+    const report = await runAgentCycle({ ...deps, now: () => new Date(NOW.getTime() + 60 * 60_000) }, agent.id);
+    expect(report.ticks[0]?.origin).toBe("trigger");
+    expect((await store.get(agent.id))?.lastRoutineAt).toBe(before?.lastRoutineAt);
   });
 
   it("coalesces overlapping untargeted runs", async () => {

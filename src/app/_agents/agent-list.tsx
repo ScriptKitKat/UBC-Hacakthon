@@ -2,7 +2,7 @@
 
 import type { AgentRecordView, WatchlistCard } from "@/shared";
 import { friendlyEventTitle } from "@/shared";
-import { agentSpendLine, lastCheckText } from "../_watchlist/agent-summary";
+import { agentRoutineLine, agentSpendLine, lastCheckText } from "../_watchlist/agent-summary";
 import styles from "../_watchlist/agents.module.css";
 
 const PERMISSION_LABELS: Readonly<Record<AgentRecordView["permission"], string>> = {
@@ -48,6 +48,7 @@ export function AgentList({
             <span className={styles.agentRowPermission}>{PERMISSION_LABELS[agent.permission]}</span>
             <span className={styles.agentRowSpend}>{agentSpendLine(agent, now)}</span>
             <span className={styles.agentRowCheck}>{lastCheckText(agent, now)}</span>
+            <span className={styles.agentRowCheck}>{agentRoutineLine(agent, now)}</span>
             <span className={styles.agentRowActivity}>{newestActivity?.text ?? "No activity yet."}</span>
           </button>
         );

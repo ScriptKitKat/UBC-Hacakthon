@@ -1,3 +1,5 @@
+import type { AgentSchedule, Outcome } from "@/shared";
+
 export const BRIEF_COST_CENTS = 5;
 export const ODDS_MOVE_POINTS = 5;
 export const BRIEF_ODDS_MOVE_POINTS = 10;
@@ -15,7 +17,7 @@ export type AgentPersonality = "calm" | "contrarian" | "momentum" | "coach";
 export type AgentStatus = "watching" | "paused";
 export type AgentPermission = "watch" | "suggest" | "autonomous";
 export type MessageSource = "llm" | "template";
-export type AgentActivityKind = "message" | "suggestion" | "bet" | "brief" | "pause" | "resume" | "refused";
+export type AgentActivityKind = "message" | "suggestion" | "bet" | "brief" | "pause" | "resume" | "refused" | "skip";
 
 export type WatchTriggerId = "oddsMove" | "volumeSpike" | "xMentions" | "breakingNews" | "oddsCross" | "endingSoon";
 export type BriefTriggerId = "briefOddsMove10" | "briefMonday" | "briefEndingSoon";
@@ -46,6 +48,10 @@ export interface AgentActivity {
   readonly messageSource?: MessageSource | undefined;
   readonly intentId?: string | undefined;
   readonly url?: string | undefined;
+  readonly origin?: "trigger" | "manual" | "scheduled" | undefined;
+  readonly side?: Outcome | undefined;
+  readonly amountCents?: number | undefined;
+  readonly explorerUrl?: string | undefined;
 }
 
 export interface AgentRecord {
@@ -69,6 +75,8 @@ export interface AgentRecord {
   readonly lastMessage: string | null;
   readonly lastMessageSource: MessageSource | null;
   readonly lastBreakingPostId?: string | undefined;
+  readonly schedule: AgentSchedule;
+  readonly lastRoutineAt: string | null;
   readonly spentTodayCents: number;
   readonly spendDay: string;
   readonly lastTriggerAt: Readonly<Record<string, string>>;

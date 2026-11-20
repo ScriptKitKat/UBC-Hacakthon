@@ -79,7 +79,8 @@ export function shouldFire(lastAt: string | undefined, now: Date, cooldownMs: nu
   return now.getTime() - then >= cooldownMs;
 }
 
-function cooled(id: TriggerId, agent: AgentRecord, now: Date, cooldownMs: number, skipped: TriggerSkip[]): boolean {
+function cooled(id: TriggerId, agent: AgentRecord, now: Date, cooldownMs: number, skipped: TriggerSkip[], ignoreCooldowns = false): boolean {
+  if (ignoreCooldowns) return true;
   if (shouldFire(agent.lastTriggerAt[id], now, cooldownMs)) return true;
   skipped.push({ id, reason: "already reported this move" });
   return false;
@@ -89,7 +90,7 @@ export function evaluateTriggers(
   agent: AgentRecord,
   snapshot: MarketSnapshot,
   now: Date,
-  options: { readonly xFeedAvailable: boolean; readonly x?: XSignals | undefined; readonly timeZone?: string } = { xFeedAvailable: false },
+  options: { readonly xFeedAvailable: boolean; readonly x?: XSignals | undefined; readonly timeZone?: string; readonly ignoreCooldowns?: boolean } = { xFeedAvailable: false },
 ): TriggerResult {
   const skipped: TriggerSkip[] = [];
   const fired: TriggerId[] = [];
@@ -98,13 +99,13 @@ export function evaluateTriggers(
 
   if (watch.oddsMove) {
     if (points !== null && Math.abs(points) >= ODDS_MOVE_POINTS) {
-      if (cooled("oddsMove", agent, now, TRIGGER_COOLDOWN_MS, skipped)) fired.push("oddsMove");
+      if (cooled("oddsMove", agent, now, TRIGGER_COOLDOWN_MS, skipped, options.ignoreCooldowns)) fired.push("oddsMove");
     }
   }
   if (watch.volumeSpike) {
     const multiple = volumeMultiple(snapshot, now);
     if (multiple !== null && multiple >= VOLUME_SPIKE_MULTIPLE) {
-      if (cooled("volumeSpike", agent, now, TRIGGER_COOLDOWN_MS, skipped)) fired.push("volumeSpike");
+      if (cooled("volumeSpike", agent, now, TRIGGER_COOLDOWN_MS, skipped, options.ignoreCooldowns)) fired.push("volumeSpike");
     }
   }
   if (watch.xMentions) {
@@ -115,7 +116,7 @@ export function evaluateTriggers(
     } else if (
       options.x.counts.lastHourCount >= X_SURGE_MULTIPLE * Math.max(options.x.counts.baselineHourlyCount, 1) &&
       options.x.counts.lastHourCount >= X_SURGE_MIN_POSTS &&
-      cooled("xMentions", agent, now, TRIGGER_COOLDOWN_MS, skipped)
+      cooled("xMentions", agent, now, TRIGGER_COOLDOWN_MS, skipped, options.ignoreCooldowns)
     ) {
       fired.push("xMentions");
     }
@@ -128,35 +129,35 @@ export function evaluateTriggers(
     } else if (
       options.x.breakingPost !== null &&
       options.x.breakingPost.id !== agent.lastBreakingPostId &&
-      cooled("breakingNews", agent, now, TRIGGER_COOLDOWN_MS, skipped)
+      cooled("breakingNews", agent, now, TRIGGER_COOLDOWN_MS, skipped, options.ignoreCooldowns)
     ) {
       fired.push("breakingNews");
     }
   }
   if (watch.oddsCross) {
     if (crossedLevel(snapshot.yesCents24hAgo, snapshot.yesCents, watch.oddsCrossLevel)) {
-      if (cooled("oddsCross", agent, now, TRIGGER_COOLDOWN_MS, skipped)) fired.push("oddsCross");
+      if (cooled("oddsCross", agent, now, TRIGGER_COOLDOWN_MS, skipped, options.ignoreCooldowns)) fired.push("oddsCross");
     }
   }
   if (watch.endingSoon) {
     const remaining = snapshot.expiryDate === null ? Number.NaN : Date.parse(snapshot.expiryDate) - now.getTime();
     if (Number.isFinite(remaining) && remaining > 0 && remaining <= ENDING_SOON_MS) {
-      if (cooled("endingSoon", agent, now, ENDING_SOON_MS, skipped)) fired.push("endingSoon");
+      if (cooled("endingSoon", agent, now, ENDING_SOON_MS, skipped, options.ignoreCooldowns)) fired.push("endingSoon");
     }
   }
 
   if (agent.writeBriefs) {
     const briefs = agent.briefTriggers;
     if (briefs.oddsMove10 && points !== null && Math.abs(points) >= BRIEF_ODDS_MOVE_POINTS) {
-      if (cooled("briefOddsMove10", agent, now, TRIGGER_COOLDOWN_MS, skipped)) fired.push("briefOddsMove10");
+      if (cooled("briefOddsMove10", agent, now, TRIGGER_COOLDOWN_MS, skipped, options.ignoreCooldowns)) fired.push("briefOddsMove10");
     }
     if (briefs.everyMonday && isMondayInZone(now, options.timeZone)) {
-      if (cooled("briefMonday", agent, now, 6 * DAY_MS, skipped)) fired.push("briefMonday");
+      if (cooled("briefMonday", agent, now, 6 * DAY_MS, skipped, options.ignoreCooldowns)) fired.push("briefMonday");
     }
     if (briefs.endingSoon) {
       const remaining = snapshot.expiryDate === null ? Number.NaN : Date.parse(snapshot.expiryDate) - now.getTime();
       if (Number.isFinite(remaining) && remaining > 0 && remaining <= ENDING_SOON_MS) {
-        if (cooled("briefEndingSoon", agent, now, ENDING_SOON_MS, skipped)) fired.push("briefEndingSoon");
+        if (cooled("briefEndingSoon", agent, now, ENDING_SOON_MS, skipped, options.ignoreCooldowns)) fired.push("briefEndingSoon");
       }
     }
   }

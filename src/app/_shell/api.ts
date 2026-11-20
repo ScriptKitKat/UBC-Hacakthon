@@ -160,11 +160,11 @@ export async function runAgents(): Promise<boolean> {
   return agentCycleReportSchema.safeParse(await response.json()).success;
 }
 
-export async function runAgent(agentId: string) {
+export async function runAgent(agentId: string, review = false) {
   const response = await fetch("/api/agents/run", {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ agentId }),
+    body: JSON.stringify({ agentId, ...(review ? { review: true } : {}) }),
   });
   if (!response.ok) return undefined;
   const parsed = agentCycleReportSchema.safeParse(await response.json());

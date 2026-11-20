@@ -4,12 +4,27 @@ import { formatPercent } from "@/shared";
 import type { MarketSnapshot, TriggerResult } from "./triggers";
 import { hoursToExpiry, volumeMultiple } from "./triggers";
 import { PERSONALITY_COPY, type AgentRecord, type MessageSource, type TriggerId } from "./types";
+import { clampDecision, ruleDecision } from "./decide";
+import type { AgentDecision } from "./decide";
 
 const MESSAGE_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: { message: { type: "string" } },
   required: ["message"],
+} as const;
+
+const REVIEW_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    message: { type: "string" },
+    action: { type: "string", enum: ["bet", "skip"] },
+    side: { type: "string", enum: ["yes", "no"] },
+    amountUsd: { type: "number" },
+    reason: { type: "string" },
+  },
+  required: ["message", "action", "reason"],
 } as const;
 
 function triggerLine(id: TriggerId, result: TriggerResult, snapshot: MarketSnapshot, now: Date): string {
@@ -88,4 +103,54 @@ export async function composeMessage(options: {
   const message = typeof body === "object" && body !== null && "message" in body && typeof body.message === "string" ? body.message.trim() : "";
   if (message === "") return { text: fallback, source: "template" };
   return { text: message, source: "llm" };
+}
+
+export async function composeDecision(options: {
+  readonly agent: AgentRecord;
+  readonly result: TriggerResult;
+  readonly snapshot: MarketSnapshot;
+  readonly now: Date;
+  readonly capCents: number;
+  readonly grok: GrokSettings;
+  readonly claude: ClaudeSettings;
+  readonly fetch: typeof fetch;
+}): Promise<{ readonly text: string; readonly source: MessageSource; readonly decision: AgentDecision }> {
+  const fallbackMessage = templateMessage(options.agent, options.result, options.snapshot, options.now);
+  const fallbackDecision = ruleDecision(options.result.todayPoints, options.capCents);
+  const custom = options.agent.instructions.trim();
+  const volume = options.snapshot.volume24h === null ? "unavailable" : String(options.snapshot.volume24h);
+  const expiry = options.snapshot.expiryDate ?? "unavailable";
+  const facts = options.result.fired.map((id) => triggerLine(id, options.result, options.snapshot, options.now)).join(" ");
+  const prompt = {
+    fetch: options.fetch,
+    schemaName: "agent_review",
+    schema: REVIEW_SCHEMA,
+    system: `You are ${options.agent.name}, a prediction-market desk agent. ${PERSONALITY_COPY[options.agent.personality].voice} Decide whether to bet or skip based only on the provided facts. Never exceed the maximum amount. Keep the message concise and never claim a bet was placed.`,
+    user: [
+      `Market: ${options.snapshot.eventTitle ?? options.agent.eventTicker}`,
+      `Current Yes price: ${formatPercent(options.snapshot.yesCents)}`,
+      `24-hour Yes price move: ${options.result.todayPoints === null ? "unavailable" : `${String(options.result.todayPoints)} points`}`,
+      `24-hour volume: ${volume}`,
+      `End time: ${expiry}`,
+      `Fired triggers and X signals: ${facts || "manual or scheduled review"}`,
+      `Maximum allowed amount: $${(options.capCents / 100).toFixed(2)}`,
+      `Extra instructions: ${custom || "none"}`,
+      "Return a bet only when the facts justify it; include side, amountUsd, and a short reason. Otherwise return action skip with a short reason.",
+    ].join("\n"),
+  };
+  let body: unknown;
+  try {
+    if (options.agent.model === "grok" && options.grok.apiKey !== undefined) body = await requestGrokJson({ ...prompt, settings: options.grok });
+    else if (options.agent.model === "claude" && options.claude.apiKey !== undefined) body = await requestClaudeJson({ ...prompt, settings: options.claude });
+    else return { text: fallbackMessage, source: "template", decision: fallbackDecision };
+  } catch {
+    return { text: fallbackMessage, source: "template", decision: fallbackDecision };
+  }
+  const value = typeof body === "object" && body !== null ? body as Record<string, unknown> : undefined;
+  const message = typeof value?.message === "string" && value.message.trim() !== "" ? value.message.trim() : fallbackMessage;
+  return {
+    text: message,
+    source: message === fallbackMessage ? "template" : "llm",
+    decision: value === undefined ? fallbackDecision : clampDecision(value, options.capCents),
+  };
 }

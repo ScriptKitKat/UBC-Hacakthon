@@ -31,6 +31,7 @@ export type AgentDraft = {
   readonly permission?: AgentRecord["permission"];
   readonly writeBriefs?: boolean;
   readonly briefTriggers?: AgentRecord["briefTriggers"];
+  readonly schedule?: AgentRecord["schedule"];
 };
 
 export type AgentPatch = Partial<Omit<AgentDraft, "eventTicker" | "instrumentSymbol">> & {
@@ -53,6 +54,7 @@ export interface AgentStore {
     readonly spentDeltaCents?: number;
     readonly lastTriggerAt?: Readonly<Record<string, string>>;
     readonly activity?: readonly AgentActivity[];
+    readonly lastRoutineAt?: string;
   }) => Promise<AgentRecord | undefined>;
 }
 
@@ -81,6 +83,8 @@ export function defaultAgent(draft: AgentDraft, now: Date): AgentRecord {
     spentTodayCents: 0,
     spendDay: utcDay(now),
     lastTriggerAt: {},
+    schedule: draft.schedule ?? { kind: "none" },
+    lastRoutineAt: draft.schedule === undefined || draft.schedule.kind === "none" ? null : at,
     activity: [],
   };
 }
@@ -128,6 +132,7 @@ export function openAgentStore(options: { readonly fs: FileSystem; readonly path
         const agents = await load();
         const current = agents.find((agent) => agent.id === id);
         if (current === undefined) return undefined;
+        const at = now().toISOString();
         const next: AgentRecord = {
           ...current,
           ...patch,
@@ -137,7 +142,10 @@ export function openAgentStore(options: { readonly fs: FileSystem; readonly path
           name: patch.name?.trim() || current.name,
           triggers: patch.triggers ?? current.triggers,
           briefTriggers: patch.briefTriggers ?? current.briefTriggers,
-          updatedAt: now().toISOString(),
+          lastTriggerAt: patch.permission !== undefined && patch.permission !== current.permission ? {} : current.lastTriggerAt,
+          schedule: patch.schedule ?? current.schedule,
+          lastRoutineAt: patch.schedule === undefined ? current.lastRoutineAt : at,
+          updatedAt: at,
         };
         await write(replace(agents, next));
         return next;
@@ -184,6 +192,7 @@ export function openAgentStore(options: { readonly fs: FileSystem; readonly path
           lastMessage: update.lastMessage === undefined ? current.lastMessage : update.lastMessage,
           lastMessageSource: update.lastMessageSource === undefined ? current.lastMessageSource : update.lastMessageSource,
           lastBreakingPostId: update.lastBreakingPostId ?? current.lastBreakingPostId,
+          lastRoutineAt: update.lastRoutineAt ?? current.lastRoutineAt,
           spentTodayCents: spent,
           spendDay: rolled.spendDay,
           lastTriggerAt: { ...current.lastTriggerAt, ...(update.lastTriggerAt ?? {}) },

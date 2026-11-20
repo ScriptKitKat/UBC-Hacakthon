@@ -43,8 +43,8 @@ const PERMISSIONS: readonly {
   description: string;
 }[] = [
   { value: "watch", label: "Watch and tell me", description: "Only sends messages when something happens." },
-  { value: "suggest", label: "Suggest bets, I approve", description: "Proposes bets for you to approve in Portfolio." },
-  { value: "autonomous", label: "Bet on its own within limits", description: "Places bets within your daily and per-bet limits." },
+  { value: "suggest", label: "Suggest bets, I approve", description: "Proposes bets; you approve them here on the Agents page." },
+  { value: "autonomous", label: "Bet on its own within limits", description: "Places bets within your limits." },
 ];
 
 const BETS: readonly AgentRecordView["maxPerBetCents"][] = [100, 200, 500];
@@ -298,6 +298,54 @@ export function AgentSetup(props: SetupProps) {
         </div>
       </div>
 
+      <div className={styles.field}>
+        <span className={styles.label}>Routine</span>
+        <div className={styles.segment}>
+          <button type="button" className={styles.seg} aria-pressed={draft.schedule.kind === "none"} disabled={busy} onClick={() => { setDraft((current) => ({ ...current, schedule: { kind: "none" } })); }}>None</button>
+          {[1, 2, 4, 6, 12].map((hours) => (
+            <button
+              key={hours}
+              type="button"
+              className={styles.seg}
+              aria-pressed={draft.schedule.kind === "every" && draft.schedule.hours === hours}
+              disabled={busy}
+              onClick={() => { setDraft((current) => ({ ...current, schedule: { kind: "every", hours: hours as 1 | 2 | 4 | 6 | 12 } })); }}
+            >
+              Every {hours} {hours === 1 ? "hour" : "hours"}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={styles.seg}
+            aria-pressed={draft.schedule.kind === "daily"}
+            disabled={busy}
+            onClick={() => {
+              const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+              setDraft((current) => ({
+                ...current,
+                schedule: current.schedule.kind === "daily"
+                  ? current.schedule
+                  : { kind: "daily", time: "09:00", timeZone },
+              }));
+            }}
+          >
+            Daily
+          </button>
+        </div>
+        {draft.schedule.kind === "every" ? <span className={styles.hint}>Reviews this market every {draft.schedule.hours} {draft.schedule.hours === 1 ? "hour" : "hours"}.</span> : null}
+        {draft.schedule.kind === "daily" ? (
+          <label className={styles.levelRow}>
+            <span className={styles.hint}>Daily at</span>
+            <input className={styles.input} type="time" value={draft.schedule.time} disabled={busy} onChange={(event) => {
+              setDraft((current) => current.schedule.kind === "daily"
+                ? { ...current, schedule: { ...current.schedule, time: event.target.value } }
+                : current);
+            }} />
+            <span className={styles.hint}>{draft.schedule.timeZone}</span>
+          </label>
+        ) : null}
+      </div>
+
       <fieldset className={styles.fieldset}>
         <legend className={styles.label}>What it&apos;s allowed to do</legend>
         <div className={styles.permissionGrid}>
@@ -311,7 +359,9 @@ export function AgentSetup(props: SetupProps) {
               onClick={() => { setDraft((current) => ({ ...current, permission: item.value })); }}
             >
               <strong>{item.label}</strong>
-              <span>{item.description}</span>
+              <span>{item.value === "autonomous"
+                ? `Places bets itself, up to ${formatBudgetCents(draft.maxPerBetCents)} each (desk auto-approve limit ${formatBudgetCents(props.view.desk.autoApproveMaxCents)}).`
+                : item.description}</span>
             </button>
           ))}
         </div>
