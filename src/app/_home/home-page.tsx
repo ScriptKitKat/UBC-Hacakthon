@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { isXUrl } from "@/shared";
 import type { HomeView } from "@/shared";
@@ -39,8 +40,8 @@ async function fillSparklines(view: HomeView): Promise<HomeView> {
 }
 
 export function HomePage({ initialView }: { readonly initialView?: HomeView } = {}) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
-  const [submitted, setSubmitted] = useState("");
   const [chip, setChip] = useState<string | undefined>(undefined);
   const [filter, setFilter] = useState("All");
   const [view, setView] = useState<HomeView | undefined>(initialView);
@@ -73,9 +74,8 @@ export function HomePage({ initialView }: { readonly initialView?: HomeView } = 
   usePolling(() => {
     const key = activeKey;
     const queryCategory = category;
-    const querySearch = submitted;
-    if (key === "All" && querySearch === "") prefetchCategories();
-    void loadHome({ sort: "moving", limit: 6, ...(querySearch ? { search: querySearch } : {}), ...(queryCategory ? { category: queryCategory } : {}) }).then(async (result) => {
+    if (key === "All") prefetchCategories();
+    void loadHome({ sort: "moving", limit: 6, ...(queryCategory ? { category: queryCategory } : {}) }).then(async (result) => {
       if (result.kind !== "ok") {
         if (requestKey.current === key) setError(result.message);
         return;
@@ -115,6 +115,10 @@ export function HomePage({ initialView }: { readonly initialView?: HomeView } = 
     setTick((value) => value + 1);
   };
 
+  const openMarkets = (text: string) => {
+    router.push(text === "" ? "/markets" : `/markets?search=${encodeURIComponent(text)}`);
+  };
+
   const onSearch = () => {
     const text = search.trim();
     setMatchMessage(null);
@@ -125,17 +129,14 @@ export function HomePage({ initialView }: { readonly initialView?: HomeView } = 
           return;
         }
         if (result.kind === "matched") {
-          setSubmitted(result.market.eventTitle);
-          setMatchMessage(`Matched to ${result.market.eventTitle} (${result.matchedBy}).`);
+          openMarkets(result.market.eventTitle);
         } else {
           setMatchMessage(result.reason);
         }
       });
       return;
     }
-    setSubmitted(text);
-    setView(undefined);
-    setTick((value) => value + 1);
+    openMarkets(text);
   };
 
   return (
@@ -202,7 +203,7 @@ export function HomePage({ initialView }: { readonly initialView?: HomeView } = 
             <MarketCardSkeletonGrid count={6} />
           </>
         ) : null}
-        {error === null && view !== undefined && markets.length === 0 ? <p className={styles.empty}>No live markets match that search right now.</p> : null}
+        {error === null && view !== undefined && markets.length === 0 ? <p className={styles.empty}>No live markets right now.</p> : null}
         {markets.length > 0 ? (
           <MarketCardGrid>
             {markets.map((card) => (

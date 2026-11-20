@@ -40,10 +40,10 @@ function SearchIcon() {
   );
 }
 
-export function BrowsePage({ initialPage }: { readonly initialPage?: BrowsePage } = {}) {
+export function BrowsePage({ initialPage, initialSearch = "" }: { readonly initialPage?: BrowsePage; readonly initialSearch?: string } = {}) {
   const [mode] = useViewMode();
-  const [search, setSearch] = useState("");
-  const [submitted, setSubmitted] = useState("");
+  const [search, setSearch] = useState(initialSearch);
+  const [submitted, setSubmitted] = useState(initialSearch);
   const [category, setCategory] = useState("All");
   const [sort, setSort] = useState<BrowseSort>("trending");
   const [page, setPage] = useState<BrowsePage | undefined>(initialPage);

@@ -5,18 +5,26 @@ import { Shell } from "../_shell/shell";
 
 export const dynamic = "force-dynamic";
 
-async function loadInitial(): Promise<BrowsePageData | undefined> {
+async function loadInitial(search: string): Promise<BrowsePageData | undefined> {
   const access = await getHomeServices();
   if (!access.ok) return undefined;
-  const listed = await access.catalog.browse({ sort: "trending", limit: 24, offset: 0 });
+  const listed = await access.catalog.browse({ sort: "trending", limit: 24, offset: 0, ...(search === "" ? {} : { search }) });
   return listed.ok ? listed.page : undefined;
 }
 
-export default async function MarketsRoute() {
-  const initialPage = await loadInitial();
+export default async function MarketsRoute({
+  searchParams,
+}: {
+  readonly searchParams?: Promise<{ readonly search?: string }>;
+}) {
+  const params = searchParams === undefined ? {} : await searchParams;
+  const search = params.search?.trim() ?? "";
+  const initialPage = await loadInitial(search);
   return (
     <Shell>
-      {initialPage === undefined ? <BrowsePage /> : <BrowsePage initialPage={initialPage} />}
+      {initialPage === undefined
+        ? <BrowsePage initialSearch={search} />
+        : <BrowsePage initialPage={initialPage} initialSearch={search} />}
     </Shell>
   );
 }
