@@ -1,13 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "News-to-Trade Desk for X",
+  "name": "Predictle for X",
   "version": "0.1.0",
   "description": "Shows a live Gemini prediction market under news posts on X, matched by Grok, and lets you trade it from the timeline.",
   "icons": { "16": "icons/icon-16.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" },
   "permissions": ["storage"],
   "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
   "optional_host_permissions": ["https://*/*", "http://*/*"],
-  "action": { "default_popup": "popup.html", "default_title": "News-to-Trade Desk" },
+  "action": { "default_popup": "popup.html", "default_title": "Predictle" },
   "background": { "service_worker": "background.js", "type": "module" },
   "content_scripts": [
     {

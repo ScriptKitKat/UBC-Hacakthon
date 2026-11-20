@@ -20,8 +20,8 @@ export function Shell({ children }: { readonly children: ReactNode }) {
     <div className={styles.app}>
       <nav className={styles.sidebar} aria-label="Main">
         <Link href="/" className={styles.brand}>
-          <span className={styles.mark}>PD</span>
-          <span className={styles.wordmark}>Prediction Desk</span>
+          <img className={styles.mark} src="/logo.svg" alt="" />
+          <span className={styles.wordmark}>Predictle</span>
         </Link>
         {LINKS.map((link) => {
           const Icon = link.icon;
