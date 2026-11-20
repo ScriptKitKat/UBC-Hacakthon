@@ -19,7 +19,7 @@ import { flowFromTrades } from "./flow";
 import { chartBands, indicatorRows } from "./indicators";
 import { strikeLadder } from "./ladder";
 import { positionFor } from "./position";
-import { buildSpot, iconBackground, spotPair, tickerAsset } from "./spot";
+import { buildSpot, spotPair, tickerAsset } from "./spot";
 import { buildStats } from "./stats";
 import { INDICATOR_CANDLE, MIN_TRADED_CANDLES, STATS_CANDLE, TIMEFRAME_PLANS, defaultProTimeframe, pickReadableTimeframe, planChartCandles, tradedCount } from "./timeframes";
 
@@ -78,7 +78,8 @@ function marketView(event: MarketEvent, contract: MarketContract, nowMs: number)
     eventStatus: event.status,
     marketState: contract.marketState,
     asset: tickerAsset(event.ticker) ?? null,
-    iconBackground: iconBackground(event),
+    imageUrl: event.imageUrl ?? null,
+    volume: event.volume,
     yesAskCents: contract.prices.buyYesCents,
     noAskCents: contract.prices.buyNoCents,
     yesBidCents: contract.prices.sellYesCents ?? contract.prices.bestBidCents,

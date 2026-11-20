@@ -42,7 +42,6 @@
 
 .hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
-
 .tabs { display: flex; gap: 18px; margin-top: 4px; }
 
 .tab {
@@ -83,22 +82,6 @@
 
 .subhead { margin: 0 0 16px; font-size: 13px; color: #8a8a93; }
 
-.agentLink {
-  height: 36px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #5a5a62;
-  font-size: 13px;
-}
-
-.agentLink[data-status="watching"] { color: #3ddc97; }
-
-.agentLink[data-status="paused"] { color: #f5a524; }
-
-
 .body { padding: 20px 28px 48px; display: flex; flex-direction: column; gap: 20px; }
 
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
@@ -131,86 +114,6 @@
 }
 
 .sort select { border: 0; background: transparent; color: inherit; font: inherit; }
-
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-
-.card {
-  min-width: 0;
-  border: 1px solid #1f1f1f;
-  border-radius: 14px;
-  background: #111111;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.cardHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: #8a8a93; }
-
-.cardTitle {
-  color: #ededed;
-  text-decoration: none;
-  font-weight: 500;
-  font-size: 15px;
-  letter-spacing: -0.01em;
-  line-height: 1.35;
-}
-
-.cardTitle:hover, .cardTitle:focus-visible { text-decoration: underline; text-underline-offset: 2px; }
-
-.cardTitle:focus-visible { outline: 2px solid rgb(26, 107, 255); outline-offset: 2px; }
-
-.oddsRow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-
-.oddsBlock { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-
-.odds { font-family: var(--mono); font-size: 24px; font-weight: 500; letter-spacing: -0.02em; }
-
-.delta { font-family: var(--mono); font-size: 13px; color: #8a8a93; white-space: nowrap; }
-
-.delta[data-trend="up"] { color: #3ddc97; }
-
-.delta[data-trend="down"] { color: #ff9a7a; }
-
-.chart { width: 110px; height: 34px; flex: 0 0 auto; }
-
-.chart svg { width: 100%; height: 100%; display: block; overflow: visible; }
-
-.line { fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; stroke: #8a8a93; }
-
-.line[data-trend="up"] { stroke: #3ddc97; }
-
-.line[data-trend="down"] { stroke: #ff9a7a; }
-
-.saved { font-size: 12px; color: #8a8a93; }
-
-.savedValue { font-family: var(--mono); color: #d4d4d8; }
-
-.foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-top: 12px;
-  margin-top: auto;
-  border-top: 1px solid #1a1a1a;
-}
-
-.open {
-  height: 36px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 12px;
-  border: 1px solid #262626;
-  border-radius: 8px;
-  color: #ededed;
-  text-decoration: none;
-  font-size: 13px;
-}
-
-.open:hover, .open:focus-visible { background: #1a1a1a; }
-
-.open:focus-visible { outline: 2px solid rgb(26, 107, 255); outline-offset: 2px; }
 
 .status { color: #a1a1aa; text-align: center; padding: 24px 8px; }
 

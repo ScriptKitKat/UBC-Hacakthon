@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import type { AgentRecordView, AgentsView, WatchlistCard } from "@/shared";
-import { buildSparkline, formatBudgetCents, formatEndsOn, formatPercent, friendlyEventTitle } from "@/shared";
+import { formatBudgetCents, friendlyEventTitle } from "@/shared";
+import { MarketCard } from "../_market-card/market-card";
+import { watchlistCardModel } from "../_market-card/model";
+import { useViewMode } from "../_research/use-view-mode";
 import { deleteAgent, saveAgent } from "../_shell/api";
 import styles from "./agents.module.css";
-
-const CHART_WIDTH = 90;
-const CHART_HEIGHT = 28;
 
 const MODELS: readonly { value: AgentRecordView["model"]; label: string }[] = [
   { value: "grok", label: "Grok" },
@@ -68,6 +68,8 @@ export function AgentsPanel({
   readonly onView: (view: AgentsView) => void;
 }) {
   const agents = view?.agents ?? [];
+  const [mode] = useViewMode();
+  const beginner = mode === "beginner";
   const selectedCard = cards.find((card) => card.eventTicker === selectedTicker) ?? cards[0];
   const selected = selectedCard === undefined ? undefined : agentFor(agents, selectedCard.eventTicker);
   const maxBudget = Math.max(100, view?.desk.dailyCapCents ?? 2000);
@@ -78,36 +80,27 @@ export function AgentsPanel({
 
   return (
     <div className={styles.layout}>
-      <div className={styles.list} role="list">
+      <div className={styles.list}>
         {cards.map((card) => {
-          const agent = agentFor(agents, card.eventTicker);
-          const line = statusLine(agent);
-          const title = friendlyEventTitle(card.eventTitle, card.expiryDate);
-          const sparkline = buildSparkline(card.sparkline, CHART_WIDTH, CHART_HEIGHT, 2);
-          const ends = formatEndsOn(card.expiryDate);
+          const line = statusLine(agentFor(agents, card.eventTicker));
+          const isSelected = selectedCard?.eventTicker === card.eventTicker;
           return (
-            <button
+            <MarketCard
               key={card.eventTicker}
-              type="button"
-              className={styles.market}
-              role="listitem"
-              data-selected={selectedCard?.eventTicker === card.eventTicker}
-              onClick={() => { onSelect(card.eventTicker); }}
-            >
-              <span className={styles.meta}>{[card.categoryLabel, ends].filter(Boolean).join(" · ")}</span>
-              <p className={styles.marketTitle}>{title}</p>
-              <span className={styles.agentLine} data-status={line.status}>{line.text}</span>
-              <div className={styles.oddsRow}>
-                <span className={styles.odds}>{formatPercent(card.yesCents)}</span>
-                {sparkline !== undefined ? (
-                  <div className={styles.chart}>
-                    <svg viewBox={`0 0 ${String(CHART_WIDTH)} ${String(CHART_HEIGHT)}`} role="img" aria-label="Yes price history">
-                      <path className={styles.line} d={sparkline.line} data-trend={sparkline.trend} />
-                    </svg>
-                  </div>
-                ) : null}
-              </div>
-            </button>
+              model={watchlistCardModel(card, beginner)}
+              selected={isSelected}
+              footStart={(
+                <button
+                  type="button"
+                  className={styles.agentLine}
+                  data-status={line.status}
+                  aria-pressed={isSelected}
+                  onClick={() => { onSelect(card.eventTicker); }}
+                >
+                  {line.text}
+                </button>
+              )}
+            />
           );
         })}
       </div>

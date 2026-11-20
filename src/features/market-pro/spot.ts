@@ -2,17 +2,6 @@ import type { MarketEvent } from "@/features/markets";
 import type { ProSpot } from "@/shared";
 
 const CRYPTO = "crypto";
-const ICON_COLORS: Readonly<Record<string, string>> = {
-  BTC: "#F7931A",
-  ETH: "#8FA2D9",
-  SOL: "#9B7BFF",
-  XRP: "#2A2A2A",
-  HYPE: "#32D9C3",
-  ZEC: "#ECB64A",
-  WTI: "#C27A3A",
-  BRENT: "#C27A3A",
-};
-
 export function tickerAsset(eventTicker: string): string | undefined {
   const match = /^([A-Z]+)/u.exec(eventTicker);
   return match?.[1];
@@ -24,12 +13,6 @@ export function isCryptoEvent(event: MarketEvent): boolean {
 
 export function spotPair(asset: string): string {
   return `${asset.toLowerCase()}usd`;
-}
-
-export function iconBackground(event: MarketEvent): string {
-  if (event.category.trim().toLowerCase() === "sports") return "#2A2A2A";
-  const asset = tickerAsset(event.ticker);
-  return ICON_COLORS[asset ?? ""] ?? "#2A2A2A";
 }
 
 export function currentStrike(event: MarketEvent, symbol: string): number | null {

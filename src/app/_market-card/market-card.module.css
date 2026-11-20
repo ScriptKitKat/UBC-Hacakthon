@@ -1,0 +1,120 @@
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+
+.card {
+  --mc-surface: #12171c;
+  --mc-border: #232b33;
+  --mc-border-strong: #3a4652;
+  --mc-text: #f2f4f6;
+  --mc-muted: #8c98a4;
+  --mc-yes: #3ddc97;
+  --mc-no: #ff9a7a;
+  --mc-focus: rgb(26, 107, 255);
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--mc-border);
+  border-radius: 16px;
+  background: var(--mc-surface);
+  color: var(--mc-text);
+  font-variant-numeric: tabular-nums;
+}
+.card:hover { border-color: var(--mc-border-strong); }
+.card[data-selected="true"] { border-color: var(--mc-text); }
+
+.head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 20px; }
+.category {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mc-muted);
+}
+.headEnd { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: #ff8a8a; }
+.liveDot { width: 7px; height: 7px; border-radius: 50%; background: #ff6b6b; }
+.change { font-family: var(--mono); font-size: 12px; font-weight: 500; white-space: nowrap; color: var(--mc-muted); }
+.change[data-trend="up"] { color: var(--mc-yes); }
+.change[data-trend="down"] { color: var(--mc-no); }
+
+.titleRow { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.icon {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  box-sizing: border-box;
+  border: 1px solid var(--mc-border);
+  border-radius: 10px;
+  background: #1c232a;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--mc-text);
+}
+.title {
+  min-width: 0;
+  color: var(--mc-text);
+  text-decoration: none;
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.title:hover { text-decoration: underline; text-underline-offset: 3px; }
+.title:focus-visible { outline: 2px solid var(--mc-focus); outline-offset: 2px; border-radius: 4px; }
+
+.details { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.detail { margin: 0; font-size: 14px; line-height: 18px; font-weight: 500; color: var(--mc-text); overflow-wrap: anywhere; }
+.closes { margin: 0; font-size: 12px; line-height: 16px; color: var(--mc-muted); }
+
+.outcomes { display: flex; flex-direction: column; gap: 8px; margin-top: auto; padding-top: 4px; }
+.outcome { display: flex; align-items: center; gap: 12px; min-width: 0; color: inherit; text-decoration: none; border-radius: 22px; }
+.outcome:hover .pill { border-color: var(--mc-text); }
+.outcome:focus-visible { outline: 2px solid var(--mc-focus); outline-offset: 2px; }
+.outcomeLabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
+.payout { font-family: var(--mono); font-size: 12px; white-space: nowrap; color: var(--mc-yes); }
+.pill {
+  flex: 0 0 88px;
+  height: 44px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--mc-border-strong);
+  border-radius: 22px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--mc-border);
+  font-size: 12px;
+  color: var(--mc-muted);
+}
+.footStart, .footEnd { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+.skeleton:hover { border-color: var(--mc-border); }
+.bone { border-radius: 6px; background: linear-gradient(90deg, #1a2026 0%, #242c34 50%, #1a2026 100%); background-size: 200% 100%; animation: shimmer 1.2s ease-in-out infinite; }
+.boneCategory { width: 30%; height: 12px; }
+.boneIcon { flex: 0 0 40px; height: 40px; border-radius: 10px; }
+.boneTitle { flex: 1; height: 40px; }
+.boneLine { width: 55%; height: 12px; }
+.bonePill { height: 44px; border-radius: 22px; }
+@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .bone { animation: none; } }

@@ -5,6 +5,7 @@ import {
   formatPayoutFromAsk,
   formatVolumeUsd,
   friendlyEventTitle,
+  marketSearchTerm,
   uniqueByKey,
 } from "@/shared";
 import type { BrowseCard, BrowsePage, BrowseRow, BrowseSort } from "@/shared";
@@ -26,17 +27,6 @@ const KNOWN_TABS: readonly { id: string; label: string; live: boolean }[] = [
   { id: "Culture", label: "Culture", live: false },
   { id: "Commodities", label: "Commodities", live: false },
 ];
-
-const ICON_COLORS: Readonly<Record<string, string>> = {
-  BTC: "#F7931A",
-  ETH: "#8FA2D9",
-  SOL: "#9B7BFF",
-  XRP: "#2A2A2A",
-  HYPE: "#32D9C3",
-  ZEC: "#ECB64A",
-  WTI: "#C27A3A",
-  BRENT: "#C27A3A",
-};
 
 export interface BrowseDeps {
   readonly markets: Pick<GeminiMarketsClient, "searchEvents" | "candles" | "pubticker">;
@@ -105,14 +95,11 @@ function pricedYes(contract: MarketContract): number | null {
   return yesAsk(contract) ?? contract.prices.lastTradeCents;
 }
 
-function rowFor(contract: MarketContract, kind: BrowseCard["kind"]): BrowseRow {
+function rowFor(contract: MarketContract): BrowseRow {
   const ask = yesAsk(contract);
-  const sports = kind === "sports";
   return {
     instrumentSymbol: contract.instrumentSymbol,
     label: contract.label,
-    short: sports ? contract.abbreviatedName ?? null : null,
-    color: sports ? contract.color ?? null : null,
     yesCents: pricedYes(contract),
     payoutBeginner: formatPayoutFromAsk(ask, true),
     payoutPro: formatPayoutFromAsk(ask, false),
@@ -215,11 +202,11 @@ function toCard(event: MarketEvent, now: Date, spots: Map<string, number>, deps:
   const lead = leadContract(event, selected);
   if (lead === undefined) return undefined;
   const kind = kindOf(event);
-  const letterSource = friendlyEventTitle(event.title, event.expiryDate ?? lead.expiryDate, now, VIEW_TZ);
+  const displayTitle = friendlyEventTitle(event.title, event.expiryDate ?? lead.expiryDate, now, VIEW_TZ);
   return {
     eventTicker: event.ticker,
     eventTitle: event.title,
-    displayTitle: letterSource,
+    displayTitle,
     instrumentSymbol: lead.instrumentSymbol,
     href: researchHref(lead.instrumentSymbol),
     category: event.category,
@@ -228,12 +215,10 @@ function toCard(event: MarketEvent, now: Date, spots: Map<string, number>, deps:
     isLive: event.isLive === true,
     when: event.isLive === true ? null : formatMarketWhen(event.expiryDate ?? lead.expiryDate, now, VIEW_TZ),
     spotLabel: kind === "crypto" && spot !== undefined ? formatSpot(spot) : null,
-    iconLetter: kind === "sports" ? null : (letterSource[0]?.toUpperCase() ?? event.category[0]?.toUpperCase() ?? "M"),
-    iconBackground: kind === "sports" ? null : ICON_COLORS[asset ?? ""] ?? "#2A2A2A",
+    imageUrl: event.imageUrl ?? null,
     volume: event.volume24h ?? event.volume,
     volumeLabel: event.volume24h !== null || event.volume !== null ? formatVolumeUsd(event.volume24h ?? event.volume ?? 0) : null,
-    moreCount: Math.max(0, event.contracts.length - selected.length),
-    rows: selected.map((contract) => rowFor(contract, kind)),
+    rows: selected.map(rowFor),
     changePercent: changeFor(deps, lead.instrumentSymbol, now.getTime()),
     createdAt: event.createdAt ?? null,
     expiryDate: event.expiryDate ?? lead.expiryDate,
@@ -256,7 +241,7 @@ export async function listBrowse(deps: BrowseDeps, query: BrowseQuery = {}): Pro
       status: "active",
       limit: FETCH_SIZE,
       offset: pageOffset,
-      ...(query.search === undefined || query.search.trim() === "" ? {} : { search: query.search.trim() }),
+      ...(query.search === undefined || query.search.trim() === "" ? {} : { search: marketSearchTerm(query.search) }),
       ...(geminiCategory === undefined ? {} : { category: geminiCategory }),
     });
     if (!searched.ok) return { ok: false, reason: searched.error.kind === "busy" ? "busy" : "unavailable" };

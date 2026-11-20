@@ -4,7 +4,7 @@
   flex-direction: column;
   align-items: center;
   gap: 20px;
-  padding: 40px 24px 72px;
+  padding: 96px 24px 72px;
 }
 .title {
   margin: 0;
@@ -112,58 +112,6 @@
   font-size: 13px;
   font-weight: 500;
 }
-.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-@media (max-width: 1100px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
-.card {
-  min-width: 0;
-  border: 1px solid #1f1f1f;
-  border-radius: 12px;
-  background: #111111;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.meta { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: #8a8a93; }
-.question {
-  color: #ededed;
-  text-decoration: none;
-  font-weight: 500;
-  font-size: 15px;
-  letter-spacing: -0.01em;
-  line-height: 1.35;
-}
-.oddsRow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.oddsMain { display: flex; align-items: baseline; gap: 8px; }
-.odds { font-family: "Geist Mono", ui-monospace, monospace; font-size: 24px; font-weight: 500; letter-spacing: -0.02em; }
-.delta { font-family: "Geist Mono", ui-monospace, monospace; font-size: 13px; }
-.up { color: #3ddc97; }
-.down { color: #ff9a7a; }
-.flat { color: #8a8a93; }
-.plain { font-size: 12px; color: #a1a1aa; margin-top: 2px; }
-.pro { font-size: 12px; color: #a1a1aa; margin-top: 2px; font-family: "Geist Mono", ui-monospace, monospace; }
-.actions { display: flex; gap: 8px; }
-.yes, .no, .open {
-  height: 44px;
-  border-radius: 8px;
-  font-weight: 500;
-  font-size: 13px;
-}
-.yes, .no { flex: 1; }
-.yes { border: 1px solid #1e5a43; background: #0f2a20; color: #3ddc97; }
-.no { border: 1px solid #6b3020; background: #2a140d; color: #ff9a7a; }
-.open {
-  width: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #262626;
-  color: #a1a1aa;
-  text-decoration: none;
-  background: transparent;
-}
-.yes:disabled, .no:disabled { opacity: 0.45; cursor: not-allowed; }
 .status { font-size: 12px; color: #a1a1aa; }
 .error, .empty { color: #a1a1aa; text-align: center; padding: 24px 8px; }
 .footer { display: flex; justify-content: center; padding-top: 12px; gap: 16px; flex-wrap: wrap; }
@@ -230,9 +178,3 @@
 .briefItem a { color: #ededed; text-decoration: none; font-weight: 500; }
 .briefMeta { color: #a1a1aa; font-size: 13px; }
 .activityWrap { padding: 0 8px 32px; }
-
-.skeletonCard { min-width: 0; border: 1px solid #1f1f1f; border-radius: 16px; background: #111111; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 150px; }
-.skeletonLine { height: 12px; border-radius: 6px; background: linear-gradient(90deg, #1a1a1a 0%, #242424 50%, #1a1a1a 100%); background-size: 200% 100%; animation: shimmer 1.2s ease-in-out infinite; }
-.skeletonTitle { width: 72%; height: 16px; }
-.skeletonChart { height: 36px; border-radius: 8px; }
-@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }

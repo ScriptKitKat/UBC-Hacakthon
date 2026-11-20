@@ -4,17 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { AgentsView, WatchlistCard, WatchlistView } from "@/shared";
-import { buildSparkline, changeTrend, formatBudgetCents, formatPercent, friendlyEventTitle } from "@/shared";
+import { formatBudgetCents } from "@/shared";
 import { usePolling } from "../_desk/use-polling";
-import { loadAgents, loadWatchlistCards, saveAgent } from "../_shell/api";
-import { AgentsPanel, agentFor, statusLine } from "./agents-panel";
-import { StarButton } from "./star-button";
+import { loadAgents, loadWatchlistCards } from "../_shell/api";
+import { AgentsPanel } from "./agents-panel";
+import { MarketCard, MarketCardGrid } from "../_market-card/market-card";
+import { watchlistCardModel } from "../_market-card/model";
+import { useViewMode } from "../_research/use-view-mode";
 import {
-  endsMeta,
   filterWatchlist,
-  savedAtLabel,
   sortWatchlist,
-  todayChangeLabel,
   type WatchlistFilter,
   type WatchlistSort,
 } from "./query";
@@ -22,8 +21,6 @@ import { useWatchlist } from "./use-watchlist";
 import styles from "./watchlist.module.css";
 
 const POLL_MS = 30_000;
-const CHART_WIDTH = 110;
-const CHART_HEIGHT = 34;
 const FILTERS: readonly { value: WatchlistFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "moving", label: "Moving" },
@@ -45,59 +42,6 @@ function SearchIcon() {
   );
 }
 
-function WatchlistPreview({
-  card,
-  agentText,
-  agentStatus,
-  onToggle,
-  onAgent,
-}: {
-  readonly card: WatchlistCard;
-  readonly agentText: string;
-  readonly agentStatus: "watching" | "paused" | "none";
-  readonly onToggle: () => void;
-  readonly onAgent: () => void;
-}) {
-  const title = friendlyEventTitle(card.eventTitle, card.expiryDate);
-  const sparkline = buildSparkline(card.sparkline, CHART_WIDTH, CHART_HEIGHT, 2);
-  const today = todayChangeLabel(card.todayPoints);
-  const trend = sparkline?.trend ?? changeTrend(card.todayPoints);
-  const saved = savedAtLabel(card);
-  const savedParts = saved === null ? null : saved.split(" · ");
-  return (
-    <article className={styles.card} aria-label={title}>
-      <div className={styles.cardHead}>
-        <span>{endsMeta(card)}</span>
-        <StarButton pressed onToggle={onToggle} label="Remove from watchlist" />
-      </div>
-      <Link href={card.href} className={styles.cardTitle}>{title}</Link>
-      <div className={styles.oddsRow}>
-        <div className={styles.oddsBlock}>
-          <span className={styles.odds}>{formatPercent(card.yesCents)}</span>
-          {today !== null ? <span className={styles.delta} data-trend={trend}>{today}</span> : null}
-        </div>
-        {sparkline !== undefined ? (
-          <div className={styles.chart}>
-            <svg viewBox={`0 0 ${String(CHART_WIDTH)} ${String(CHART_HEIGHT)}`} role="img" aria-label="Yes price history">
-              <path className={styles.line} d={sparkline.line} data-trend={sparkline.trend} />
-            </svg>
-          </div>
-        ) : null}
-      </div>
-      {savedParts !== null ? (
-        <div className={styles.saved}>
-          Saved at <span className={styles.savedValue}>{formatPercent(card.savedYesCents)}</span>
-          {savedParts[1] !== undefined ? ` · ${savedParts[1]}` : ""}
-        </div>
-      ) : null}
-      <div className={styles.foot}>
-        <button type="button" className={styles.agentLink} data-status={agentStatus} onClick={onAgent}>{agentText}</button>
-        <Link href={card.href} className={styles.open}>Open</Link>
-      </div>
-    </article>
-  );
-}
-
 export function WatchlistPage({
   initialView,
   initialTab = "markets",
@@ -109,6 +53,8 @@ export function WatchlistPage({
 } = {}) {
   const router = useRouter();
   const watchlist = useWatchlist(initialView?.symbols ?? []);
+  const [mode] = useViewMode();
+  const beginner = mode === "beginner";
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<WatchlistFilter>("all");
   const [sort, setSort] = useState<WatchlistSort>("move");
@@ -237,33 +183,23 @@ export function WatchlistPage({
               <p className={styles.status}>No saved markets match that search right now.</p>
             ) : null}
             {shown.length > 0 ? (
-              <div className={styles.grid}>
+              <MarketCardGrid>
                 {shown.map((card) => {
-                  const agent = agentFor(agentsView?.agents ?? [], card.eventTicker);
-                  const line = statusLine(agent);
                   return (
-                    <WatchlistPreview
+                    <MarketCard
                       key={card.eventTicker}
-                      card={card}
-                      agentText={line.text}
-                      agentStatus={line.status}
-                      onToggle={() => {
-                        void watchlist.toggle({ eventTicker: card.eventTicker, instrumentSymbol: card.instrumentSymbol, yesCents: card.yesCents });
-                      }}
-                      onAgent={() => {
-                        if (agent === undefined) {
-                          void saveAgent({ eventTicker: card.eventTicker, instrumentSymbol: card.instrumentSymbol }).then((result) => {
-                            if (result !== undefined) setAgentsView(result);
-                            openAgents(card.eventTicker);
-                          });
-                          return;
-                        }
-                        openAgents(card.eventTicker);
+                      model={watchlistCardModel(card, beginner)}
+                      watch={{
+                        pressed: true,
+                        label: "Remove from watchlist",
+                        onToggle: () => {
+                          void watchlist.toggle({ eventTicker: card.eventTicker, instrumentSymbol: card.instrumentSymbol, yesCents: card.yesCents });
+                        },
                       }}
                     />
                   );
                 })}
-              </div>
+              </MarketCardGrid>
             ) : null}
           </>
         ) : (

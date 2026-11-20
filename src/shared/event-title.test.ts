@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetDisplayName, formatDeadline, formatEndsOn, formatMarketWhen, friendlyEventTitle, relativePriceDay } from "./event-title";
+import { assetDisplayName, formatDeadline, marketSearchTerm, formatEndsOn, formatMarketWhen, friendlyEventTitle, relativePriceDay } from "./event-title";
 
 const TZ = "America/Chicago";
 const now = new Date("2026-11-19T16:00:00.000Z");
@@ -49,5 +49,18 @@ describe("friendly event titles", () => {
     expect(formatEndsOn("2026-12-31T22:00:00.000Z", TZ)).toBe("Dec 31");
     expect(formatEndsOn("2026-11-19T22:00:00.000Z", TZ)).toBe("Nov 19");
     expect(formatEndsOn(null, TZ)).toBeNull();
+  });
+});
+
+describe("market search terms", () => {
+  it("swaps asset names for the tickers Gemini titles use and leaves other words alone", () => {
+    expect(marketSearchTerm(" bitcoin ")).toBe("BTC");
+    expect(marketSearchTerm("Bitcoin Cash")).toBe("BCH");
+    expect(marketSearchTerm("bitcoin cash price")).toBe("BCH price");
+    expect(marketSearchTerm("will bitcoin  beat wrapped bitcoin")).toBe("will BTC beat WBTC");
+    expect(marketSearchTerm("ethereum price")).toBe("ETH price");
+    expect(marketSearchTerm("btc")).toBe("btc");
+    expect(marketSearchTerm("near")).toBe("near");
+    expect(marketSearchTerm("Fed rate cut")).toBe("Fed rate cut");
   });
 });

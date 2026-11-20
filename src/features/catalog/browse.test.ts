@@ -106,11 +106,10 @@ describe("listBrowse", () => {
     expect(crypto?.rows.map((row) => row.label)).toEqual(["$62,800 or above", "$63,000 or above"]);
     expect(crypto?.rows[0]?.payoutBeginner).toBe("$1 → $2.08");
     expect(crypto?.rows[0]?.href).toBe("/markets/GEMI-BTC2611192200-HI62800");
-    expect(crypto?.moreCount).toBe(2);
     const game = result.page.markets[1];
     expect(game?.kind).toBe("sports");
     expect(game?.categoryLabel).toBe("College Basketball");
-    expect(game?.rows.map((row) => row.short)).toEqual(["TAMU", "TCU"]);
+    expect(game?.rows).toHaveLength(2);
     const binary = result.page.markets[2];
     expect(binary?.kind).toBe("binary");
     expect(binary?.rows.map((row) => row.label)).toEqual(["Yes", "No"]);
@@ -243,6 +242,24 @@ describe("listBrowse", () => {
     expect(tickers).toContain("BTC2611192000");
     expect(tickers).toContain("ZEC2611192200");
     expect(new Set(tickers).size).toBe(tickers.length);
+  });
+
+  it("searches Gemini by ticker when the user types an asset name", async () => {
+    const searches: (string | undefined)[] = [];
+    const deps = {
+      markets: {
+        searchEvents: (query: SearchEventsQuery = {}) => {
+          searches.push(query.search);
+          return Promise.resolve({ ok: true as const, value: { events: [], total: 0 } });
+        },
+        candles: () => Promise.resolve({ ok: true as const, value: [] }),
+        pubticker: () => Promise.resolve({ ok: false as const, error: { kind: "http" as const, status: 404 } }),
+      },
+      history: createMemoryHistory(),
+      now: () => new Date("2026-11-19T16:00:00.000Z"),
+    };
+    await listBrowse(deps, { sort: "trending", search: " Bitcoin " });
+    expect(searches).toEqual(["BTC"]);
   });
 
   it("reports unavailability when Gemini search fails", async () => {

@@ -12,55 +12,17 @@
 .list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
   min-width: 0;
 }
 
-.market {
-  text-align: left;
-  border: 1px solid #1f1f1f;
-  border-radius: 14px;
-  background: #111111;
-  padding: 14px;
-  color: inherit;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-}
+.agentLine { height: 32px; padding: 0; border: 0; background: transparent; font-size: 13px; color: #8c98a4; cursor: pointer; }
 
-.market[data-selected="true"] { border-color: #3a3a3a; background: #161616; }
-
-.meta { font-size: 12px; color: #8a8a93; }
-
-.marketTitle {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  line-height: 1.35;
-  color: #ededed;
-}
-
-.agentLine { font-size: 12px; color: #5a5a62; }
+.agentLine:focus-visible { outline: 2px solid rgb(26, 107, 255); outline-offset: 2px; border-radius: 4px; }
 
 .agentLine[data-status="watching"] { color: #3ddc97; }
 
 .agentLine[data-status="paused"] { color: #f5a524; }
-
-.oddsRow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-
-.odds { font-family: var(--mono); font-size: 20px; font-weight: 500; }
-
-.chart { width: 90px; height: 28px; flex: 0 0 auto; }
-
-.chart svg { width: 100%; height: 100%; display: block; overflow: visible; }
-
-.line { fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; stroke: #8a8a93; }
-
-.line[data-trend="up"] { stroke: #3ddc97; }
-
-.line[data-trend="down"] { stroke: #ff9a7a; }
 
 .editor {
   border: 1px solid #1f1f1f;

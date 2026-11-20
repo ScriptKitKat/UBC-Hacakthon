@@ -94,6 +94,33 @@ const ASSET_NAMES: Readonly<Record<string, string>> = {
 
 const PRICE_TITLE = /^([A-Za-z0-9]+(?:\s+[A-Za-z0-9]+){0,3})\s+price(?:\s+on\s+.+|\s+today(?:\s+at\s+.+)?|\s+tomorrow(?:\s+at\s+.+)?)?\??$/iu;
 
+const ASSET_TICKERS: ReadonlyMap<string, string> = Object.entries(ASSET_NAMES).reduce((tickers, [ticker, name]) => {
+  const key = name.toUpperCase();
+  if (ticker !== key && !tickers.has(key)) tickers.set(key, ticker);
+  return tickers;
+}, new Map<string, string>());
+
+const LONGEST_ASSET_WORDS = Math.max(...[...ASSET_TICKERS.keys()].map((name) => name.split(" ").length));
+
+function leadingAsset(words: readonly string[]): { readonly ticker: string; readonly length: number } | null {
+  for (let length = Math.min(LONGEST_ASSET_WORDS, words.length); length > 0; length -= 1) {
+    const ticker = ASSET_TICKERS.get(words.slice(0, length).join(" ").toUpperCase());
+    if (ticker !== undefined) return { ticker, length };
+  }
+  return null;
+}
+
+export function marketSearchTerm(search: string): string {
+  const words = search.trim().split(/\s+/u);
+  const terms: string[] = [];
+  for (let index = 0; index < words.length;) {
+    const asset = leadingAsset(words.slice(index));
+    terms.push(asset?.ticker ?? words[index] ?? "");
+    index += asset?.length ?? 1;
+  }
+  return terms.join(" ");
+}
+
 export function assetDisplayName(token: string): string {
   return ASSET_NAMES[token.toUpperCase()] ?? token;
 }

@@ -1,14 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
-import type { BrowseCard, BrowsePage, BrowseSort } from "@/shared";
+import type { BrowsePage, BrowseSort } from "@/shared";
 import { uniqueByKey } from "@/shared";
-import { contrastInk, formatPercent } from "@/shared";
 import { useViewMode } from "../_research/use-view-mode";
 import { usePolling } from "../_desk/use-polling";
 import { loadBrowse, loadSpots } from "../_shell/api";
-import { StarButton } from "../_watchlist/star-button";
+import { MarketCard, MarketCardGrid, MarketCardSkeletonGrid } from "../_market-card/market-card";
+import { browseCardModel } from "../_market-card/model";
 import { useWatchlist } from "../_watchlist/use-watchlist";
 import styles from "./markets.module.css";
 
@@ -41,83 +40,10 @@ function SearchIcon() {
   );
 }
 
-function MarketPreview({
-  card,
-  beginner,
-  watched,
-  onToggleWatch,
-}: {
-  readonly card: BrowseCard;
-  readonly beginner: boolean;
-  readonly watched: boolean;
-  readonly onToggleWatch: () => void;
-}) {
-  return (
-    <article className={styles.card} aria-label={card.displayTitle}>
-      <div className={styles.top}>
-        {card.iconLetter !== null && card.iconBackground !== null ? (
-          <div className={styles.icon} style={{ background: card.iconBackground, color: contrastInk(card.iconBackground) }} aria-hidden="true">
-            {card.iconLetter}
-          </div>
-        ) : null}
-        <div className={styles.meta}>
-          <div className={styles.metaRow}>
-            <span>{card.categoryLabel}</span>
-            <div className={styles.metaRight}>
-              {card.isLive ? <span className={styles.live}><span className={styles.liveDot} />Live</span> : <span>{card.when ?? ""}</span>}
-              <StarButton pressed={watched} onToggle={onToggleWatch} />
-            </div>
-          </div>
-          {card.kind !== "sports" ? (
-            <Link href={card.href} className={styles.cardTitle}>{card.displayTitle}</Link>
-          ) : null}
-          {card.spotLabel !== null ? (
-            <div className={styles.spot}>Current: <span className={styles.spotValue}>{card.spotLabel}</span></div>
-          ) : null}
-        </div>
-      </div>
-      <div className={styles.rows}>
-        {card.rows.map((row) => (
-          <Link key={row.instrumentSymbol} href={row.href} className={styles.row} aria-label={`${row.label}, ${formatPercent(row.yesCents)} chance. Research and trade this contract.`}>
-            {row.short !== null && row.color !== null ? (
-              <span className={styles.avatar} style={{ background: row.color, color: contrastInk(row.color) }} aria-hidden="true">{row.short}</span>
-            ) : null}
-            <span className={styles.rowLabel}>{row.label}</span>
-            {(beginner ? row.payoutBeginner : row.payoutPro) !== null ? (
-              <span className={styles.pay}>{beginner ? row.payoutBeginner : row.payoutPro}</span>
-            ) : null}
-            <span className={styles.pct}>{formatPercent(row.yesCents)}</span>
-          </Link>
-        ))}
-      </div>
-      <div className={styles.foot}>
-        <div className={styles.footLeft}>
-          {card.moreCount > 0 ? <span className={styles.more}>+{String(card.moreCount)} more</span> : null}
-        </div>
-        {card.volumeLabel !== null ? <span className={styles.vol}>{card.volumeLabel} vol.</span> : null}
-      </div>
-    </article>
-  );
-}
-
-function SkeletonGrid() {
-  return (
-    <div className={styles.grid} aria-hidden="true">
-      {Array.from({ length: 8 }, (_, index) => (
-        <div key={index} className={styles.skeletonCard}>
-          <div className={[styles.skeletonLine, styles.skeletonTitle].join(" ")} />
-          <div className={[styles.skeletonLine, styles.skeletonRow].join(" ")} />
-          <div className={[styles.skeletonLine, styles.skeletonRow].join(" ")} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function BrowsePage({ initialPage }: { readonly initialPage?: BrowsePage } = {}) {
+export function BrowsePage({ initialPage, initialSearch = "" }: { readonly initialPage?: BrowsePage; readonly initialSearch?: string } = {}) {
   const [mode] = useViewMode();
-  const [search, setSearch] = useState("");
-  const [submitted, setSubmitted] = useState("");
+  const [search, setSearch] = useState(initialSearch);
+  const [submitted, setSubmitted] = useState(initialSearch);
   const [category, setCategory] = useState("All");
   const [sort, setSort] = useState<BrowseSort>("trending");
   const [page, setPage] = useState<BrowsePage | undefined>(initialPage);
@@ -258,27 +184,28 @@ export function BrowsePage({ initialPage }: { readonly initialPage?: BrowsePage 
         {error === null && page === undefined ? (
           <>
             <p className={styles.status}>Loading live markets…</p>
-            <SkeletonGrid />
+            <MarketCardSkeletonGrid count={8} />
           </>
         ) : null}
         {error === null && page !== undefined && markets.length === 0 ? <p className={styles.status}>No live markets match that search right now.</p> : null}
         {markets.length > 0 ? (
-          <div className={styles.grid}>
+          <MarketCardGrid>
             {markets.map((card) => {
               const lead = card.rows.find((row) => row.instrumentSymbol === card.instrumentSymbol) ?? card.rows[0];
               return (
-                <MarketPreview
+                <MarketCard
                   key={card.eventTicker}
-                  card={card}
-                  beginner={beginner}
-                  watched={watchlist.starred(card.eventTicker, card.instrumentSymbol)}
-                  onToggleWatch={() => {
-                    void watchlist.toggle({ eventTicker: card.eventTicker, instrumentSymbol: card.instrumentSymbol, yesCents: lead?.yesCents ?? null });
+                  model={browseCardModel(card, beginner)}
+                  watch={{
+                    pressed: watchlist.starred(card.eventTicker, card.instrumentSymbol),
+                    onToggle: () => {
+                      void watchlist.toggle({ eventTicker: card.eventTicker, instrumentSymbol: card.instrumentSymbol, yesCents: lead?.yesCents ?? null });
+                    },
                   }}
                 />
               );
             })}
-          </div>
+          </MarketCardGrid>
         ) : null}
         {page?.hasMore === true ? (
           <div className={styles.moreWrap}>
