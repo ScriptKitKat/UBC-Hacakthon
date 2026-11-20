@@ -68,6 +68,8 @@ describe("market card model", () => {
   it("links to the live research page for the instrument", () => {
     expect(marketHref("GEMI-BTC261119-YES")).toBe("/markets/GEMI-BTC261119-YES");
     expect(marketHref("a/b")).toBe("/markets/a%2Fb");
+    expect(marketHref("BTC261119", "GEMI-BTC261119-YES"))
+      .toBe("/markets/BTC261119?contract=GEMI-BTC261119-YES");
   });
 
   it("labels a 24h change and hides the label when unknown", () => {

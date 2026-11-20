@@ -33,8 +33,9 @@ export interface MarketCardModel {
   readonly outcomes: readonly MarketCardOutcome[];
 }
 
-export function marketHref(symbol: string): string {
-  return `/markets/${encodeURIComponent(symbol)}`;
+export function marketHref(symbol: string, contract?: string): string {
+  const href = `/markets/${encodeURIComponent(symbol)}`;
+  return contract === undefined ? href : `${href}?contract=${encodeURIComponent(contract)}`;
 }
 
 export function changeLabel(changePercent: number | null): MarketCardChange | null {

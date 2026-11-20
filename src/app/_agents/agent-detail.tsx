@@ -5,8 +5,7 @@ import { useState } from "react";
 import type { AgentRecordView, AgentsView, WatchlistCard } from "@/shared";
 import { friendlyEventTitle } from "@/shared";
 import { deleteAgent, loadAgents, runAgent, saveAgent } from "../_shell/api";
-import { marketHref, watchlistCardModel } from "../_market-card/model";
-import { useViewMode } from "../_research/use-view-mode";
+import { marketHref } from "../_market-card/model";
 import { agentRunResultText } from "../_watchlist/agent-run-result";
 import { AgentSetup } from "../_watchlist/agent-setup";
 import {
@@ -52,7 +51,6 @@ export function AgentDetail({
   readonly onView: (view: AgentsView) => void;
   readonly onDelete: (agentId: string, view: AgentsView) => void;
 }) {
-  const [beginner] = useViewMode();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,7 +63,7 @@ export function AgentDetail({
 
   const currentAgent = agent;
   const marketTitle = card === undefined ? agent.eventTicker : friendlyEventTitle(card.eventTitle, card.expiryDate);
-  const marketLink = card === undefined ? marketHref(agent.instrumentSymbol) : watchlistCardModel(card, beginner === "beginner").href;
+  const marketLink = marketHref(agent.eventTicker, agent.instrumentSymbol);
   const activities = [...agent.activity].sort((left, right) => Date.parse(right.at) - Date.parse(left.at));
   const visibleActivities = activities.slice(0, showAllActivity ? 50 : 5);
   const permission = agentPermissionLine(agent, view.desk);
