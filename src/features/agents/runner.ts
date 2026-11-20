@@ -26,7 +26,7 @@ export interface AgentRunnerDeps {
   readonly claude: ClaudeSettings;
   readonly fetch: typeof fetch;
   readonly operatorId: string;
-  readonly xFeed?: XFeed;
+  readonly xFeed?: Pick<XFeed, "signals">;
   readonly now?: () => Date;
   readonly allowAutonomous?: boolean;
 }

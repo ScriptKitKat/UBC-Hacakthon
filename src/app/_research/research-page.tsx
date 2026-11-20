@@ -38,7 +38,7 @@ function dataBanners(view: ResearchView): readonly string[] {
   ].filter((message) => message !== null);
 }
 
-export function ResearchPage({ symbol }: { readonly symbol: string; readonly initialView?: ViewMode }) {
+export function ResearchPage({ symbol, refreshKey }: { readonly symbol: string; readonly initialView?: ViewMode; readonly refreshKey?: number }) {
   const [loaded, setLoaded] = useState<Loaded>({ view: null, problem: null });
   const [timeframe, setTimeframe] = useState<ResearchTimeframe>(DEFAULT_TIMEFRAME);
   const wanted = useRef<ResearchTimeframe>(DEFAULT_TIMEFRAME);
@@ -55,7 +55,7 @@ export function ResearchPage({ symbol }: { readonly symbol: string; readonly ini
       apply(result, requested);
     });
   };
-  usePolling(refresh, POLL_INTERVAL_MS);
+  usePolling(refresh, POLL_INTERVAL_MS, refreshKey);
 
   const chooseTimeframe = (next: ResearchTimeframe) => {
     wanted.current = next;

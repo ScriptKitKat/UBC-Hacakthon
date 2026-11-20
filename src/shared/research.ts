@@ -36,8 +36,8 @@ const relatedContract = z.object({
   noCents: cents,
 });
 
-const postContext = z.object({
-  source: z.enum(["x-feed", "news"]),
+export const researchPostContextSchema = z.object({
+  source: z.enum(["x-feed", "x-search", "news"]),
   text: z.string(),
   author: z.string().nullable(),
   url: z.string().nullable(),
@@ -111,17 +111,33 @@ export const researchViewSchema = z.object({
   trades: z.array(trade),
   indicators: indicatorsSchema,
   related: z.object({ sameEvent: z.array(relatedContract), sameCategory: z.array(relatedContract) }),
-  postContext: postContext.nullable(),
-  matchedPosts: z.array(postContext),
+  postContext: researchPostContextSchema.nullable(),
+  matchedPosts: z.array(researchPostContextSchema),
 });
 
 export type ResearchView = z.output<typeof researchViewSchema>;
+export type ResearchPostSource = ResearchPostContext["source"];
 export type ResearchIndicators = z.output<typeof indicatorsSchema>;
 export type ResearchSeriesPoint = z.output<typeof seriesPoint>;
-export type ResearchPostContext = z.output<typeof postContext>;
+export type ResearchPostContext = z.output<typeof researchPostContextSchema>;
 export type ResearchRelatedContract = z.output<typeof relatedContract>;
 export type ResearchDepthLevel = z.output<typeof depthLevel>;
 export type ResearchTrade = z.output<typeof trade>;
+
+export function postSourceLabel(source: ResearchPostSource): string {
+  switch (source) {
+    case "x-feed":
+      return "Matched X post";
+    case "x-search":
+      return "X post";
+    case "news":
+      return "News";
+    default: {
+      const exhaustive: never = source;
+      return exhaustive;
+    }
+  }
+}
 
 export function isResearchTimeframe(value: string): value is ResearchTimeframe {
   return (RESEARCH_TIMEFRAMES as readonly string[]).includes(value);

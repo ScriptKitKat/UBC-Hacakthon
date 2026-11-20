@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Chatter } from "@/features/chatter";
 import type { Desk, DeskAccess } from "@/features/desk";
 import type { Research } from "@/features/research";
 import { researchViewSchema } from "@/shared";
 import type { PositionsView, ResearchView } from "@/shared";
 import { GET as positions } from "../positions/route";
 import { GET as research } from "./[symbol]/route";
+import { POST as loadChatter } from "./[symbol]/chatter/route";
 
 const getDesk = vi.hoisted(() => vi.fn<() => Promise<DeskAccess>>());
 
@@ -13,6 +15,7 @@ vi.mock("@/features/desk", async (importOriginal) => ({ ...(await importOriginal
 const SYMBOL = "GEMI-FED261211-MAINTAIN";
 const view = vi.fn<Research["view"]>();
 const getPositions = vi.fn<Desk["getPositions"]>();
+const chatterLoad = vi.fn<Chatter["load"]>();
 
 const sampleView: ResearchView = {
   symbol: SYMBOL,
@@ -53,7 +56,8 @@ const call = (symbol: string, query = "", headers: Record<string, string> = { "s
 beforeEach(() => {
   view.mockReset().mockResolvedValue({ kind: "ok", view: sampleView });
   getPositions.mockReset().mockResolvedValue(emptyPositions);
-  getDesk.mockReset().mockResolvedValue({ ok: true, desk: { getPositions } as unknown as Desk, research: { view, brief: vi.fn() }, deepDive: undefined, marketPro: { shell: vi.fn(), live: vi.fn() } });
+  getDesk.mockReset().mockResolvedValue({ ok: true, desk: { getPositions } as unknown as Desk, research: { view, brief: vi.fn() }, deepDive: undefined, marketPro: { shell: vi.fn(), live: vi.fn() }, chatter: { load: chatterLoad, peek: vi.fn() } });
+  chatterLoad.mockReset().mockResolvedValue([]);
 });
 
 describe("GET /api/research/[symbol]", () => {
@@ -123,6 +127,31 @@ describe("GET /api/research/[symbol]", () => {
       expect((await call(SYMBOL, "", headers)).status).toBe(403);
     }
     expect(view).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/research/[symbol]/chatter", () => {
+  const post = (symbol: string, headers: Record<string, string> = SAME_ORIGIN) =>
+    loadChatter(new Request(`http://localhost:3000/api/research/${symbol}/chatter`, { method: "POST", headers }), { params: Promise.resolve({ symbol }) });
+
+  it("loads chatter for the market and returns the posts", async () => {
+    const posts = [{ source: "x-search" as const, text: "Fed holds", author: "@fed", url: "https://x.com/fed/status/1", why: null, atMs: null }];
+    chatterLoad.mockResolvedValue(posts);
+    const response = await post(SYMBOL);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ posts });
+    expect(chatterLoad).toHaveBeenCalledWith(SYMBOL);
+  });
+
+  it("refuses cross-origin requests without searching", async () => {
+    const response = await post(SYMBOL, { origin: "https://evil.example" });
+    expect(response.status).toBe(403);
+    expect(chatterLoad).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed symbol", async () => {
+    expect((await post("nope")).status).toBe(400);
+    expect(chatterLoad).not.toHaveBeenCalled();
   });
 });
 

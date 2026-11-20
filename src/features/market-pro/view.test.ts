@@ -123,7 +123,7 @@ function desk(): MarketProDesk {
   return {
     getSnapshot: () => Promise.resolve(snapshot),
     getPositions: () => Promise.resolve(positions),
-    postContextFor: () => Promise.resolve({ source: "x-feed", text: "Inflows picked up", author: "solanafloor", url: "https://x.com/s/1", why: "keyword", atMs: null }),
+    matchedPostsFor: () => Promise.resolve([{ source: "x-feed", text: "Inflows picked up", author: "solanafloor", url: "https://x.com/s/1", why: "keyword", atMs: null }]),
   };
 }
 
@@ -161,6 +161,14 @@ describe("createMarketPro", () => {
     expect(live.flow?.sampleSize).toBe(2);
     expect(live.feed.some((item) => item.source === "X @solanafloor")).toBe(true);
     expect(live.feed.some((item) => item.event.includes("Bought YES $5"))).toBe(true);
+  });
+
+  it("adds cached X chatter to the event feed", async () => {
+    const chatter = [{ source: "x-search" as const, text: "SOL ETF talk heats up", author: "@solnews", url: "https://x.com/solnews/status/9", why: null, atMs: NOW - 60_000 }];
+    const pro = createMarketPro({ markets: markets(), nowMs: () => NOW, desk: desk(), isWatched: () => Promise.resolve(false), chatterFor: () => chatter });
+    const result = await pro.live(SYMBOL, "1D");
+    if (result.kind !== "ok") throw new Error(result.kind);
+    expect(result.live.feed.find((item) => item.source === "X @solnews")).toMatchObject({ event: "SOL ETF talk heats up", url: "https://x.com/solnews/status/9", timeMs: NOW - 60_000 });
   });
 
 

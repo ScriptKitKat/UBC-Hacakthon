@@ -196,6 +196,20 @@ describe("crowdMoves", () => {
     expect(move?.source).toMatch(/Matched X post/);
     expect(move?.deltaCents).toBe(8);
   });
+
+  it("labels a searched X post without calling it matched", () => {
+    const points = [point(NOW - 2 * DAY, 50), point(NOW - DAY, 58), point(NOW, 58)];
+    const post: ResearchPostContext = {
+      source: "x-search",
+      text: "Purdue opens as a big favorite",
+      author: "@hoops",
+      url: "https://x.com/hoops/status/2",
+      why: null,
+      atMs: NOW - DAY,
+    };
+    const [move] = crowdMoves(points, [post]);
+    expect(move?.source).toMatch(/^X post · @hoops /);
+  });
 });
 
 describe("trustOdds", () => {

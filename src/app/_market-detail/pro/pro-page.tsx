@@ -176,17 +176,17 @@ function EventFeed({ live, nowMs }: { readonly live: ProLive; readonly nowMs: nu
     <section className={styles.panel} aria-labelledby="feed-heading">
       <h2 id="feed-heading" className={styles.panelTitle}>Event feed</h2>
       {live.feed.length === 0 ? (
-        <p className={styles.empty}>No matched posts or desk trades for this market yet.</p>
+        <p className={styles.empty}>No X posts or desk trades for this market yet.</p>
       ) : (
-        <table className={styles.table}>
+        <table className={styles.feedTable}>
           <thead>
             <tr><th>Time</th><th>Source</th><th>Event</th><th>Odds 1h after</th></tr>
           </thead>
           <tbody>
             {live.feed.map((item) => (
               <tr key={item.id}>
-                <td>{formatFeedTime(item.timeMs, nowMs)}</td>
-                <td>{item.source}</td>
+                <td className={styles.feedMeta}>{formatFeedTime(item.timeMs, nowMs)}</td>
+                <td className={styles.feedMeta}>{item.source}</td>
                 <td>
                   {item.url === null ? item.event : <a className={styles.link} href={item.url} rel="noreferrer" target="_blank">{item.event}</a>}
                 </td>
@@ -313,7 +313,7 @@ function TradesCard({ live }: { readonly live: ProLive }) {
   );
 }
 
-export function ProPage({ symbol, initial }: { readonly symbol: string; readonly initial?: ProShell }) {
+export function ProPage({ symbol, initial, refreshKey }: { readonly symbol: string; readonly initial?: ProShell; readonly refreshKey?: number }) {
   const [timeframe, setTimeframe] = useState<ProTimeframe | undefined>(initial?.chart.timeframe);
   const [shell, setShell] = useState<ProShell | undefined>(initial);
   const [live, setLive] = useState<ProLive | undefined>(undefined);
@@ -363,7 +363,7 @@ export function ProPage({ symbol, initial }: { readonly symbol: string; readonly
   };
 
   usePolling(refreshShell, SHELL_MS);
-  usePolling(refreshLive, LIVE_MS);
+  usePolling(refreshLive, LIVE_MS, refreshKey);
 
   const chooseTimeframe = (next: ProTimeframe) => {
     if (!(PRO_TIMEFRAMES as readonly string[]).includes(next)) return;
