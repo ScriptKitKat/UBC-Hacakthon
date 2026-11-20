@@ -163,7 +163,7 @@ export async function runAgentTick(deps: AgentRunnerDeps, agent: AgentRecord, de
       const proposed = await propose(deps, agent, snapshot, outcome, mapped);
       intentId = proposed.entry.intentId;
       spentDelta += proposed.spent;
-      if (mapped.kind === "suggest") {
+      if (mapped.kind === "suggest" && proposed.entry.kind === "needs-approval") {
         action = "suggest";
         activities.push(activity("suggestion", proposed.entry.spokenReason, now, { trigger: watchFired[0], intentId }));
       } else if (proposed.entry.kind === "approve") {

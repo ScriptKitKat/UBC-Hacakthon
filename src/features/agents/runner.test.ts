@@ -91,6 +91,14 @@ describe("runAgentTick", () => {
     expect((await store.get("agent-1"))?.activity.map((item) => item.kind)).toEqual(["message", "refused"]);
   });
 
+  it("records a desk refusal as refused, not as a suggestion", async () => {
+    const { agent, deps, proposeTrade, store } = await setup({ yesNow: 60, yesBefore: 40, draft: { permission: "suggest" } });
+    proposeTrade.mockResolvedValue(entry("refuse", "yes"));
+    const tick = await runAgentTick(deps, agent, DESK, NOW);
+    expect(tick.action).toBe("hold");
+    expect((await store.get("agent-1"))?.activity.map((item) => item.kind)).toEqual(["message", "refused"]);
+  });
+
   it("refuses to bet on its own when autonomous betting is disabled for the run", async () => {
     const { agent, deps, proposeTrade } = await setup({ yesNow: 60, yesBefore: 40, draft: { permission: "autonomous" }, allowAutonomous: false });
     expect((await runAgentTick(deps, agent, DESK, NOW)).action).toBe("hold");
