@@ -33,7 +33,8 @@ import { startReconciliation } from "./reconciliation";
 import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
 import { openMatchStore } from "./match-store";
 import { UNDELIVERED_RECOVERY_MS, openPurchaseStore } from "./purchase-store";
-import { isStale } from "./runtime-revision";
+import { isStale, waitForIdleOrTimeout } from "./runtime-revision";
+import { withReleasedLease } from "./runtime-access";
 
 let browseCache = createBrowseCache(20_000);
 let listCache = createListCache(20_000);
@@ -403,7 +404,7 @@ async function acquireRuntime(): Promise<RuntimeLease> {
         if (isStale(runtime.loadedRev, runtime.revision.ownWrites(), currentRev)) {
           if (runtime.activeLeases > 0) {
             stopRuntimeTimers(runtime);
-            return { wait: runtime.idle };
+            return { runtime, wait: runtime.idle };
           }
           disposeRuntime(runtime);
           if (holder[deskKey] === runtime) Reflect.deleteProperty(holder, deskKey);
@@ -415,7 +416,15 @@ async function acquireRuntime(): Promise<RuntimeLease> {
       return { lease: { runtime: current, release: releaseLease(current) } };
     });
     if ("wait" in result) {
-      await result.wait;
+      const timedOut = await waitForIdleOrTimeout(result.wait, 15_000);
+      if (timedOut) {
+        await runtimeQueue.run(async () => {
+          if (holder[deskKey] !== result.runtime) return;
+          disposeRuntime(result.runtime);
+          Reflect.deleteProperty(holder, deskKey);
+          resetCatalogCaches();
+        });
+      }
       continue;
     }
     return result.lease;
@@ -443,9 +452,16 @@ function homeServicesFor(access: DeskAccess, runtime: DeskRuntime): HomeServices
 
 export async function getHomeServices(): Promise<HomeServices> {
   const lease = await acquireRuntime();
+  return withReleasedLease(
+    async () => homeServicesFor(await lease.runtime.access, lease.runtime),
+    lease.release,
+  );
+}
+
+export async function getHomeServicesForRequest(): Promise<HomeServices> {
+  const lease = await acquireRuntime();
   try {
-    const services = homeServicesFor(await lease.runtime.access, lease.runtime);
-    return attachLease(services, lease.release);
+    return attachLease(homeServicesFor(await lease.runtime.access, lease.runtime), lease.release);
   } catch (error) {
     lease.release();
     throw error;

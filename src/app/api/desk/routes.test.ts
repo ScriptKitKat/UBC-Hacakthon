@@ -13,7 +13,7 @@ const { getDesk, rejectPending } = vi.hoisted(() => ({
 
 vi.mock("@/features/desk", () => ({
   getDesk,
-  getHomeServices: vi.fn(),
+  getHomeServicesForRequest: vi.fn(),
   releaseRuntimeAccess: vi.fn(),
 }));
 

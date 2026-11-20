@@ -1,4 +1,4 @@
-import { getDesk, getHomeServices, releaseRuntimeAccess } from "@/features/desk";
+import { getDesk, getHomeServicesForRequest, releaseRuntimeAccess } from "@/features/desk";
 import type { Desk, DeskAccess, HomeServices } from "@/features/desk";
 import type { z } from "zod";
 
@@ -79,7 +79,7 @@ export async function withHomeGet(
   handler: (services: Extract<HomeServices, { ok: true }>) => Promise<Response>,
 ): Promise<Response> {
   if (!isDashboardRequest(request)) return forbidden();
-  const access = await getHomeServices();
+  const access = await getHomeServicesForRequest();
   try {
     if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
     return await handler(access);
@@ -105,7 +105,7 @@ export async function withHomeBody<S extends z.ZodType>(
     const issues = parsed.error.issues.map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`);
     return Response.json({ error: "invalid-request", issues }, { status: 400 });
   }
-  const access = await getHomeServices();
+  const access = await getHomeServicesForRequest();
   try {
     if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
     return await handler(parsed.data, access);

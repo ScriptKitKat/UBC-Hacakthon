@@ -3,13 +3,13 @@ import type { AgentCycleOptions, AgentCycleReport, AgentRecord, AgentStore } fro
 import type { HomeServices } from "@/features/desk";
 import { POST } from "./route";
 
-const getHomeServices = vi.hoisted(() => vi.fn<() => Promise<HomeServices>>());
+const getHomeServicesForRequest = vi.hoisted(() => vi.fn<() => Promise<HomeServices>>());
 const getAgent = vi.hoisted(() => vi.fn<AgentStore["get"]>());
 const run = vi.hoisted(() => vi.fn<(agentId?: string, options?: AgentCycleOptions) => Promise<AgentCycleReport>>());
 
 vi.mock("@/features/desk", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/features/desk")>()),
-  getHomeServices,
+  getHomeServicesForRequest,
 }));
 
 const report: AgentCycleReport = {
@@ -29,7 +29,7 @@ function post(body: unknown): Request {
 beforeEach(() => {
   getAgent.mockReset().mockResolvedValue(watching);
   run.mockReset().mockResolvedValue(report);
-  getHomeServices.mockReset().mockResolvedValue({
+  getHomeServicesForRequest.mockReset().mockResolvedValue({
     ok: true,
     catalog: { agents: { store: { get: getAgent }, run } },
   } as unknown as HomeServices);

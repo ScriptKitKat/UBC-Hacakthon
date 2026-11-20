@@ -1,4 +1,4 @@
-export { getDesk, getHomeServices, releaseRuntimeAccess, runCronTick } from "./runtime";
+export { getDesk, getHomeServices, getHomeServicesForRequest, releaseRuntimeAccess, runCronTick } from "./runtime";
 export type { CronTickSummary } from "./runtime";
 export type { DeskAccess, HomeCatalog, HomeServices } from "./runtime";
 export { createDesk } from "./desk";
