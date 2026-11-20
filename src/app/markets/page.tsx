@@ -15,10 +15,11 @@ async function loadInitial(search: string): Promise<BrowsePageData | undefined> 
 export default async function MarketsRoute({
   searchParams,
 }: {
-  readonly searchParams?: Promise<{ readonly search?: string }>;
+  readonly searchParams?: Promise<{ readonly search?: string | readonly string[] }>;
 }) {
   const params = searchParams === undefined ? {} : await searchParams;
-  const search = params.search?.trim() ?? "";
+  const requested = params.search;
+  const search = (typeof requested === "string" ? requested : requested?.[0] ?? "").trim();
   const initialPage = await loadInitial(search);
   return (
     <Shell>
