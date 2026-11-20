@@ -22,6 +22,7 @@ function card(overrides: Partial<WatchlistCard> = {}): WatchlistCard {
     categoryLabel: "Crypto",
     expiryDate: "2026-12-31T22:00:00.000Z",
     endsIn: "ends in 42d",
+    imageUrl: null,
     yesCents: 62,
     noCents: 38,
     changePercent: 16.9,

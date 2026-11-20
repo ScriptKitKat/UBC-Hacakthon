@@ -9,24 +9,12 @@ import { loadHome, loadSparklines, matchQuery } from "../_shell/api";
 import { ChevronIcon, MicIcon, RefreshIcon, SubmitIcon } from "../_shell/icons";
 import { CHIP_CATEGORIES, FILTERS, PREFETCH_CATEGORIES, categoryKey } from "./category";
 import { useWatchlist } from "../_watchlist/use-watchlist";
-import { MarketCard } from "./market-card";
+import { MarketCard, MarketCardGrid, MarketCardSkeletonGrid } from "../_market-card/market-card";
+import { catalogCardModel } from "../_market-card/model";
+import { useViewMode } from "../_research/use-view-mode";
 import styles from "./home.module.css";
 
 const POLL_MS = 30_000;
-
-function SkeletonGrid() {
-  return (
-    <div className={styles.grid} aria-hidden="true">
-      {Array.from({ length: 6 }, (_, index) => (
-        <div key={index} className={styles.skeletonCard}>
-          <div className={[styles.skeletonLine, styles.skeletonTitle].join(" ")} />
-          <div className={styles.skeletonLine} />
-          <div className={[styles.skeletonLine, styles.skeletonChart].join(" ")} />
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function applySparklines(view: HomeView, updates: Readonly<Record<string, { readonly sparkline: readonly number[]; readonly changePercent: number | null }>>): HomeView {
   const markets = view.markets.map((card) => {
@@ -104,6 +92,8 @@ export function HomePage({ initialView }: { readonly initialView?: HomeView } = 
   const pending = view?.rail.pendingCount ?? 0;
   const markets = view?.markets ?? [];
   const watchlist = useWatchlist();
+  const [mode] = useViewMode();
+  const beginner = mode === "beginner";
 
   const selectFilter = (name: string) => {
     setFilter(name);
@@ -209,23 +199,25 @@ export function HomePage({ initialView }: { readonly initialView?: HomeView } = 
         {error === null && view === undefined ? (
           <>
             <p className={styles.empty}>Loading live markets…</p>
-            <SkeletonGrid />
+            <MarketCardSkeletonGrid count={6} />
           </>
         ) : null}
         {error === null && view !== undefined && markets.length === 0 ? <p className={styles.empty}>No live markets match that search right now.</p> : null}
         {markets.length > 0 ? (
-          <div className={styles.grid}>
+          <MarketCardGrid>
             {markets.map((card) => (
               <MarketCard
                 key={card.instrumentSymbol}
-                card={card}
-                watched={watchlist.starred(card.eventTicker, card.instrumentSymbol)}
-                onToggleWatch={() => {
-                  void watchlist.toggle({ eventTicker: card.eventTicker, instrumentSymbol: card.instrumentSymbol, yesCents: card.yesCents });
+                model={catalogCardModel(card, beginner)}
+                watch={{
+                  pressed: watchlist.starred(card.eventTicker, card.instrumentSymbol),
+                  onToggle: () => {
+                    void watchlist.toggle({ eventTicker: card.eventTicker, instrumentSymbol: card.instrumentSymbol, yesCents: card.yesCents });
+                  },
                 }}
               />
             ))}
-          </div>
+          </MarketCardGrid>
         ) : null}
         <div className={styles.footer}>
           <Link href="/markets" className={styles.browseAll}>Browse all markets</Link>

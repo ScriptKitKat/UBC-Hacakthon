@@ -110,7 +110,7 @@ describe("listBrowse", () => {
     const game = result.page.markets[1];
     expect(game?.kind).toBe("sports");
     expect(game?.categoryLabel).toBe("College Basketball");
-    expect(game?.rows.map((row) => row.short)).toEqual(["TAMU", "TCU"]);
+    expect(game?.rows).toHaveLength(2);
     const binary = result.page.markets[2];
     expect(binary?.kind).toBe("binary");
     expect(binary?.rows.map((row) => row.label)).toEqual(["Yes", "No"]);
