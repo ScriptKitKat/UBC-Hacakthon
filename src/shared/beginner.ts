@@ -86,11 +86,6 @@ function formatShortDate(ms: number): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: ZONE, month: "short", day: "numeric" }).format(new Date(ms));
 }
 
-function moveTitle(delta: number): string {
-  const points = Math.round(Math.abs(delta));
-  const noun = points === 1 ? "point" : "points";
-  return `Yes odds moved ${delta >= 0 ? "▲" : "▼"} ${String(points)} ${noun}`;
-}
 
 function postSource(post: ResearchPostContext, t: number): string {
   const when = post.atMs !== null ? formatShortDate(post.atMs) : formatShortDate(t);
@@ -110,9 +105,9 @@ function postTitle(post: ResearchPostContext): string {
   return text.length <= 96 ? text : `${text.slice(0, 93).trimEnd()}…`;
 }
 
-function significantMoves(points: readonly ResearchSeriesPoint[]): readonly { readonly index: number; readonly delta: number }[] {
+function significantMoves(points: readonly ResearchSeriesPoint[]): readonly { readonly index: number; readonly fromIndex: number; readonly delta: number }[] {
   if (points.length < 2) return [];
-  const found: { index: number; delta: number }[] = [];
+  const found: { index: number; fromIndex: number; delta: number }[] = [];
   let anchor = 0;
   for (let index = 1; index < points.length; index += 1) {
     const current = points[index]?.cents;
@@ -123,7 +118,7 @@ function significantMoves(points: readonly ResearchSeriesPoint[]): readonly { re
     const delta = current - start;
     const turning = next === undefined || last || (delta > 0 && next < current) || (delta < 0 && next > current);
     if (turning && Math.abs(delta) >= MIN_MOVE_CENTS) {
-      found.push({ index, delta });
+      found.push({ index, fromIndex: anchor, delta });
       anchor = index;
     }
   }
@@ -140,59 +135,32 @@ export function crowdMoves(points: readonly ResearchSeriesPoint[], posts: readon
   for (const move of moves) {
     const point = points[move.index];
     if (point === undefined) continue;
+    const startT = points[move.fromIndex]?.t ?? point.t;
     let attached: ResearchPostContext | undefined;
     let attachedAt: number | undefined;
     let best = POST_ATTACH_MS + 1;
     posts.forEach((post, postIndex) => {
       if (post.atMs === null || used.has(postIndex)) return;
-      const distance = Math.abs(post.atMs - point.t);
+      const distance = post.atMs < startT ? startT - post.atMs : post.atMs > point.t ? post.atMs - point.t : 0;
       if (distance <= POST_ATTACH_MS && distance < best) {
         best = distance;
         attached = post;
         attachedAt = postIndex;
       }
     });
-    if (attachedAt !== undefined) used.add(attachedAt);
+    if (attached === undefined || attachedAt === undefined) continue;
+    used.add(attachedAt);
     events.push({
       index: move.index,
       t: point.t,
-      title: attached === undefined ? moveTitle(move.delta) : postTitle(attached),
-      source: attached === undefined ? `Gemini price history · ${formatShortDate(point.t)}` : postSource(attached, point.t),
+      title: postTitle(attached),
+      source: postSource(attached, point.t),
       deltaCents: move.delta,
     });
   }
-  posts.forEach((post, postIndex) => {
-    if (used.has(postIndex) || post.atMs === null) return;
-    const index = nearestPointIndex(points, post.atMs);
-    if (index === null) return;
-    const point = points[index];
-    if (point === undefined) return;
-    const prior = points[Math.max(0, index - 1)];
-    const delta = prior === undefined ? 0 : point.cents - prior.cents;
-    events.push({
-      index,
-      t: point.t,
-      title: postTitle(post),
-      source: postSource(post, point.t),
-      deltaCents: delta,
-    });
-  });
   return events.sort((a, b) => a.t - b.t || a.index - b.index);
 }
 
-function nearestPointIndex(points: readonly ResearchSeriesPoint[], atMs: number): number | null {
-  if (points.length === 0) return null;
-  let best = 0;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  points.forEach((point, index) => {
-    const distance = Math.abs(point.t - atMs);
-    if (distance < bestDistance) {
-      best = index;
-      bestDistance = distance;
-    }
-  });
-  return bestDistance === Number.POSITIVE_INFINITY ? null : best;
-}
 
 export interface Resolution {
   readonly yesIf: string | null;
@@ -342,6 +310,46 @@ export function marketDrivers(resolution: Resolution, view: ResearchView, nowMs:
   }
   if (up.length === 0 && down.length === 0) return null;
   return { up, down };
+}
+
+
+const TEMPLATE_DRIVER = /no post or news item is attached|this brief only knows gemini market data|the settlement price finishing|no resolution rules were provided|gemini's price history was unavailable|there is no price history for this market/iu;
+
+function isBoilerplate(body: string): boolean {
+  const text = body.replace(/\s+/g, " ").trim();
+  return text.length < 40 || TEMPLATE_DRIVER.test(text);
+}
+
+function splitReasons(body: string): string[] {
+  return body
+    .split(/(?<=\.)\s+|\n+|;\s+|•\s+/u)
+    .map((part) => part.replace(/^[-•\d.]+\s*/u, "").trim())
+    .filter((part) => part.length >= 24 && !isBoilerplate(part))
+    .slice(0, 4);
+}
+
+export function driversFromBrief(brief: ResearchBrief | null | undefined): DriverLists | null {
+  if (brief === null || brief === undefined) return null;
+  const move = brief.sections.find((section) => section.title === "What would move it");
+  const risk = brief.sections.find((section) => section.title === "Risks / what this doesn't know");
+  const up = move !== undefined && !isBoilerplate(move.body) ? splitReasons(move.body) : [];
+  const down = risk !== undefined && !isBoilerplate(risk.body) ? splitReasons(risk.body) : [];
+  if (up.length === 0 && down.length === 0) return null;
+  return { up, down };
+}
+
+export function historySourceLabel(view: ResearchView): string {
+  const kinds = new Set(view.series.points.map((point) => point.source));
+  if (view.series.points.length === 0) return "No price history yet for this range.";
+  const parts: string[] = [];
+  if (kinds.has("gemini")) parts.push("Gemini candles");
+  if (kinds.has("trades")) parts.push("Gemini trades");
+  if (kinds.has("snapshot")) parts.push("the desk's own snapshots");
+  if (parts.length === 1 && kinds.has("gemini")) return "Source: Gemini candles.";
+  if (parts.length === 1 && kinds.has("trades")) return "Source: rebuilt from Gemini trades.";
+  if (parts.length === 1) return "Source: the desk's own price snapshots. Gemini had no candles or trades for this range.";
+  const last = parts.pop();
+  return `Source: ${parts.join(", ")} and ${last ?? ""}.`;
 }
 
 export function yesCentsFromBrief(brief: ResearchBrief): number | null {

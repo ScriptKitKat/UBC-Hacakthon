@@ -8,11 +8,12 @@ import {
   crowdMoves,
   crowdSentence,
   dayChangeCents,
+  driversFromBrief,
   formatBudgetCents,
   formatEndLine,
   formatPercent,
+  historySourceLabel,
   isBeginnerTimeframe,
-  marketDrivers,
   marketTitle,
   needsApprovalNote,
   overTradeLimitMessage,
@@ -85,10 +86,16 @@ export function BeginnerView({
   const monogram = title.replace(/[^A-Za-z0-9]/g, "").slice(0, 1).toUpperCase() || "M";
   const category = displayCategory(view.market.category);
   const resolution = parseResolution(view.market.rulesText, view.market.termsLink);
-  const drivers = marketDrivers(resolution, view, Number.isFinite(nowMs) ? nowMs : Date.now());
   const trust = trustOdds(view);
   const moves = crowdMoves(view.series.points, view.matchedPosts);
   const [activeMove, setActiveMove] = useState<number>(moves.length);
+  const [brief, setBrief] = useState<ResearchBrief | null>(null);
+  usePolling(() => {
+    void loadResearchBriefs(view.symbol).then((result) => {
+      if (result.kind === "ready") setBrief(result.current?.brief ?? null);
+    });
+  }, WATCH_MS);
+  const drivers = driversFromBrief(brief);
   const selected = moves[activeMove - 1] ?? moves.at(-1);
   return (
     <div className={styles.page}>
@@ -249,6 +256,7 @@ function CrowdChart({
           ))}
         </div>
       </div>
+      <p className={styles.source}>{historySourceLabel(view)}</p>
       {points.length === 0 ? (
         <p className={styles.empty}>No price history yet for this range.</p>
       ) : (

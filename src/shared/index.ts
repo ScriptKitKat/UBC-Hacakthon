@@ -79,13 +79,16 @@ export type { Sparkline, Trend } from "./sparkline";
 export { changeTrend, contrastInk, formatBudgetCents, formatChangePercent, formatPayoutFromAsk, formatPercent, formatResetLabel, formatSignedPercent, formatVolumeUsd, isXUrl, nextUtcMidnight, pointDelta, sparklinePointDelta } from "./card-format";
 export { mergeByKeyKeepNewest, uniqueByKey } from "./dedupe";
 
+export { tweetTimeMs } from "./post-time";
 export {
   BEGINNER_TIMEFRAMES,
   briefStaleCopy,
   crowdMoves,
   crowdSentence,
   dayChangeCents,
+  driversFromBrief,
   formatEndLine,
+  historySourceLabel,
   isBeginnerTimeframe,
   marketDrivers,
   marketTitle,

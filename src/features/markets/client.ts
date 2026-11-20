@@ -32,7 +32,7 @@ export interface GeminiMarketsClient {
   readonly getEvent: (ticker: string, options?: { readonly refresh?: boolean }) => Promise<MarketsResult<MarketEvent>>;
   readonly candles: (symbol: string, timeframe: CandleTimeframe) => Promise<MarketsResult<readonly Candle[]>>;
   readonly orderBook: (symbol: string) => Promise<MarketsResult<OrderBook>>;
-  readonly recentTrades: (symbol: string, limit?: number) => Promise<MarketsResult<readonly RecentTrade[]>>;
+  readonly recentTrades: (symbol: string, limit?: number, query?: { readonly timestamp?: number; readonly sinceTid?: number }) => Promise<MarketsResult<readonly RecentTrade[]>>;
   readonly pubticker: (pair: string) => Promise<MarketsResult<SpotTicker>>;
 }
 
@@ -172,8 +172,13 @@ export function createGeminiMarketsClient(options: GeminiMarketsClientOptions): 
     candles: (symbol, timeframe) =>
       withKnownContract(symbol, () => getJson(`${baseUrl}/v2/candles/${encodeURIComponent(symbol)}/${timeframe}`, candlesSchema)),
     orderBook: (symbol) => withKnownContract(symbol, () => getJson(`${baseUrl}/v1/book/${encodeURIComponent(symbol)}`, orderBookSchema)),
-    recentTrades: (symbol, limit = DEFAULT_TRADE_LIMIT) =>
-      withKnownContract(symbol, () => getJson(`${baseUrl}/v1/trades/${encodeURIComponent(symbol)}?limit_trades=${String(limit)}`, recentTradesSchema)),
+    recentTrades: (symbol, limit = DEFAULT_TRADE_LIMIT, query = {}) =>
+      withKnownContract(symbol, () => {
+        const params = new URLSearchParams({ limit_trades: String(limit) });
+        if (query.timestamp !== undefined) params.set("timestamp", String(query.timestamp));
+        if (query.sinceTid !== undefined) params.set("since_tid", String(query.sinceTid));
+        return getJson(`${baseUrl}/v1/trades/${encodeURIComponent(symbol)}?${params.toString()}`, recentTradesSchema);
+      }),
     pubticker: (pair) => getJson(`${baseUrl}/v1/pubticker/${encodeURIComponent(pair.toLowerCase())}`, pubtickerSchema),
   };
 }
