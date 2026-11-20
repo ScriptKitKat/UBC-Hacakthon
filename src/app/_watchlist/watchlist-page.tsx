@@ -4,16 +4,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { AgentsView, WatchlistCard, WatchlistView } from "@/shared";
-import { formatBudgetCents, formatPercent } from "@/shared";
+import { formatBudgetCents } from "@/shared";
 import { usePolling } from "../_desk/use-polling";
-import { loadAgents, loadWatchlistCards, saveAgent } from "../_shell/api";
-import { AgentsPanel, agentFor, statusLine } from "./agents-panel";
+import { loadAgents, loadWatchlistCards } from "../_shell/api";
+import { AgentsPanel } from "./agents-panel";
 import { MarketCard, MarketCardGrid } from "../_market-card/market-card";
 import { watchlistCardModel } from "../_market-card/model";
 import { useViewMode } from "../_research/use-view-mode";
 import {
   filterWatchlist,
-  savedAtLabel,
   sortWatchlist,
   type WatchlistFilter,
   type WatchlistSort,
@@ -40,18 +39,6 @@ function SearchIcon() {
       <circle cx="11" cy="11" r="7" />
       <path d="M20 20l-4-4" />
     </svg>
-  );
-}
-
-function savedNote(card: WatchlistCard) {
-  const saved = savedAtLabel(card);
-  if (saved === null) return undefined;
-  const since = saved.split(" · ")[1];
-  return (
-    <span>
-      Saved at <span className={styles.savedValue}>{formatPercent(card.savedYesCents)}</span>
-      {since !== undefined ? ` · ${since}` : ""}
-    </span>
   );
 }
 
@@ -198,8 +185,6 @@ export function WatchlistPage({
             {shown.length > 0 ? (
               <MarketCardGrid>
                 {shown.map((card) => {
-                  const agent = agentFor(agentsView?.agents ?? [], card.eventTicker);
-                  const line = statusLine(agent);
                   return (
                     <MarketCard
                       key={card.eventTicker}
@@ -211,26 +196,6 @@ export function WatchlistPage({
                           void watchlist.toggle({ eventTicker: card.eventTicker, instrumentSymbol: card.instrumentSymbol, yesCents: card.yesCents });
                         },
                       }}
-                      footStart={savedNote(card)}
-                      footEnd={(
-                        <button
-                          type="button"
-                          className={styles.agentLink}
-                          data-status={line.status}
-                          onClick={() => {
-                            if (agent === undefined) {
-                              void saveAgent({ eventTicker: card.eventTicker, instrumentSymbol: card.instrumentSymbol }).then((result) => {
-                                if (result !== undefined) setAgentsView(result);
-                                openAgents(card.eventTicker);
-                              });
-                              return;
-                            }
-                            openAgents(card.eventTicker);
-                          }}
-                        >
-                          {line.text}
-                        </button>
-                      )}
                     />
                   );
                 })}
