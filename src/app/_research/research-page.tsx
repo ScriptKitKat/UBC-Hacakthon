@@ -2,18 +2,10 @@
 
 import { useRef, useState } from "react";
 import type { ResearchTimeframe, ResearchView } from "@/shared";
-import { AppBar } from "../_desk/app-bar";
 import { usePolling } from "../_desk/use-polling";
 import { loadResearch } from "./api";
 import type { ResearchResult } from "./api";
-import { BeginnerPanel } from "./beginner-panel";
-import { PostPanel, RelatedPanel } from "./context-panels";
-import { DeepDiveCard } from "./deep-dive-card";
-import { OrderBookPanel, TradesPanel } from "./depth-panels";
-import { IndicatorsPanel } from "./indicators-panel";
-import { MarketHeader, RulesPanel } from "./market-panels";
-import { PriceChart } from "./price-chart";
-import { useViewMode } from "./use-view-mode";
+import { BeginnerView } from "./beginner-view";
 import type { ViewMode } from "./use-view-mode";
 import styles from "./research.module.css";
 
@@ -23,26 +15,6 @@ const DEFAULT_TIMEFRAME: ResearchTimeframe = "1D";
 interface Loaded {
   readonly view: ResearchView | null;
   readonly problem: "unknown" | "unavailable" | "error" | null;
-}
-
-function ModeToggle({ mode, onChange }: { readonly mode: ViewMode; readonly onChange: (mode: ViewMode) => void }) {
-  return (
-    <div className={styles.segmented} role="group" aria-label="Detail level">
-      {(["beginner", "pro"] as const).map((option) => (
-        <button
-          key={option}
-          type="button"
-          className={styles.segmentedButton}
-          aria-pressed={mode === option}
-          onClick={() => {
-            onChange(option);
-          }}
-        >
-          {option === "beginner" ? "Beginner" : "Pro"}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function problemMessage(problem: NonNullable<Loaded["problem"]>): string {
@@ -61,21 +33,14 @@ function problemMessage(problem: NonNullable<Loaded["problem"]>): string {
 }
 
 function dataBanners(view: ResearchView): readonly string[] {
-  const { data } = view;
   return [
-    data.event === "stale" ? "Gemini isn't responding, so the prices and details below are the last ones we saw." : null,
-    data.candles === "unavailable"
-      ? view.series.points.length > 0
-        ? "Gemini's price history is unavailable, so the chart shows the desk's own price snapshots."
-        : "Gemini's price history is unavailable and the desk has no snapshots for this market yet."
-      : null,
+    view.data.event === "stale" ? "Gemini isn't responding, so the prices and details below are the last ones we saw." : null,
   ].filter((message) => message !== null);
 }
 
-export function ResearchPage({ symbol }: { readonly symbol: string }) {
+export function ResearchPage({ symbol }: { readonly symbol: string; readonly initialView?: ViewMode }) {
   const [loaded, setLoaded] = useState<Loaded>({ view: null, problem: null });
   const [timeframe, setTimeframe] = useState<ResearchTimeframe>(DEFAULT_TIMEFRAME);
-  const [mode, setMode] = useViewMode();
   const wanted = useRef<ResearchTimeframe>(DEFAULT_TIMEFRAME);
 
   const apply = (result: ResearchResult, requested: ResearchTimeframe) => {
@@ -99,36 +64,13 @@ export function ResearchPage({ symbol }: { readonly symbol: string }) {
   };
 
   const { view, problem } = loaded;
-  const pro = mode === "pro";
+  const banners = view === null ? [] : dataBanners(view);
   return (
     <div className={styles.page}>
-      <AppBar state={null} />
-      <div className={styles.toolbar}>
-        <p className={styles.symbol}>{symbol}</p>
-        <ModeToggle mode={mode} onChange={setMode} />
-      </div>
       {problem !== null ? <p className={styles.banner} role="alert">{problemMessage(problem)}</p> : null}
       {view === null && problem === null ? <p className={styles.status}>Loading market data…</p> : null}
       {view !== null ? (
-        <>
-          {dataBanners(view).map((message) => (
-            <p key={message} className={styles.notice} role="status">{message}</p>
-          ))}
-          <MarketHeader market={view.market} nowMs={Date.parse(view.generatedAt)} />
-          <DeepDiveCard symbol={symbol} />
-          <PriceChart series={view.series} timeframe={timeframe} onTimeframe={chooseTimeframe} showOverlays={pro} />
-          <div className={styles.columns}>
-            {pro ? <OrderBookPanel book={view.book} available={view.data.book === "live"} /> : null}
-            {pro ? <TradesPanel trades={view.trades} available={view.data.trades === "live"} /> : null}
-            {pro ? <IndicatorsPanel indicators={view.indicators} /> : null}
-          </div>
-          <BeginnerPanel prices={view.market.prices} limits={view.market.quantityLimits} />
-          <div className={styles.columns}>
-            <PostPanel post={view.postContext} />
-            <RulesPanel rulesText={view.market.rulesText} />
-            <RelatedPanel related={view.related} />
-          </div>
-        </>
+        <BeginnerView view={view} timeframe={timeframe} onTimeframe={chooseTimeframe} banners={banners} />
       ) : null}
     </div>
   );

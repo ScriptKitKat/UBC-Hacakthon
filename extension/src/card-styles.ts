@@ -1,87 +1,149 @@
 export const CARD_COLORS = {
-  surface: "rgb(0, 0, 0)",
-  text: "rgb(237, 242, 234)",
-  border: "rgba(168, 192, 143, .48)",
-  up: "rgb(74, 222, 128)",
-  down: "rgb(248, 113, 113)",
+  accent: "rgb(26, 107, 255)",
+  cyan: "rgb(38, 221, 249)",
+  surface: "rgb(255, 255, 255)",
+  text: "rgb(11, 15, 20)",
+  yes: "rgb(17, 166, 66)",
+  no: "rgb(196, 70, 70)",
+  border: "rgb(38, 221, 249)",
+  up: "rgb(17, 166, 66)",
+  down: "rgb(196, 70, 70)",
 } as const;
 
+export const CARD_MAX_WIDTH_PX = 360;
+
 export const CARD_CSS = `
-:host { all: initial; display: block; margin-top: 12px; color-scheme: dark; container-type: inline-size; }
+:host { all: initial; display: block; width: 360px; max-width: 100%; margin-top: 10px; color-scheme: inherit; container-type: inline-size; }
 *, *::before, *::after { box-sizing: border-box; }
 .card {
-  width: 100%; max-width: 516px; overflow: hidden; border: 1px solid ${CARD_COLORS.border}; border-radius: 24px;
-  background: ${CARD_COLORS.surface}; color: ${CARD_COLORS.text};
-  box-shadow: 0 0 24px rgba(162, 190, 141, .08), inset 0 1px 0 rgba(235, 244, 229, .06);
-  font: 500 15px/22px "NTD Manrope", ui-rounded, "Avenir Next", "Segoe UI", sans-serif;
+  --ntd-accent: ${CARD_COLORS.accent};
+  --ntd-cyan: ${CARD_COLORS.cyan};
+  --ntd-surface: ${CARD_COLORS.surface};
+  --ntd-text: ${CARD_COLORS.text};
+  --ntd-muted: rgb(102, 112, 122);
+  --ntd-track: rgb(242, 244, 246);
+  --ntd-selected: rgb(220, 231, 255);
+  --ntd-line: rgb(215, 221, 228);
+  --ntd-yes: ${CARD_COLORS.yes};
+  --ntd-no: ${CARD_COLORS.no};
+  --ntd-yes-fill: rgb(209, 239, 219);
+  --ntd-no-fill: rgb(250, 224, 224);
+  --ntd-yes-area: rgba(17, 166, 66, 0.14);
+  --ntd-no-area: rgba(196, 70, 70, 0.14);
+  --ntd-flat-area: rgba(102, 112, 122, 0.12);
+  --ntd-error: rgb(198, 40, 74);
+  width: ${String(CARD_MAX_WIDTH_PX)}px; max-width: 100%; overflow: visible;
+  border: 1.5px solid var(--ntd-cyan); border-radius: 20px;
+  background: var(--ntd-surface); color: var(--ntd-text);
+  font: 500 13px/18px "NTD Manrope", ui-rounded, "Avenir Next", "Segoe UI", sans-serif;
   font-variant-numeric: tabular-nums; text-align: left; -webkit-font-smoothing: antialiased;
+  color-scheme: light;
 }
-.body { padding: 20px; display: grid; gap: 18px; }
-.head { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 12px; align-items: center; }
-.icon { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, #00b9f5, #1a6bff); }
-.icon svg { width: 28px; height: 28px; }
+.card[data-theme="dark"] {
+  --ntd-surface: #101820;
+  --ntd-text: #e8eef6;
+  --ntd-muted: #8b98a8;
+  --ntd-track: #1a2330;
+  --ntd-selected: #1a3a72;
+  --ntd-line: #2a3848;
+  --ntd-yes: rgb(86, 214, 132);
+  --ntd-no: rgb(255, 138, 138);
+  --ntd-yes-fill: rgb(16, 52, 34);
+  --ntd-no-fill: rgb(64, 24, 28);
+  --ntd-yes-area: rgba(86, 214, 132, 0.2);
+  --ntd-no-area: rgba(255, 138, 138, 0.2);
+  --ntd-flat-area: rgba(139, 152, 168, 0.16);
+  --ntd-error: #ff6eae;
+  color-scheme: dark;
+}
+.body { padding: 12px 14px 10px; display: grid; gap: 10px; }
+.head { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+.icon { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, #00b9f5, #1a6bff); }
+.icon svg { width: 16px; height: 16px; }
 .titles { min-width: 0; }
-.title { font-size: 14px; line-height: 20px; color: #b3bdb5; overflow-wrap: anywhere; }
-.deadline { font-size: 11px; line-height: 16px; color: #a3afa5; }
+.title { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ntd-muted); overflow-wrap: anywhere; }
+.deadline { font-size: 11px; line-height: 15px; color: var(--ntd-muted); }
+.chart-block { display: grid; justify-items: end; align-content: start; gap: 1px; min-width: 0; }
+.chart-block:empty { display: none; }
+.chart { width: 96px; height: 32px; }
+.chart svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.line[data-trend="up"] { stroke: var(--ntd-yes); }
+.line[data-trend="down"] { stroke: var(--ntd-no); }
+.line[data-trend="flat"] { stroke: var(--ntd-muted); }
+.area[data-trend="up"] { fill: var(--ntd-yes-area); }
+.area[data-trend="down"] { fill: var(--ntd-no-area); }
+.area[data-trend="flat"] { fill: var(--ntd-flat-area); }
+.change { font-size: 10px; line-height: 12px; font-weight: 700; white-space: nowrap; color: var(--ntd-muted); }
+.change[data-trend="up"] { color: var(--ntd-yes); }
+.change[data-trend="down"] { color: var(--ntd-no); }
 button, select, input, a { font: inherit; }
-.contract-picker { position: relative; display: inline-grid; grid-template-columns: minmax(0, 1fr) 18px; align-items: center; gap: 8px; max-width: 100%; padding: 3px 0; font-size: 24px; line-height: 32px; font-weight: 700; letter-spacing: -.6px; }
+.contract-picker { position: relative; display: grid; max-width: 100%; }
 .contract-picker[data-disabled="true"] { opacity: .5; }
+.contract-trigger { display: grid; grid-template-columns: minmax(0, 1fr) 16px; align-items: center; gap: 6px; width: 100%; margin: 0; padding: 0; border: 0; background: transparent; color: var(--ntd-text); font-size: 18px; line-height: 24px; font-weight: 700; letter-spacing: -.4px; text-align: left; cursor: pointer; }
 .contract-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.contract { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
-.contract-chevron { width: 18px; height: 18px; pointer-events: none; color: #d4dfcf; }
-.contract option { background: ${CARD_COLORS.surface}; color: ${CARD_COLORS.text}; font-size: 16px; }
-.trade { display: grid; gap: 16px; }
-.outcomes { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; gap: 4px; border: 1px solid rgba(191, 210, 180, .16); border-radius: 999px; background: rgba(0, 0, 0, .2); box-shadow: inset 0 1px 6px rgba(0, 0, 0, .18); }
-.outcome { min-height: 46px; padding: 8px; border-radius: 999px; border: 1px solid transparent; background: transparent; color: #b3bdb5; font-size: 20px; line-height: 26px; font-weight: 650; cursor: pointer; }
-.outcome[data-outcome="yes"] { background: rgba(34, 197, 94, .08); border-color: rgba(74, 222, 128, .2); color: ${CARD_COLORS.up}; }
-.outcome[data-outcome="no"] { background: rgba(239, 68, 68, .08); border-color: rgba(248, 113, 113, .2); color: ${CARD_COLORS.down}; }
-.outcome[data-outcome="yes"][aria-pressed="true"] { background: rgba(34, 197, 94, .22); border-color: ${CARD_COLORS.up}; box-shadow: 0 0 16px rgba(34, 197, 94, .12), inset 0 1px 0 rgba(255, 255, 255, .09); }
-.outcome[data-outcome="no"][aria-pressed="true"] { background: rgba(239, 68, 68, .22); border-color: ${CARD_COLORS.down}; box-shadow: 0 0 16px rgba(239, 68, 68, .12), inset 0 1px 0 rgba(255, 255, 255, .09); }
-.amount-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 16px; border: 1px solid rgba(191, 210, 180, .24); border-radius: 18px; background: ${CARD_COLORS.surface}; cursor: text; }
-.amount-label { font-weight: 650; }
-.amount-value { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; max-width: 75%; font-size: 32px; line-height: 40px; font-weight: 650; letter-spacing: -1px; }
-.amount-unit { font-size: 13px; line-height: 20px; letter-spacing: 0; color: #b3bdb5; }
+.contract-chevron { width: 16px; height: 16px; pointer-events: none; color: var(--ntd-muted); }
+.contract-picker[data-open="true"] .contract-chevron { transform: rotate(180deg); }
+.contract-list { position: absolute; z-index: 8; top: calc(100% + 6px); left: 0; right: 0; margin: 0; padding: 6px; border: 1.5px solid var(--ntd-cyan); border-radius: 14px; background: var(--ntd-surface); color: var(--ntd-text); box-shadow: none; max-height: 220px; overflow: auto; }
+.contract-list[hidden] { display: none; }
+.contract-option { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; width: 100%; margin: 0; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--ntd-text); font-size: 13px; line-height: 18px; font-weight: 650; text-align: left; cursor: pointer; }
+.contract-option.is-active { background: var(--ntd-track); }
+.contract-option[aria-selected="true"] { background: var(--ntd-selected); }
+.contract-option-chance { color: var(--ntd-muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.contract-option[aria-selected="true"] .contract-option-chance { color: var(--ntd-accent); }
+.trade { display: grid; gap: 10px; }
+.outcomes { display: grid; grid-template-columns: 1fr 1fr; padding: 0; gap: 0; border: 0; border-radius: 999px; background: var(--ntd-track); overflow: hidden; }
+.outcome { min-height: 36px; padding: 6px 8px; border-radius: 999px; border: 1.5px solid transparent; background: transparent; color: var(--ntd-muted); font-size: 13px; line-height: 18px; font-weight: 650; cursor: pointer; box-shadow: none; }
+.outcome[data-outcome="yes"].is-selected { background: var(--ntd-yes-fill); border-color: var(--ntd-yes); color: var(--ntd-yes); box-shadow: none; }
+.outcome[data-outcome="no"].is-selected { background: var(--ntd-no-fill); border-color: var(--ntd-no); color: var(--ntd-no); box-shadow: none; }
+.amount-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 8px 12px; border: 1px solid var(--ntd-line); border-radius: 14px; background: var(--ntd-surface); cursor: text; }
+.amount-label { font-weight: 650; font-size: 13px; color: var(--ntd-text); }
+.amount-value { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; max-width: 75%; font-size: 22px; line-height: 28px; font-weight: 650; letter-spacing: -.6px; }
+.amount-unit { font-size: 11px; line-height: 16px; letter-spacing: 0; color: var(--ntd-muted); }
 .amount-editor { position: relative; min-width: 0; }
 .amount-mirror { visibility: hidden; white-space: pre; }
-.amount-input { position: absolute; inset: 0; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: ${CARD_COLORS.text}; font: inherit; letter-spacing: inherit; font-variant-numeric: inherit; text-align: right; }
-.amount-error { color: #ff6eae; font-size: 12px; line-height: 18px; }
+.amount-input { position: absolute; inset: 0; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--ntd-text); font: inherit; letter-spacing: inherit; font-variant-numeric: inherit; text-align: right; }
+.amount-error { color: var(--ntd-error); font-size: 11px; line-height: 15px; }
 .estimate { text-align: center; }
-.payout { color: ${CARD_COLORS.up}; font-weight: 600; line-height: 24px; }
-.estimate[data-outcome="no"] .payout { color: ${CARD_COLORS.down}; }
-.estimate-note { margin-top: 3px; color: #a7b1ba; font-size: 11px; line-height: 16px; }
-.buy { width: 100%; min-height: 48px; padding: 12px 16px; border: 1px solid rgba(188, 211, 170, .5); border-radius: 999px; background: linear-gradient(165deg, #384238, #1c251e 70%); color: #f0f5eb; font-weight: 650; box-shadow: 0 0 22px rgba(172, 202, 148, .12), inset 0 1px 0 rgba(255, 255, 255, .13); cursor: pointer; }
+.payout { color: var(--ntd-accent); font-weight: 600; font-size: 12px; line-height: 16px; }
+.estimate[data-outcome="no"] .payout { color: var(--ntd-accent); }
+.estimate-note { margin-top: 2px; color: var(--ntd-muted); font-size: 11px; line-height: 14px; }
+.buy { width: 100%; min-height: 40px; padding: 8px 14px; border: 0; border-radius: 999px; background: var(--ntd-accent); color: rgb(255, 255, 255); font-weight: 650; font-size: 14px; box-shadow: none; cursor: pointer; }
 button:disabled, input:disabled { opacity: .5; cursor: not-allowed; }
 select:disabled { cursor: not-allowed; }
-button:focus-visible, input:focus-visible, a:focus-visible, .contract-picker:focus-within { outline: 2px solid #bed5ac; outline-offset: 3px; }
-.blocked { color: #a7b1ba; font-size: 13px; line-height: 18px; }
-.result { border-radius: 12px; padding: 8px 12px; font-size: 14px; line-height: 18px; display: grid; gap: 6px; overflow-wrap: anywhere; }
-.result[data-tone="filled"] { background: rgba(0,186,124,.12); color: ${CARD_COLORS.up}; }
-.result[data-tone="approval"] { background: rgba(255,173,31,.12); color: rgb(255,173,31); }
-.result[data-tone="refused"] { background: rgba(249,24,128,.12); color: ${CARD_COLORS.down}; }
-.result[data-tone="quiet"], .result[data-tone="pending"] { background: rgba(113,118,123,.12); color: #a7b1ba; }
+button:focus-visible, input:focus-visible, a:focus-visible, .contract-trigger:focus-visible, .contract-list:focus-visible { outline: 2px solid var(--ntd-accent); outline-offset: 2px; }
+.blocked { color: var(--ntd-muted); font-size: 12px; line-height: 16px; }
+.result { border-radius: 10px; padding: 7px 10px; font-size: 12px; line-height: 16px; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.result[data-tone="filled"] { background: var(--ntd-selected); color: var(--ntd-accent); }
+.result[data-tone="approval"] { background: rgba(255,173,31,.12); color: rgb(200,130,20); }
+.result[data-tone="refused"] { background: rgba(196,70,70,.12); color: var(--ntd-no); }
+.result[data-tone="quiet"], .result[data-tone="pending"] { background: var(--ntd-track); color: var(--ntd-muted); }
 .result-title { font-weight: 700; }
 .status:empty { display: none; }
-.result-detail { color: ${CARD_COLORS.text}; }
-.result-note { color: #a7b1ba; font-size: 12px; }
-.link { color: #d0e4bf; text-decoration: none; font-weight: 650; }
-.approve { justify-self: start; min-height: 36px; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(231, 202, 167, .5); background: linear-gradient(155deg, #423b2e, #272218); color: #f2dec4; box-shadow: 0 0 16px rgba(231, 202, 167, .08), inset 0 1px 0 rgba(255, 255, 255, .1); font-weight: 650; cursor: pointer; }
-.foot { padding: 13px 16px; text-align: center; font-size: 12px; line-height: 18px; color: #a8b4aa; background: rgba(0, 0, 0, .18); border-top: 1px solid rgba(168, 192, 143, .18); }
-.foot a { color: #d9e6d0; font-weight: 650; text-underline-offset: 3px; }
-a:hover { text-decoration: underline; color: #edfae5; }
+.result-detail { color: var(--ntd-text); }
+.result-note { color: var(--ntd-muted); font-size: 11px; }
+.link { color: var(--ntd-accent); text-decoration: none; font-weight: 650; }
+.approve { justify-self: start; min-height: 32px; padding: 0 14px; border-radius: 999px; border: 0; background: var(--ntd-accent); color: rgb(255, 255, 255); box-shadow: none; font-weight: 650; cursor: pointer; }
+.foot { padding: 8px 12px; text-align: center; font-size: 11px; line-height: 16px; color: var(--ntd-muted); background: transparent; border-top: 1px solid var(--ntd-line); }
+.foot a { color: var(--ntd-accent); font-weight: 650; text-underline-offset: 2px; }
+a:hover { text-decoration: underline; }
 @container (max-width: 300px) {
-  .body { padding: 16px 12px; }
-  .head { grid-template-columns: 32px minmax(0, 1fr); gap: 8px; }
-  .icon { width: 32px; height: 32px; }
-  .icon svg { width: 22px; height: 22px; }
-  .contract-picker { font-size: 18px; gap: 6px; }
-  .outcome { font-size: 17px; white-space: nowrap; }
-  .amount-field { padding: 12px; }
-  .amount-label { font-size: 13px; }
-  .amount-value { font-size: 24px; line-height: 32px; }
-  .payout { font-size: 13px; }
+  .body { padding: 10px 10px 8px; }
+  .head { grid-template-columns: 24px minmax(0, 1fr); gap: 6px; }
+  .chart-block { grid-column: 1 / -1; justify-items: stretch; }
+  .chart { width: 100%; height: 28px; }
+  .change { justify-self: end; }
+  .icon { width: 24px; height: 24px; }
+  .icon svg { width: 14px; height: 14px; }
+  .contract-trigger { font-size: 16px; }
+  .outcome { font-size: 12px; min-height: 32px; }
+  .amount-field { padding: 7px 10px; }
+  .amount-value { font-size: 18px; line-height: 24px; }
+  .payout { font-size: 11px; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  button { transition: filter 120ms ease; }
-  button:hover:not(:disabled) { filter: brightness(1.12); }
+  button { transition: filter 120ms ease, background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+  button:hover:not(:disabled) { filter: brightness(1.06); }
+  .contract-chevron { transition: transform 120ms ease; }
 }
 `;

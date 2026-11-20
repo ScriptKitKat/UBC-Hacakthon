@@ -149,8 +149,24 @@ describe("getEvent", () => {
 
 describe("errors", () => {
   it("returns an http error without throwing", async () => {
-    const { client } = setup(() => jsonResponse({}, 429));
-    expect(await client.getEvent("X")).toEqual({ ok: false, error: { kind: "http", status: 429 } });
+    const { client } = setup(() => jsonResponse({}, 404));
+    expect(await client.getEvent("X")).toEqual({ ok: false, error: { kind: "http", status: 404 } });
+  });
+
+  it("retries 429 responses and serves stale cache when retries are exhausted", async () => {
+    const clock = createFakeClock();
+    let calls = 0;
+    const { fakeFetch } = createFakeFetch(() => {
+      calls += 1;
+      if (calls === 1) return jsonResponse(eventFixture);
+      return new Response("{}", { status: 429, headers: { "retry-after": "0" } });
+    });
+    const client = createGeminiMarketsClient({ baseUrl: "https://example.test", fetch: fakeFetch, clock });
+    expect((await client.getEvent("FED261211")).ok).toBe(true);
+    clock.advance(30_000);
+    const stale = await client.getEvent("FED261211");
+    expect(stale.ok).toBe(true);
+    expect(calls).toBeGreaterThan(2);
   });
 
   it("returns a network error when fetch rejects", async () => {
@@ -211,11 +227,35 @@ describe("errors", () => {
 });
 
 describe("rate limiting and caching", () => {
-  it("spaces distinct requests at least one second apart", async () => {
-    const { client, clock } = setup(() => jsonResponse(fedFixture));
-    const startMs = clock.nowMs();
-    await Promise.all([client.searchEvents({ search: "a" }), client.searchEvents({ search: "b" }), client.searchEvents({ search: "c" })]);
-    expect(clock.nowMs() - startMs).toBe(2000);
+  it("caps concurrent upstream fetches", async () => {
+    const clock = createFakeClock();
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const releases: Array<() => void> = [];
+    const fakeFetch = (() => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      return new Promise<Response>((resolve) => {
+        releases.push(() => {
+          inFlight -= 1;
+          resolve(jsonResponse(fedFixture));
+        });
+      });
+    }) as typeof fetch;
+    const client = createGeminiMarketsClient({ baseUrl: "https://example.test", fetch: fakeFetch, clock, maxInFlight: 4 });
+    const done = Promise.all(Array.from({ length: 8 }, (_, index) => client.searchEvents({ search: String(index) })));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(maxInFlight).toBe(4);
+    expect(releases).toHaveLength(4);
+    while (releases.length > 0) {
+      const release = releases.shift();
+      release?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+    await done;
+    expect(maxInFlight).toBe(4);
   });
 
   it("serves repeated requests from cache within the ttl and refetches after it", async () => {
@@ -223,7 +263,7 @@ describe("rate limiting and caching", () => {
     await client.searchEvents({ search: "FED" });
     await client.searchEvents({ search: "FED" });
     expect(urls).toHaveLength(1);
-    clock.advance(6000);
+    clock.advance(21_000);
     await client.searchEvents({ search: "FED" });
     expect(urls).toHaveLength(2);
   });
@@ -243,9 +283,9 @@ describe("rate limiting and caching", () => {
       return jsonResponse(tradesFixture);
     });
     const symbol = "GEMI-FED261211-HIKE25";
-    const startMs = clock.nowMs();
-    await Promise.all([client.candles(symbol, "15m"), client.candles(symbol, "1hr"), client.orderBook(symbol), client.recentTrades(symbol)]);
-    expect(clock.nowMs() - startMs).toBe(4000);
+    const results = await Promise.all([client.candles(symbol, "15m"), client.candles(symbol, "1hr"), client.orderBook(symbol), client.recentTrades(symbol)]);
+    expect(results.every((result) => result.ok)).toBe(true);
+    expect(clock.nowMs()).toBeGreaterThan(0);
   });
 
   it("refreshes event detail within the cache ttl", async () => {
@@ -290,7 +330,7 @@ describe("event detail fields", () => {
     const { client } = setup(() => jsonResponse(raw));
     const result = await client.getEvent("FED261211");
     if (!result.ok) throw new Error("expected ok");
-    expect(result.value).toMatchObject({ volume: 13303.52, volume24h: 0, subcategory: "Economics", description: "Fed decision in December?" });
+    expect(result.value).toMatchObject({ volume: 13303.52, volume24h: 0, subcategory: "Economics", description: "Fed decision in December?", imageUrl: eventFixture.imageUrl, termsLink: eventFixture.termsLink });
     expect(result.value.contracts[0]?.description).toBe("Resolves Yes if the Fed holds. View the full rules");
     expect(result.value.contracts[0]?.expiryDate).toBe("2026-12-11T05:00:00.000Z");
   });
@@ -323,8 +363,23 @@ describe("candles", () => {
     expect(urls).toEqual(["https://example.test/v2/candles/GEMI-FED261211-MAINTAIN/1day"]);
     if (!result.ok) throw new Error("expected ok");
     expect(result.value).toHaveLength(6);
-    expect(result.value[0]).toEqual({ timeMs: 1794960000000, openCents: 8, highCents: 8, lowCents: 5, closeCents: 6, volume: 834.93 });
+    expect(result.value[0]).toEqual({ timeMs: 1794528000000, openCents: 4, highCents: 4, lowCents: 4, closeCents: 4, volume: 0 });
+    expect(result.value.at(-1)).toEqual({ timeMs: 1794960000000, openCents: 8, highCents: 8, lowCents: 5, closeCents: 6, volume: 834.93 });
+    expect(result.value.every((candle, index, list) => index === 0 || (list[index - 1]?.timeMs ?? 0) <= candle.timeMs)).toBe(true);
     expect(result.value.every((candle) => Number.isInteger(candle.closeCents))).toBe(true);
+  });
+
+  it("returns candles oldest-first when Gemini sends newest-first rows", async () => {
+    const newestFirst = [
+      [1_800_000, 0.6, 0.6, 0.6, 0.6, 1],
+      [1_200_000, 0.5, 0.5, 0.5, 0.5, 1],
+      [600_000, 0.4, 0.4, 0.4, 0.4, 1],
+    ];
+    const { client } = setupKnown(() => jsonResponse(newestFirst));
+    const result = await client.candles("GEMI-FED261211-MAINTAIN", "1hr");
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.value.map((candle) => candle.timeMs)).toEqual([600_000, 1_200_000, 1_800_000]);
+    expect(result.value.map((candle) => candle.closeCents)).toEqual([40, 50, 60]);
   });
 
   it("returns an empty list for a market with no candles", async () => {
@@ -465,13 +520,16 @@ describe("request interval", () => {
 describe("overload protection", () => {
   it("rejects promptly when too many requests are already queued", async () => {
     const clock = createFakeClock();
-    const pending: (() => void)[] = [];
-    const slowClock: Clock = { nowMs: clock.nowMs, sleep: () => new Promise((resolve) => pending.push(resolve)) };
-    const { fakeFetch } = createFakeFetch(() => jsonResponse(fedFixture));
-    const client = createGeminiMarketsClient({ baseUrl: "https://example.test", fetch: fakeFetch, clock: slowClock });
-    const calls = Array.from({ length: 30 }, (_, index) => client.searchEvents({ search: String(index) }));
-    expect(await calls[29]).toEqual({ ok: false, error: { kind: "busy" } });
-    for (const release of pending) release();
+    const client = createGeminiMarketsClient({
+      baseUrl: "https://example.test",
+      fetch: () => new Promise(() => undefined),
+      clock,
+      maxInFlight: 4,
+    });
+    const calls = Array.from({ length: 29 }, (_, index) => client.searchEvents({ search: String(index) }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(await calls[28]).toEqual({ ok: false, error: { kind: "busy" } });
   });
 
   it("bounds the response cache", async () => {

@@ -10,6 +10,7 @@ import { instrumentSymbol, usdCents } from "@/shared";
 import type { LedgerView } from "@/shared";
 import { createDesk } from "./desk";
 import type { DeskDeps } from "./desk";
+import type { StoredMatch } from "./match-store";
 import { openFeedOrders } from "./feed-orders";
 import { startReconciliation } from "./reconciliation";
 import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
@@ -642,10 +643,33 @@ describe("desk persistence, positions and research context", () => {
     const post = { id: "ctx-1", text: news.text, author: "@Reuters", url: "https://x.com/Reuters/status/1" };
     const match = await desk.matchPost(post);
     if (match.kind !== "matched") throw new Error("expected a match");
-    expect(await desk.postContextFor(match.market.instrumentSymbol)).toEqual({
+    expect(await desk.postContextFor(match.market.instrumentSymbol)).toMatchObject({
       source: "x-feed", text: news.text, author: "@Reuters", url: "https://x.com/Reuters/status/1", why: match.why,
     });
+    const context = await desk.postContextFor(match.market.instrumentSymbol);
+    expect(context?.atMs).toEqual(expect.any(Number));
     expect(await desk.postContextFor("GEMI-OTHER-X")).toBeUndefined();
+  });
+
+  it("persists matched X posts so research can reuse them after a restart", async () => {
+    let stored: StoredMatch[] = [];
+    const { desk } = setup({
+      extra: {
+        saveMatches: (matches) => {
+          stored = [...matches];
+          return Promise.resolve();
+        },
+      },
+    });
+    const post = { id: "2122556892543394292", text: news.text, author: "@Reuters", url: "https://x.com/Reuters/status/2122556892543394292" };
+    const match = await desk.matchPost(post);
+    if (match.kind !== "matched") throw new Error("expected a match");
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.atMs).toBe(1_794_891_973_039);
+    const reopened = setup({ extra: { initialMatches: stored } }).desk;
+    expect(await reopened.matchedPostsFor(match.market.instrumentSymbol)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "x-feed", text: news.text, author: "@Reuters", atMs: 1_794_891_973_039 }),
+    ]));
   });
 
   it("falls back to the submitted news as research context", async () => {

@@ -1,0 +1,162 @@
+.app {
+  min-height: 100vh;
+  display: flex;
+  align-items: stretch;
+  background: #0a0a0a;
+  color: #ededed;
+  font-family: Geist, Inter, system-ui, sans-serif;
+  font-size: 14px;
+}
+
+.sidebar {
+  flex: 0 0 220px;
+  box-sizing: border-box;
+  padding: 20px 14px;
+  border-right: 1px solid #1f1f1f;
+  background: #0a0a0a;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px 20px;
+  color: #ededed;
+  text-decoration: none;
+}
+
+.mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: #ededed;
+  color: #0a0a0a;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.wordmark {
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+.navLink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: #a1a1aa;
+  text-decoration: none;
+}
+
+.navLink:hover { color: #ededed; }
+
+.navLink[aria-current="page"] {
+  background: #1a1a1a;
+  color: #ededed;
+  font-weight: 500;
+}
+
+.spacer { flex: 1; min-height: 24px; }
+
+.budget {
+  margin: 0 4px 12px;
+  padding: 12px;
+  border: 1px solid #1f1f1f;
+  border-radius: 10px;
+  background: #111111;
+}
+
+.budgetRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #a1a1aa;
+}
+
+.budgetValue { font-family: "Geist Mono", ui-monospace, monospace; }
+
+.track {
+  height: 4px;
+  border-radius: 2px;
+  background: #262626;
+  margin-top: 8px;
+}
+
+.fill {
+  height: 4px;
+  border-radius: 2px;
+  background: #ededed;
+}
+
+.budgetHint {
+  font-size: 12px;
+  color: #8a8a93;
+  margin-top: 8px;
+}
+
+.column {
+  flex: 999 1 560px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 24px;
+}
+
+.mode {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #262626;
+  border-radius: 10px;
+  background: #111111;
+}
+
+.modeButton {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #a1a1aa;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.modeButton[aria-pressed="true"] {
+  background: #ededed;
+  color: #0a0a0a;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 800px) {
+  .app { flex-direction: column; }
+  .sidebar {
+    flex: none;
+    width: 100%;
+    height: auto;
+    position: static;
+    border-right: 0;
+    border-bottom: 1px solid #1f1f1f;
+  }
+}

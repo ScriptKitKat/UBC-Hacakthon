@@ -17,4 +17,7 @@ export type {
   MarketEvent,
   OrderBook,
   RecentTrade,
+  SpotTicker,
 } from "./types";
+
+export { candlesSchema, oldestFirst } from "./schema";

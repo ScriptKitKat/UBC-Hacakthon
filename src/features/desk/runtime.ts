@@ -5,7 +5,14 @@ import { requestGrokJson } from "@/features/grok";
 import { createSampler, openHistoryStore } from "@/features/history";
 import { createSolanaLedger, createUnconfiguredLedger, isExpectedGenesis } from "@/features/ledger";
 import type { UsdcLedger } from "@/features/ledger";
+import { openAgentStore, startAgentLoop, agentCycle } from "@/features/agents";
+import type { AgentCycleReport, AgentStore } from "@/features/agents";
+import { cardsForSaved, cardsForSymbols, createBrowseCache, createListCache, listBrowse, listCatalog, loadSpotPrices, openWatchlist, sparklineUpdates } from "@/features/catalog";
+import type { BrowseListResult, BrowseQuery, CatalogListResult, CatalogQuery, Watchlist, WatchlistItem } from "@/features/catalog";
+import type { CatalogCard, WatchlistCard } from "@/shared";
 import { createGeminiMarketsClient } from "@/features/markets";
+import { createMarketPro } from "@/features/market-pro";
+import type { MarketPro } from "@/features/market-pro";
 import { createResearch } from "@/features/research";
 import type { JsonCompleter, Research } from "@/features/research";
 import { StoreUnavailableError, nodeFileSystem, resolveDataDirectory } from "@/features/storage";
@@ -19,15 +26,38 @@ import type { Desk } from "./desk";
 import { openFeedOrders } from "./feed-orders";
 import { startReconciliation } from "./reconciliation";
 import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
+import { openMatchStore } from "./match-store";
 import { UNDELIVERED_RECOVERY_MS, openPurchaseStore } from "./purchase-store";
 
-const GEMINI_MIN_REQUEST_INTERVAL_MS = 500;
+const browseCache = createBrowseCache(20_000);
+const listCache = createListCache(20_000);
 const PAYMENT_TIMEOUT_SECONDS = 120;
+let homeCatalog: HomeCatalog | undefined;
 const NONCE_BYTES = 16;
 const SECRET_BYTES = 32;
 
 export type DeskAccess =
-  | { readonly ok: true; readonly desk: Desk; readonly research: Research; readonly deepDive: DeepDiveResource | undefined }
+  | { readonly ok: true; readonly desk: Desk; readonly research: Research; readonly deepDive: DeepDiveResource | undefined; readonly marketPro: MarketPro }
+  | { readonly ok: false; readonly issues: readonly string[] };
+
+export interface AgentRuntime {
+  readonly store: AgentStore;
+  readonly run: () => Promise<AgentCycleReport>;
+}
+
+export interface HomeCatalog {
+  readonly list: (query?: CatalogQuery) => Promise<CatalogListResult>;
+  readonly browse: (query?: BrowseQuery) => Promise<BrowseListResult>;
+  readonly spots: (assets: readonly string[]) => Promise<Readonly<Record<string, string>>>;
+  readonly sparklines: (symbols: readonly string[]) => Promise<Readonly<Record<string, { readonly sparkline: readonly number[]; readonly changePercent: number | null }>>>;
+  readonly cardsFor: (symbols: readonly string[]) => Promise<readonly CatalogCard[]>;
+  readonly cardsForSaved: (items: readonly WatchlistItem[]) => Promise<readonly WatchlistCard[]>;
+  readonly watchlist: Watchlist;
+  readonly agents: AgentRuntime;
+}
+
+export type HomeServices =
+  | { readonly ok: true; readonly desk: Desk; readonly research: Research; readonly catalog: HomeCatalog; readonly marketPro: MarketPro }
   | { readonly ok: false; readonly issues: readonly string[] };
 
 async function openOrExplain<T>(open: () => Promise<T>): Promise<{ readonly ok: true; readonly value: T } | { readonly ok: false; readonly issue: string }> {
@@ -70,7 +100,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   if (ledgerView.configured && researchRecipient?.toBase58() === ledgerView.authority) {
     return { ok: false, issues: ["research: RESEARCH_RECIPIENT must differ from the agent authority"] };
   }
-  const markets = createGeminiMarketsClient({ baseUrl: config.value.geminiBaseUrl, fetch, minRequestIntervalMs: GEMINI_MIN_REQUEST_INTERVAL_MS });
+  const markets = createGeminiMarketsClient({ baseUrl: config.value.geminiBaseUrl, fetch, maxInFlight: 4, minRequestIntervalMs: 100 });
   const dataDirectory = resolveDataDirectory(env, process.cwd());
   const history = await openHistoryStore({ fs: nodeFileSystem, path: join(dataDirectory, "price-history.json") });
   const connection = settings.configured && researchRecipient
@@ -87,6 +117,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
       decisionLog,
       journal,
       purchaseStore: await openPurchaseStore({ fs: nodeFileSystem, path: join(dataDirectory, "research-purchases.json") }),
+      matchStore: await openMatchStore({ fs: nodeFileSystem, path: join(dataDirectory, "matched-posts.json") }),
       feedOrders: await openFeedOrders({
         fs: nodeFileSystem,
         path: join(dataDirectory, "feed-orders.json"),
@@ -110,7 +141,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     };
   });
   if (!stores.ok) return { ok: false, issues: [stores.issue] };
-  const { decisionLog, purchaseStore, journal, usedPayments, feedOrders } = stores.value;
+  const { decisionLog, purchaseStore, matchStore, journal, usedPayments, feedOrders } = stores.value;
   const publicOrigin = config.value.research.publicOrigin;
   const deferredDeepDive = createDeferredDeepDive(publicOrigin);
   const payments = settings.configured && researchRecipient && connection
@@ -151,6 +182,8 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     ...(payments ? { paymentInFlight: payments.paymentInFlight } : {}),
     initialPurchases: purchaseStore.initialPurchases,
     savePurchases: purchaseStore.savePurchases,
+    initialMatches: matchStore.initialMatches,
+    saveMatches: matchStore.saveMatches,
     ...(researchRecipient
       ? {
           research: {
@@ -165,7 +198,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   const completeJson: JsonCompleter | undefined = grok.apiKey === undefined
     ? undefined
     : (request) => requestGrokJson({ settings: grok, fetch, ...request });
-  const research = createResearch({ markets, history, nowMs: () => Date.now(), postContextFor: desk.postContextFor, ...(completeJson ? { completeJson } : {}) });
+  const research = createResearch({ markets, history, nowMs: () => Date.now(), postContextFor: desk.postContextFor, matchedPostsFor: desk.matchedPostsFor, ...(completeJson ? { completeJson } : {}) });
   const deepDive = payments ? createDeepDiveResource({ payments, research, publicOrigin }) : undefined;
   deferredDeepDive.bind(deepDive);
   const reconcile = async () => {
@@ -175,16 +208,73 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   const runtime = holder[deskKey];
   if (runtime) runtime.reconciliationTimer ??= startReconciliation(reconcile);
   createSampler({ history, markets, nowMs: () => Date.now() }).start();
-  return { ok: true, desk, research, deepDive };
+  const catalogDeps = { markets, history, now: () => new Date(), policy: config.value.policy };
+  const agentStore = openAgentStore({ fs: nodeFileSystem, path: join(dataDirectory, "agents.json") });
+  const agentDeps = {
+    store: agentStore,
+    markets,
+    history,
+    desk,
+    grok: config.value.feed.grok,
+    fetch,
+    operatorId: config.value.feed.operatorId,
+  };
+  homeCatalog = {
+    list: async (query = {}) => {
+      const cached = listCache.get(query);
+      if (cached) return cached;
+      const result = await listCache.takeInFlight(query, () => listCatalog(catalogDeps, query));
+      if (result.ok) return result;
+      const stale = listCache.getStale(query);
+      if (stale?.ok) return { ok: true, page: { ...stale.page, stale: true } };
+      return result;
+    },
+    sparklines: (symbols) => sparklineUpdates(catalogDeps, symbols),
+
+    browse: async (query = {}) => {
+      const cached = browseCache.get(query);
+      if (cached) return cached;
+      const result = await browseCache.takeInFlight(query, () => listBrowse({ markets, history, now: () => new Date() }, query));
+      if (result.ok) return result;
+      const stale = browseCache.getStale(query);
+      if (stale?.ok) return { ok: true, page: { ...stale.page, stale: true } };
+      return result;
+    },
+    spots: (assets) => loadSpotPrices({ markets }, assets),
+    cardsFor: (symbols) => cardsForSymbols(catalogDeps, symbols),
+    cardsForSaved: (items) => cardsForSaved(catalogDeps, items),
+    watchlist: openWatchlist({ fs: nodeFileSystem, path: join(dataDirectory, "watchlist.json") }),
+    agents: { store: agentStore, run: agentCycle(agentDeps) },
+  };
+  const watchlist = homeCatalog.watchlist;
+  if (runtime) runtime.agentTimer ??= startAgentLoop(agentDeps);
+  const marketPro = createMarketPro({
+    markets,
+    nowMs: () => Date.now(),
+    desk,
+    isWatched: async (symbol) => (await watchlist.list()).includes(symbol),
+  });
+  if (runtime) runtime.catalog = homeCatalog;
+  return { ok: true, desk, research, deepDive, marketPro };
 }
 
 const deskKey: unique symbol = Symbol.for("news-to-trade-desk.desk");
 interface DeskRuntime {
   readonly access: Promise<DeskAccess>;
+  catalog?: HomeCatalog;
   reconciliationTimer?: ReturnType<typeof startReconciliation>;
+  agentTimer?: ReturnType<typeof startAgentLoop>;
 }
 
 const holder = globalThis as typeof globalThis & { [deskKey]?: DeskRuntime };
+
+export async function getHomeServices(): Promise<HomeServices> {
+  const access = await getDesk();
+  if (!access.ok) return access;
+  const catalog = holder[deskKey]?.catalog ?? homeCatalog;
+  if (catalog === undefined) return { ok: false, issues: ["catalog: unavailable"] };
+  return { ok: true, desk: access.desk, research: access.research, catalog, marketPro: access.marketPro };
+}
 
 export function getDesk(): Promise<DeskAccess> {
   const existing = holder[deskKey];

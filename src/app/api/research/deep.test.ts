@@ -19,7 +19,7 @@ const handle = vi.fn<DeepDiveResource["handle"]>();
 const buyDeepDive = vi.fn<Desk["buyDeepDive"]>();
 
 function access(deepDive: DeepDiveResource | undefined = { urlFor: vi.fn(), handle, recover: vi.fn() }): DeskAccess {
-  return { ok: true, desk: { buyDeepDive } as unknown as Desk, research: { view: vi.fn(), brief: vi.fn() }, deepDive };
+  return { ok: true, desk: { buyDeepDive } as unknown as Desk, research: { view: vi.fn(), brief: vi.fn() }, deepDive, marketPro: { shell: vi.fn(), live: vi.fn() } };
 }
 
 beforeEach(() => {
@@ -42,7 +42,7 @@ describe("GET /api/research/[symbol]/deep", () => {
   });
 
   it("reports unconfigured payments and a misconfigured desk as 503", async () => {
-    getDesk.mockResolvedValue({ ...access(), deepDive: undefined } as DeskAccess);
+    getDesk.mockResolvedValue({ ...access(), deepDive: undefined, marketPro: { shell: vi.fn(), live: vi.fn() } } as DeskAccess);
     const unconfigured = await deep(new Request(URL_BASE), context());
     expect(unconfigured.status).toBe(503);
     expect(await unconfigured.json()).toEqual({ error: "research-payments-not-configured" });

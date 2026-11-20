@@ -27,6 +27,10 @@ export interface MarketContract {
   readonly status: string;
   readonly prices: ContractPrices;
   readonly limits: ContractLimits | null;
+  readonly abbreviatedName?: string | null;
+  readonly color?: string | null;
+  readonly strikeValue?: number | null;
+  readonly createdAt?: string | null;
 }
 
 export interface MarketEvent {
@@ -42,6 +46,11 @@ export interface MarketEvent {
   readonly volume24h: number | null;
   readonly tags: readonly string[];
   readonly contracts: readonly MarketContract[];
+  readonly isLive?: boolean;
+  readonly createdAt?: string | null;
+  readonly startTime?: string | null;
+  readonly imageUrl?: string | null;
+  readonly termsLink?: string | null;
 }
 
 export interface EventsPage {
@@ -76,4 +85,8 @@ export interface RecentTrade {
   readonly priceCents: number;
   readonly amount: number;
   readonly side: "buy" | "sell";
+}
+
+export interface SpotTicker {
+  readonly last: number;
 }

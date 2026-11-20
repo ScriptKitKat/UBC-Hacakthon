@@ -9,3 +9,4 @@ id.json
 next-env.d.ts
 extension/dist/
 .data/
+extension/harness/dist/
