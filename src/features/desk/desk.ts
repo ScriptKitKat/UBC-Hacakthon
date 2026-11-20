@@ -109,7 +109,7 @@ export interface ProposeRequest {
 
 export type ConfirmResult =
   | { readonly ok: true; readonly entry: DecisionLogEntry }
-  | { readonly ok: false; readonly error: "unknown-intent" };
+  | { readonly ok: false; readonly error: "unknown-intent" | "unauthorized-approver" };
 
 export interface Desk {
   readonly submitNews: (news: NewsItem) => Promise<MatchView>;
@@ -130,6 +130,7 @@ export interface Desk {
   readonly confirmFromFeed: (intentId: string) => Promise<ConfirmResult>;
   readonly proposeTrade: (request: ProposeRequest) => Promise<DecisionLogEntry>;
   readonly confirmPending: (intentId: string, approverId: string) => Promise<ConfirmResult>;
+  readonly rejectPending: (intentId: string, approverId: string) => Promise<ConfirmResult>;
   readonly setKillSwitch: (on: boolean) => void;
   readonly getSnapshot: () => Promise<DeskSnapshot>;
 }
@@ -795,6 +796,40 @@ export function createDesk(deps: DeskDeps): Desk {
     return { ok: true, entry: await execute(confirmed, waiting.intent, quote) };
   }
 
+  async function rejectPending(intentId: string, approverId: string): Promise<ConfirmResult> {
+    if (!policy.senderAllowlist.has(approverId)) return { ok: false, error: "unauthorized-approver" };
+    const feed = feedOrders.findIntent(intentId);
+    if (feed) {
+      if (feed.entry.kind !== "needs-approval") return { ok: true, entry: existingFeedResult(feed) };
+      return {
+        ok: true,
+        entry: await saveFeedResult(feed, record({
+          intentId: feed.entry.intentId,
+          symbol: feed.entry.symbol,
+          outcome: feed.entry.outcome,
+          notionalCents: feed.entry.notionalCents,
+          senderId: feed.entry.senderId,
+          source: feed.entry.source,
+          kind: "refuse",
+          code: "rejected",
+          spokenReason: "You rejected this trade.",
+        })),
+      };
+    }
+    const waiting = pending.get(intentId);
+    if (!waiting) return { ok: false, error: "unknown-intent" };
+    if (!pending.delete(intentId)) return { ok: false, error: "unknown-intent" };
+    return {
+      ok: true,
+      entry: record({
+        ...tradeFields(waiting.intent),
+        kind: "refuse",
+        code: "rejected",
+        spokenReason: "You rejected this trade.",
+      }),
+    };
+  }
+
   function budgetView(rolled: PolicyState, config: Policy): FeedPositions["budget"] {
     return {
       dailyCapCents: config.dailyCap,
@@ -1001,6 +1036,8 @@ export function createDesk(deps: DeskDeps): Desk {
     proposeTrade,
 
     confirmPending,
+
+    rejectPending,
 
     setKillSwitch(on) {
       policy = policy.withKillSwitch(on);

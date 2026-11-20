@@ -239,6 +239,37 @@ describe("desk", () => {
     expect(debit).not.toHaveBeenCalled();
   });
 
+  it("rejects an in-memory pending trade and records the refusal", async () => {
+    const { desk } = await readyDesk();
+    const waiting = await desk.proposeTrade(propose("no", 500));
+    const rejected = await desk.rejectPending(waiting.intentId, "priscilla");
+    expect(rejected).toMatchObject({
+      ok: true,
+      entry: { kind: "refuse", code: "rejected", spokenReason: "You rejected this trade." },
+    });
+    expect((await desk.getSnapshot()).pending).toEqual([]);
+    expect((await desk.getSnapshot()).log[0]).toMatchObject({ kind: "refuse", code: "rejected" });
+  });
+
+  it("rejects unknown intents", async () => {
+    const { desk } = await readyDesk();
+    expect(await desk.rejectPending("unknown", "priscilla")).toEqual({ ok: false, error: "unknown-intent" });
+  });
+
+  it("keeps a pending trade when an unauthorized approver tries to reject it", async () => {
+    const { desk } = await readyDesk();
+    const waiting = await desk.proposeTrade(propose("yes", 500));
+    expect(await desk.rejectPending(waiting.intentId, "stranger")).toEqual({ ok: false, error: "unauthorized-approver" });
+    expect((await desk.getSnapshot()).pending).toHaveLength(1);
+  });
+
+  it("cannot confirm a trade after rejecting it", async () => {
+    const { desk } = await readyDesk();
+    const waiting = await desk.proposeTrade(propose("yes", 500));
+    await desk.rejectPending(waiting.intentId, "priscilla");
+    expect(await desk.confirmPending(waiting.intentId, "priscilla")).toEqual({ ok: false, error: "unknown-intent" });
+  });
+
   it("kill switch blocks proposals and confirmations", async () => {
     const { desk, debit } = await readyDesk();
     const waiting = await desk.proposeTrade(propose("yes", 500));
@@ -431,6 +462,39 @@ describe("desk feed", () => {
     const confirmed = await desk.confirmFromFeed(waiting.intentId);
     expect(confirmed).toMatchObject({ ok: true, entry: { kind: "approve", source: "feed" } });
     expect(await desk.confirmFromFeed(waiting.intentId)).toEqual(confirmed);
+  });
+
+  it("rejects a feed order that needs approval and removes it from pending", async () => {
+    const { desk } = setup();
+    await desk.matchPost(post);
+    const waiting = await desk.buyFromFeed({
+      clientOrderId: "reject-order",
+      instrumentSymbol: "GEMI-FED261211-MAINTAIN",
+      outcome: "no",
+      notionalCents: 500,
+    });
+    expect(waiting.kind).toBe("needs-approval");
+    const rejected = await desk.rejectPending(waiting.intentId, "priscilla");
+    expect(rejected).toMatchObject({
+      ok: true,
+      entry: { kind: "refuse", code: "rejected", source: "feed" },
+    });
+    expect(await desk.feedOrder("reject-order")).toMatchObject({ kind: "refuse", code: "rejected" });
+    expect((await desk.getSnapshot()).pending).toEqual([]);
+  });
+
+  it("does not change a feed order that no longer needs approval", async () => {
+    const { desk } = setup();
+    await desk.matchPost(post);
+    const completed = await desk.buyFromFeed({
+      clientOrderId: "completed-order",
+      instrumentSymbol: "GEMI-FED261211-MAINTAIN",
+      outcome: "yes",
+      notionalCents: 200,
+    });
+    const rejected = await desk.rejectPending(completed.intentId, "priscilla");
+    expect(rejected).toEqual({ ok: true, entry: completed });
+    expect(await desk.feedOrder("completed-order")).toEqual(completed);
   });
 
   it("does not let the feed confirm intents from other sources", async () => {

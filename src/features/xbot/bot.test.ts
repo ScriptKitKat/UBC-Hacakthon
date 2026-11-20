@@ -109,15 +109,20 @@ function fakeDesk(script: DeskScript = {}) {
     pending = pending.filter((item) => item.intentId !== intentId);
     return Promise.resolve({ ok: true, entry: entryFor("approve", approverId, { intentId }) });
   });
+  const rejectPending = vi.fn<Desk["rejectPending"]>((intentId, approverId): Promise<ConfirmResult> => {
+    if (!pending.some((item) => item.intentId === intentId)) return Promise.resolve({ ok: false, error: "unknown-intent" });
+    pending = pending.filter((item) => item.intentId !== intentId);
+    return Promise.resolve({ ok: true, entry: entryFor("refuse", approverId, { intentId, code: "rejected" }) });
+  });
   const submitNews = vi.fn<Desk["submitNews"]>(() => Promise.resolve(script.match ?? matched));
   const getSnapshot = vi.fn<Desk["getSnapshot"]>(() =>
     Promise.resolve({ news: null, match: matched, policy, pending, log: [], ledger: { configured: false, missing: [] } } satisfies DeskSnapshot),
   );
   const desk: Desk = {
-    submitNews, proposeTrade, confirmPending, getSnapshot, setKillSwitch: vi.fn(),
+    submitNews, proposeTrade, confirmPending, rejectPending, getSnapshot, setKillSwitch: vi.fn(),
     matchPost: vi.fn(), isCardFor: vi.fn(), feedOrder: vi.fn(), quote: vi.fn(), postContextFor: vi.fn(), matchedPostsFor: vi.fn(), peekResearchBriefs: vi.fn(), listBriefLibrary: vi.fn(), getPositions: vi.fn(), getPortfolio: vi.fn(), getFeedPositions: vi.fn<Desk["getFeedPositions"]>(), buyDeepDive: vi.fn(), reconcile: vi.fn(), buyFromFeed: vi.fn(), confirmFromFeed: vi.fn(),
   };
-  return { desk, proposeTrade, confirmPending, submitNews };
+  return { desk, proposeTrade, confirmPending, rejectPending, submitNews };
 }
 
 function setup(script: DeskScript = {}) {
