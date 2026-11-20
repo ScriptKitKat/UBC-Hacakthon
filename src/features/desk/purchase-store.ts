@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { researchBriefSchema } from "@/shared";
+import { briefAuthorSchema, researchBriefSchema } from "@/shared";
 import type { ResearchBrief } from "@/shared";
 import { createJsonStore } from "@/features/storage";
 import type { FileSystem } from "@/features/storage";
@@ -12,6 +12,7 @@ const purchaseSchema = z.object({
   brief: researchBriefSchema.nullable(),
   receipt: z.object({ signature: z.string(), explorerUrl: z.string(), costCents: z.number() }),
   yesCents: z.number().nullable().optional(),
+  author: briefAuthorSchema.optional(),
 });
 
 const fileSchema = z.object({ version: z.literal(1), purchases: z.array(purchaseSchema) });

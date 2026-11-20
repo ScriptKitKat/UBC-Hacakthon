@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { briefAuthorSchema, briefEvidenceSchema } from "./brief-record";
 
 export const RESEARCH_TIMEFRAMES = ["1H", "1D", "1W", "1M", "All"] as const;
 export type ResearchTimeframe = (typeof RESEARCH_TIMEFRAMES)[number];
@@ -9,7 +10,7 @@ const seriesPoint = z.object({
   t: z.number(),
   cents: z.number(),
   volume: z.number().nullable(),
-  source: z.enum(["gemini", "snapshot"]),
+  source: z.enum(["gemini", "trades", "snapshot"]),
   bidCents: cents,
   askCents: cents,
   ma: cents,
@@ -103,7 +104,7 @@ export const researchViewSchema = z.object({
     trades: z.enum(["live", "unavailable"]),
   }),
   series: z.object({
-    source: z.enum(["gemini", "snapshot", "mixed", "none"]),
+    source: z.enum(["gemini", "trades", "snapshot", "mixed", "none"]),
     points: z.array(seriesPoint),
   }),
   book: z.object({ bids: z.array(depthLevel), asks: z.array(depthLevel) }),
@@ -141,6 +142,8 @@ export const researchBriefSchema = z.object({
   headline: z.string(),
   sections: z.array(z.object({ title: z.string(), body: z.string() })),
   polishedBy: z.enum(["template", "grok"]),
+  author: briefAuthorSchema.optional(),
+  evidence: briefEvidenceSchema.optional(),
 });
 
 const deepDiveStep = z.discriminatedUnion("step", [

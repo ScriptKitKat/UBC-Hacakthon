@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Candle } from "@/features/markets";
 import type { PriceSnapshot } from "@/features/history";
-import { cumulativeDepth, hourlyIndicatorPoints, mergeSeries, TIMEFRAME_PLANS } from "./series";
+import type { RecentTrade } from "@/features/markets";
+import { CANDLE_INTERVAL_MS, cumulativeDepth, hourlyIndicatorPoints, mergeSeries, TIMEFRAME_PLANS } from "./series";
 
 const HOUR = 3_600_000;
 const NOW = 1_800_000_000_000;
@@ -34,6 +35,7 @@ describe("mergeSeries", () => {
     expect(result.source).toBe("mixed");
     expect(result.points.map((point) => [point.source, point.cents])).toEqual([
       ["gemini", 50],
+      ["snapshot", 51],
       ["gemini", 52],
       ["snapshot", 53],
       ["snapshot", 54],
@@ -67,6 +69,34 @@ describe("mergeSeries", () => {
     expect(TIMEFRAME_PLANS["1D"].candle).toBe("15m");
     expect(TIMEFRAME_PLANS["1W"].candle).toBe("1hr");
     expect(TIMEFRAME_PLANS.All).toEqual({ candle: "1day", windowMs: null });
+  });
+
+  it("rebuilds a series from Gemini trades when candles are missing", () => {
+    const trades: RecentTrade[] = [
+      { tradeId: 1, timeMs: NOW - 3_000, priceCents: 40, amount: 2, side: "buy" },
+      { tradeId: 2, timeMs: NOW - 1_000, priceCents: 42, amount: 1, side: "sell" },
+    ];
+    const result = mergeSeries({ candles: [], snapshots: [], trades, windowMs: HOUR, nowMs: NOW });
+    expect(result.source).toBe("trades");
+    expect(result.points.map((point) => [point.source, point.cents])).toEqual([["trades", 40], ["trades", 42]]);
+  });
+
+  it("keeps earlier snapshots when short candles only cover the end of the window", () => {
+    const result = mergeSeries({
+      candles: [candle(NOW - 60_000, 55)],
+      snapshots: [snap(NOW - 20 * 60_000, 50), snap(NOW - 10_000, 56)],
+      trades: [{ tradeId: 9, timeMs: NOW - 15 * 60_000, priceCents: 52, amount: 1, side: "buy" }],
+      windowMs: HOUR,
+      nowMs: NOW,
+      candleIntervalMs: CANDLE_INTERVAL_MS["1m"],
+    });
+    expect(result.source).toBe("mixed");
+    expect(result.points.map((point) => [point.source, point.cents])).toEqual([
+      ["snapshot", 50],
+      ["trades", 52],
+      ["gemini", 55],
+      ["snapshot", 56],
+    ]);
   });
 });
 

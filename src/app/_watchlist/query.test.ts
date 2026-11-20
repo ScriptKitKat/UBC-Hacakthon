@@ -77,6 +77,7 @@ describe("watchlist query", () => {
     expect(filterWatchlist(all, { filter: "moving", search: "", now }).map((item) => item.eventTicker)).toEqual(["SOL261231"]);
     expect(filterWatchlist(all, { filter: "closing", search: "", now }).map((item) => item.eventTicker)).toEqual(["WXHIGH-NYC"]);
     expect(filterWatchlist(all, { filter: "all", search: "snow", now }).map((item) => item.eventTicker)).toEqual(["WXHIGH-NYC"]);
+    expect(filterWatchlist(all, { filter: "agent", search: "", now, agentTickers: new Set(["SOL261231"]) }).map((item) => item.eventTicker)).toEqual(["SOL261231"]);
     expect(sortWatchlist(all, "move").map((item) => item.eventTicker)).toEqual(["SOL261231", "TECH260101", "WXHIGH-NYC", "OLD"]);
     expect(sortWatchlist(all, "closing")[0]?.eventTicker).toBe("OLD");
   });

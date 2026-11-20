@@ -15,8 +15,9 @@ import { allowAll, matchNews } from "@/features/matcher";
 import type { MatchCandidate, MatchResult, NewsItem } from "@/features/matcher";
 import { aggregatePositions, buildPortfolio, fillsFromJournal, markFromContract, parsePortfolioRange, summarizeResearchSpend, todaysResearchSpendCents } from "@/features/positions";
 import type { MarketMark, PortfolioMarket } from "@/features/positions";
-import { instrumentSymbol, usdCents } from "@/shared";
+import { instrumentSymbol, tweetTimeMs, usdCents } from "@/shared";
 import type { FeedSettings } from "./config";
+import { buildBriefLibrary } from "./brief-library";
 import { buyDeepDive } from "./deep-dive";
 import type { DeepDiveSettings } from "./deep-dive";
 import { awaitingPaymentResult, createFeedOrders } from "./feed-orders";
@@ -24,7 +25,10 @@ import type { FeedOrder, FeedOrders } from "./feed-orders";
 import { singleReconciliation } from "./reconciliation";
 import { UNDELIVERED_RECOVERY_MS } from "./purchase-store";
 import { yesCentsFromBrief } from "@/shared";
+import type { BriefLibraryView } from "@/shared";
 import type { StoredPurchase } from "./purchase-store";
+import { capMatches, matchToContext } from "./match-store";
+import type { StoredMatch } from "./match-store";
 import type {
   DecisionLogEntry,
   DeepDiveResult,
@@ -81,6 +85,8 @@ export interface DeskDeps {
   readonly research?: DeepDiveSettings;
   readonly initialPurchases?: readonly StoredPurchase[];
   readonly savePurchases?: (purchases: readonly StoredPurchase[]) => Promise<void>;
+  readonly initialMatches?: readonly StoredMatch[];
+  readonly saveMatches?: (matches: readonly StoredMatch[]) => Promise<void>;
 }
 
 export interface FeedBuyRequest {
@@ -98,6 +104,7 @@ export interface ProposeRequest {
   readonly source: TradeSource;
   readonly senderId: string;
   readonly seenPriceCents?: number;
+  readonly requireApproval?: boolean;
 }
 
 export type ConfirmResult =
@@ -112,6 +119,7 @@ export interface Desk {
   readonly postContextFor: (symbol: string) => Promise<ResearchPostContext | undefined>;
   readonly matchedPostsFor: (symbol: string) => Promise<readonly ResearchPostContext[]>;
   readonly peekResearchBriefs: (symbol: string) => { readonly current: StoredPurchase | null; readonly previous: StoredPurchase | null };
+  readonly listBriefLibrary: () => Promise<BriefLibraryView>;
   readonly getFeedPositions: () => Promise<FeedPositions>;
   readonly getPositions: () => Promise<PositionsView>;
   readonly getPortfolio: (range?: PortfolioRange) => Promise<PortfolioView>;
@@ -261,6 +269,8 @@ export function createDesk(deps: DeskDeps): Desk {
   let log: readonly DecisionLogEntry[] = initialLog;
   let purchases: readonly StoredPurchase[] = (deps.initialPurchases ?? []).slice(0, PURCHASE_LIMIT);
   const savePurchases = deps.savePurchases ?? (() => Promise.resolve());
+  let matches: StoredMatch[] = capMatches(deps.initialMatches ?? []);
+  const saveMatches = deps.saveMatches ?? (() => Promise.resolve());
   const deepDives = new Map<string, Promise<DeepDiveResult>>();
   const inFlight = new Set<string>();
   const pending = new Map<string, PendingRecord>();
@@ -375,6 +385,9 @@ export function createDesk(deps: DeskDeps): Desk {
       return hit.match;
     }
     const match = computeFeedMatch(post);
+    match.then((resolved) => {
+      if (resolved.kind === "matched") rememberFeedMatch(post, resolved, nowMs);
+    }).catch(() => undefined);
     matchCache.set(post.id, { at: nowMs, post, match });
     for (const oldest of matchCache.keys()) {
       if (matchCache.size <= MATCH_CACHE_LIMIT) break;
@@ -386,6 +399,22 @@ export function createDesk(deps: DeskDeps): Desk {
 
   function isFeedContract(match: FeedMatch | undefined, symbol: string): boolean {
     return match?.kind === "matched" && (match.market.instrumentSymbol === symbol || listedContracts.get(match.market.eventTicker)?.has(symbol) === true);
+  }
+
+  function rememberFeedMatch(post: PostInput, match: Extract<FeedMatch, { kind: "matched" }>, seenAtMs: number): void {
+    const symbols = [match.market.instrumentSymbol, ...(match.contracts ?? []).map((contract) => contract.instrumentSymbol)];
+    const stored: StoredMatch = {
+      postId: post.id,
+      symbols,
+      source: "x-feed",
+      text: post.text,
+      author: post.author ?? null,
+      url: post.url ?? null,
+      why: match.why,
+      atMs: tweetTimeMs(post.id) ?? seenAtMs,
+    };
+    matches = capMatches([stored, ...matches.filter((item) => item.postId !== stored.postId)]);
+    saveMatches(matches).catch(() => undefined);
   }
 
   function journalPurchase(entry: SpendEntry): StoredPurchase | undefined {
@@ -427,7 +456,8 @@ export function createDesk(deps: DeskDeps): Desk {
         atMs: Date.parse(at),
         brief: result.brief,
         receipt: { signature, explorerUrl, costCents },
-        yesCents: result.brief ? yesCentsFromBrief(result.brief) : null,
+        yesCents: result.brief?.evidence?.yesCentsWhenWritten ?? (result.brief ? yesCentsFromBrief(result.brief) : null),
+        author: result.brief?.author ?? "desk",
       },
       ...purchases.filter((purchase) => purchase.receipt.signature !== signature),
     ]);
@@ -614,12 +644,13 @@ export function createDesk(deps: DeskDeps): Desk {
   }
 
   async function proposeTrade(request: ProposeRequest): Promise<DecisionLogEntry> {
-    return proposeIntent(tradeIntent(request));
+    return proposeIntent(tradeIntent(request), false, request.requireApproval === true);
   }
 
-  async function proposeIntent(intent: TradeIntent, persistApproval = false): Promise<DecisionLogEntry> {
+  async function proposeIntent(intent: TradeIntent, persistApproval = false, requireApproval = false): Promise<DecisionLogEntry> {
     const quote = quoteFor(await resolveMarket(intent.instrumentSymbol, true), intent.outcome);
-    const decision = evaluate(intent, quote, policy, currentState(), now());
+    const evaluated = evaluate(intent, quote, policy, currentState(), now());
+    const decision = requireApproval && evaluated.kind === "approve" ? restorePendingApproval(intent) : evaluated;
     switch (decision.kind) {
       case "refuse":
         return record({ ...tradeFields(intent), kind: "refuse", code: decision.code, spokenReason: decision.spokenReason });
@@ -868,11 +899,14 @@ export function createDesk(deps: DeskDeps): Desk {
     async matchedPostsFor(symbol) {
       const nowMs = now().getTime();
       const posts: ResearchPostContext[] = [];
+      for (const stored of matches) {
+        if (stored.symbols.includes(symbol)) posts.push(matchToContext(stored));
+      }
       for (const { at, post, match } of [...matchCache.values()].reverse()) {
         if (nowMs - at >= MATCH_CACHE_TTL_MS) continue;
         const resolved = await match.catch(() => undefined);
         if (resolved?.kind === "matched" && isFeedContract(resolved, symbol)) {
-          posts.push({ source: "x-feed", text: post.text, author: post.author ?? null, url: post.url ?? null, why: resolved.why, atMs: at });
+          posts.push({ source: "x-feed", text: post.text, author: post.author ?? null, url: post.url ?? null, why: resolved.why, atMs: tweetTimeMs(post.id) ?? at });
         }
       }
       if (current?.match.kind === "matched" && current.match.best.contract.instrumentSymbol === symbol) {
@@ -895,6 +929,14 @@ export function createDesk(deps: DeskDeps): Desk {
         .filter((purchase) => purchase.symbol === symbol && purchase.brief !== null)
         .sort((a, b) => b.atMs - a.atMs);
       return { current: list[0] ?? null, previous: list[1] ?? null };
+    },
+
+    listBriefLibrary() {
+      return buildBriefLibrary({
+        purchases,
+        now: now(),
+        getEvent: (ticker) => markets.getEvent(ticker),
+      });
     },
 
     async getPositions() {

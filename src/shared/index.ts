@@ -45,6 +45,39 @@ export type {
 } from "./research";
 
 export {
+  LIBRARY_SECTION_GROUPS,
+  LIBRARY_STALE_POINTS,
+  authorLabel,
+  authorLine,
+  briefAuthorSchema,
+  briefEvidenceSchema,
+  briefLibraryFilterSchema,
+  briefLibraryItemSchema,
+  briefLibraryViewSchema,
+  briefSearchText,
+  defaultBriefAuthor,
+  filterLibraryItems,
+  isAgentAuthor,
+  leftoverBriefSections,
+  librarySectionGroups,
+  libraryStats,
+  matchesBriefQuery,
+  needsRefresh,
+  oddsDeltaPoints,
+  resolutionFromStatus,
+} from "./briefs-library";
+export type {
+  BriefAuthor,
+  BriefEvidence,
+  BriefLibraryFilter,
+  BriefLibraryItem,
+  BriefLibraryView,
+  BriefResolution,
+  LibrarySectionGroup,
+  LibrarySectionGroupId,
+} from "./briefs-library";
+
+export {
   browseCardSchema,
   browsePageSchema,
   browseSortSchema,
@@ -79,13 +112,16 @@ export type { Sparkline, Trend } from "./sparkline";
 export { changeTrend, contrastInk, formatBudgetCents, formatChangePercent, formatPayoutFromAsk, formatPercent, formatResetLabel, formatSignedPercent, formatVolumeUsd, isXUrl, nextUtcMidnight, pointDelta, sparklinePointDelta } from "./card-format";
 export { mergeByKeyKeepNewest, uniqueByKey } from "./dedupe";
 
+export { tweetTimeMs } from "./post-time";
 export {
   BEGINNER_TIMEFRAMES,
   briefStaleCopy,
   crowdMoves,
   crowdSentence,
   dayChangeCents,
+  driversFromBrief,
   formatEndLine,
+  historySourceLabel,
   isBeginnerTimeframe,
   marketDrivers,
   marketTitle,
@@ -129,3 +165,13 @@ export type {
   ProTimeframe,
   ProTrade,
 } from "./market-pro";
+
+export {
+  agentActivitySchema,
+  agentActivityViewSchema,
+  agentCycleReportSchema,
+  agentFeedItemSchema,
+  agentRecordSchema,
+  agentsViewSchema,
+} from "./agents";
+export type { AgentActivityView, AgentFeedItem, AgentRecordView, AgentsView } from "./agents";

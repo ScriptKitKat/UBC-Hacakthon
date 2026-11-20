@@ -45,6 +45,7 @@ const stubDesk: Desk = {
   postContextFor: vi.fn(),
   matchedPostsFor: vi.fn(),
   peekResearchBriefs: vi.fn(),
+  listBriefLibrary: vi.fn(),
   getFeedPositions: vi.fn<Desk["getFeedPositions"]>(),
   getPositions: vi.fn(),
   getPortfolio: vi.fn(),
