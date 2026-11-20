@@ -190,7 +190,10 @@ export function nextRoutineAt(schedule: AgentSchedule, lastRoutineAt: string | n
   const hour = Number(hourText);
   const minute = Number(minuteText);
   if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
-  for (let offsetDays = 0; offsetDays < 370; offsetDays += 1) {
+  const scheduleMinute = hour * 60 + minute;
+  const lastMinute = lastDate.hour * 60 + lastDate.minute;
+  const firstOffsetDays = lastMinute >= scheduleMinute ? 1 : 0;
+  for (let offsetDays = firstOffsetDays; offsetDays < firstOffsetDays + 370; offsetDays += 1) {
     const date = new Date(Date.UTC(lastDate.year, lastDate.month - 1, lastDate.day + offsetDays));
     const year = date.getUTCFullYear();
     const month = date.getUTCMonth() + 1;

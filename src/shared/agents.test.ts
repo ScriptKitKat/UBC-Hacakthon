@@ -22,4 +22,11 @@ describe("agent schedules", () => {
       "2026-03-07T15:00:00.000Z",
     )?.toISOString()).toBe("2026-03-08T14:00:00.000Z");
   });
+
+  it("does not repeat a daily routine in the fall-back hour", () => {
+    expect(nextRoutineAt(
+      { kind: "daily", time: "01:30", timeZone: "America/Chicago" },
+      "2026-11-01T06:30:00.000Z",
+    )?.toISOString()).toBe("2026-11-02T07:30:00.000Z");
+  });
 });
