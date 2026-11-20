@@ -13,6 +13,7 @@ function snap(overrides: Partial<MarketSnapshot> = {}): MarketSnapshot {
   return {
     eventTitle: "Bitcoin price today?",
     yesCents: 55,
+    noCents: 45,
     yesCents24hAgo: 40,
     volume24h: 400,
     volumeTotal: 1000,

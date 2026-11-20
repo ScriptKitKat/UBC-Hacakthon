@@ -17,6 +17,7 @@ import type { XSignals } from "@/features/xfeed";
 export interface MarketSnapshot {
   readonly eventTitle: string | null;
   readonly yesCents: number | null;
+  readonly noCents: number | null;
   readonly yesCents24hAgo: number | null;
   readonly volume24h: number | null;
   readonly volumeTotal: number | null;

@@ -19,7 +19,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const SYMBOL = "GEMI-BTC-YES";
 const DESK: DeskBudget = { dailyCapCents: 2000, remainingCents: 2000, perTradeMaxCents: 1000, autoApproveMaxCents: 200 };
 
-function contract(yes: number): MarketContract {
+function contract(yes: number, no: number | null = null): MarketContract {
   return {
     instrumentSymbol: instrumentSymbol(SYMBOL),
     label: "Yes",
@@ -27,13 +27,13 @@ function contract(yes: number): MarketContract {
     expiryDate: "2026-12-31T00:00:00.000Z",
     marketState: "open",
     status: "active",
-    prices: { bestBidCents: null, bestAskCents: null, lastTradeCents: null, buyYesCents: yes, buyNoCents: null, sellYesCents: null, sellNoCents: null },
+    prices: { bestBidCents: null, bestAskCents: null, lastTradeCents: null, buyYesCents: yes, buyNoCents: no, sellYesCents: null, sellNoCents: null },
     limits: null,
   };
 }
 
-function event(yes: number, volume24h: number): MarketEvent {
-  return { ticker: "BTC", title: "Bitcoin price today?", category: "Crypto", status: "active", expiryDate: "2026-12-31T00:00:00.000Z", description: "", subcategory: null, volume: 1000, volume24h, tags: [], contracts: [contract(yes)], createdAt: "2026-11-09T18:00:00.000Z" };
+function event(yes: number, volume24h: number, no: number | null = null): MarketEvent {
+  return { ticker: "BTC", title: "Bitcoin price today?", category: "Crypto", status: "active", expiryDate: "2026-12-31T00:00:00.000Z", description: "", subcategory: null, volume: 1000, volume24h, tags: [], contracts: [contract(yes, no)], createdAt: "2026-11-09T18:00:00.000Z" };
 }
 
 function entry(kind: DecisionLogEntry["kind"], outcome: "yes" | "no"): DecisionLogEntry {
@@ -48,7 +48,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-async function setup(options: { readonly yesNow: number; readonly yesBefore: number; readonly volume24h?: number; readonly draft?: Partial<AgentDraft>; readonly allowAutonomous?: boolean }) {
+async function setup(options: { readonly yesNow: number; readonly yesBefore: number; readonly noNow?: number; readonly volume24h?: number; readonly draft?: Partial<AgentDraft>; readonly allowAutonomous?: boolean }) {
   let idCount = 0;
   const store = openAgentStore({ fs: createMemoryFileSystem(), path: "agents.json", now: () => NOW, id: () => `agent-${String(++idCount)}` });
   const agent = await store.create({ eventTicker: "BTC", instrumentSymbol: SYMBOL, name: "Scout", ...options.draft });
@@ -60,7 +60,7 @@ async function setup(options: { readonly yesNow: number; readonly yesBefore: num
     notionalCents: request.notionalCents,
   }));
   const buyDeepDive = vi.fn<Desk["buyDeepDive"]>(() => Promise.resolve(DELIVERED));
-  const getEvent: GeminiMarketsClient["getEvent"] = () => Promise.resolve(ok(event(options.yesNow, options.volume24h ?? 50)));
+  const getEvent: GeminiMarketsClient["getEvent"] = () => Promise.resolve(ok(event(options.yesNow, options.volume24h ?? 50, options.noNow ?? null)));
   const deps: AgentRunnerDeps = {
     store,
     markets: { getEvent, candles: () => Promise.resolve(fail({ kind: "network" })) },
@@ -209,6 +209,23 @@ describe("runAgentTick", () => {
     expect((await store.get(agent.id))?.activity).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "bet", side: "no", amountCents: 125, origin: "trigger" }),
     ]));
+  });
+
+  it("uses the No quote for an unchanged-market manual No bet", async () => {
+    const { agent, deps, proposeTrade } = await setup({
+      yesNow: 40,
+      noNow: 60,
+      yesBefore: 40,
+      draft: { permission: "autonomous", maxPerBetCents: 200 },
+    });
+    const fakeFetch = vi.fn<typeof fetch>(() => Promise.resolve(Response.json({
+      choices: [{ message: { content: JSON.stringify({ message: "No offers better value.", action: "bet", side: "no", amountUsd: 1, reason: "No is priced more favorably." }) } }],
+    })));
+
+    const tick = await runAgentTick({ ...deps, grok: { apiKey: "key", model: "test" }, fetch: fakeFetch }, agent, DESK, NOW, { review: true, origin: "manual" });
+
+    expect(tick).toMatchObject({ action: "autonomous", side: "no" });
+    expect(proposeTrade).toHaveBeenCalledWith(expect.objectContaining({ outcome: "no", seenPriceCents: 60, notionalCents: 100 }));
   });
 
   it("logs an LLM skip without proposing a trade", async () => {

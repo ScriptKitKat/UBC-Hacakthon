@@ -88,6 +88,7 @@ export async function loadMarketSnapshot(deps: AgentRunnerDeps, agent: AgentReco
   return {
     eventTitle: event.title,
     yesCents: yesNow,
+    noCents: contract?.prices.buyNoCents ?? null,
     yesCents24hAgo: await yesCentsAt(deps, symbol, now.getTime() - DAY_MS),
     volume24h: event.volume24h,
     volumeTotal: event.volume,
@@ -132,6 +133,7 @@ function activity(kind: AgentActivity["kind"], text: string, now: Date, extra: {
 }
 
 async function propose(deps: AgentRunnerDeps, agent: AgentRecord, snapshot: MarketSnapshot, outcome: "yes" | "no", action: Extract<ReturnType<typeof permissionAction>, { kind: "suggest" | "autonomous" }>): Promise<{ readonly entry: Awaited<ReturnType<Desk["proposeTrade"]>>; readonly spent: number }> {
+  const seenPriceCents = outcome === "yes" ? snapshot.yesCents : snapshot.noCents;
   const request: ProposeRequest = {
     instrumentSymbol: agent.instrumentSymbol,
     outcome,
@@ -139,7 +141,7 @@ async function propose(deps: AgentRunnerDeps, agent: AgentRecord, snapshot: Mark
     source: "desk",
     senderId: deps.operatorId,
     ...(action.kind === "suggest" ? { requireApproval: true } : {}),
-    ...(snapshot.yesCents === null ? {} : { seenPriceCents: snapshot.yesCents }),
+    ...(seenPriceCents === null ? {} : { seenPriceCents }),
   };
   const entry = await deps.desk.proposeTrade(request);
   return { entry, spent: entry.kind === "approve" ? action.notionalCents : 0 };
