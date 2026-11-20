@@ -167,7 +167,6 @@ function AgentEditor({
   };
   const briefs = agent?.briefTriggers ?? { oddsMove10: true, everyMonday: false, endingSoon: true };
   const budget = agent?.dailyBudgetCents ?? Math.min(300, maxBudget);
-  const status = agent?.status ?? "watching";
 
   return (
     <div className={styles.editor}>
@@ -176,15 +175,17 @@ function AgentEditor({
           <p className={styles.forLabel}>Agent for</p>
           <h2 className={styles.forTitle}>{title}</h2>
         </div>
-        <button
-          type="button"
-          className={styles.badge}
-          data-status={status}
-          disabled={busy || agent === undefined}
-          onClick={() => { void persist({ status: status === "watching" ? "paused" : "watching" }); }}
-        >
-          {status === "watching" ? "Watching" : "Paused"}
-        </button>
+        {agent === undefined ? null : (
+          <button
+            type="button"
+            className={styles.badge}
+            data-status={agent.status}
+            disabled={busy}
+            onClick={() => { void persist({ status: agent.status === "watching" ? "paused" : "watching" }); }}
+          >
+            {agent.status === "watching" ? "Watching" : "Paused"}
+          </button>
+        )}
       </div>
 
       {agent === undefined ? (

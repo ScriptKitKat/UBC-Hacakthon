@@ -10,7 +10,7 @@ import type { AgentStore } from "./store";
 import type { MarketSnapshot, TriggerResult } from "./triggers";
 import { evaluateTriggers, isBriefTrigger, isWatchTrigger } from "./triggers";
 import type { AgentActivity, AgentRecord, TriggerId } from "./types";
-import { BRIEF_COST_CENTS } from "./types";
+import { BRIEF_COST_CENTS, utcDay } from "./types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TRADE_TRIGGERS: ReadonlySet<TriggerId> = new Set(["oddsMove", "volumeSpike", "oddsCross"]);
@@ -86,12 +86,9 @@ function deskBudgetFromSnapshot(policy: { dailyCapCents: number; remainingCents:
   };
 }
 
-function tradeOutcome(snapshot: MarketSnapshot, result: TriggerResult): "yes" | "no" {
-  if (result.todayPoints !== null && result.todayPoints !== 0) return result.todayPoints > 0 ? "yes" : "no";
-  if (snapshot.yesCents !== null && snapshot.yesCents24hAgo !== null && snapshot.yesCents !== snapshot.yesCents24hAgo) {
-    return snapshot.yesCents > snapshot.yesCents24hAgo ? "yes" : "no";
-  }
-  return "yes";
+function tradeOutcome(result: TriggerResult): "yes" | "no" | undefined {
+  if (result.todayPoints === null || result.todayPoints === 0) return undefined;
+  return result.todayPoints > 0 ? "yes" : "no";
 }
 
 function activity(kind: AgentActivity["kind"], text: string, now: Date, extra: { trigger?: TriggerId | undefined; messageSource?: AgentActivity["messageSource"]; intentId?: string | undefined } = {}): AgentActivity {
@@ -106,10 +103,10 @@ function activity(kind: AgentActivity["kind"], text: string, now: Date, extra: {
   };
 }
 
-async function propose(deps: AgentRunnerDeps, agent: AgentRecord, snapshot: MarketSnapshot, result: TriggerResult, action: Extract<ReturnType<typeof permissionAction>, { kind: "suggest" | "autonomous" }>): Promise<{ readonly entry: Awaited<ReturnType<Desk["proposeTrade"]>>; readonly spent: number }> {
+async function propose(deps: AgentRunnerDeps, agent: AgentRecord, snapshot: MarketSnapshot, outcome: "yes" | "no", action: Extract<ReturnType<typeof permissionAction>, { kind: "suggest" | "autonomous" }>): Promise<{ readonly entry: Awaited<ReturnType<Desk["proposeTrade"]>>; readonly spent: number }> {
   const request: ProposeRequest = {
     instrumentSymbol: agent.instrumentSymbol,
-    outcome: tradeOutcome(snapshot, result),
+    outcome,
     notionalCents: action.notionalCents,
     source: "desk",
     senderId: deps.operatorId,
@@ -138,22 +135,19 @@ export async function runAgentTick(deps: AgentRunnerDeps, agent: AgentRecord, de
   const lastTriggerAt: Record<string, string> = {};
   for (const id of result.fired) lastTriggerAt[id] = now.toISOString();
 
-  let message: string | null = null;
-  let messageSource: AgentRecord["lastMessageSource"] = null;
-  if (watchFired.length > 0 || briefFired.length > 0) {
-    const composed = await composeMessage({ agent, result, snapshot, now, grok: deps.grok, fetch: deps.fetch });
-    message = composed.text;
-    messageSource = composed.source;
-    activities.push(activity("message", composed.text, now, { trigger: result.fired[0], messageSource: composed.source }));
-  }
+  const composed = await composeMessage({ agent, result, snapshot, now, grok: deps.grok, fetch: deps.fetch });
+  const message = composed.text;
+  const messageSource = composed.source;
+  activities.push(activity("message", composed.text, now, { trigger: result.fired[0], messageSource: composed.source }));
 
   let spentDelta = 0;
   let action: AgentTickResult["action"] = "none";
   let intentId: string | undefined;
-  const budget: AgentBudget = evaluateBudget({ ...agent, ...{ spentTodayCents: agent.spentTodayCents } }, desk, now);
+  const budget: AgentBudget = evaluateBudget(agent, desk, now);
 
   if (watchFired.some((id) => TRADE_TRIGGERS.has(id))) {
     const mapped = permissionAction(agent.permission, budget);
+    const outcome = tradeOutcome(result);
     if (mapped.kind === "notify") {
       action = "notify";
     } else if (mapped.kind === "hold") {
@@ -162,8 +156,11 @@ export async function runAgentTick(deps: AgentRunnerDeps, agent: AgentRecord, de
     } else if (mapped.kind === "autonomous" && deps.allowAutonomous === false) {
       action = "hold";
       activities.push(activity("refused", "Autonomous betting is disabled in this run.", now, { trigger: watchFired[0] }));
+    } else if (outcome === undefined) {
+      action = "hold";
+      activities.push(activity("refused", "The price has not moved in the last day, so there is no side to bet on.", now, { trigger: watchFired[0] }));
     } else {
-      const proposed = await propose(deps, agent, snapshot, result, mapped);
+      const proposed = await propose(deps, agent, snapshot, outcome, mapped);
       intentId = proposed.entry.intentId;
       spentDelta += proposed.spent;
       if (mapped.kind === "suggest") {
@@ -185,7 +182,7 @@ export async function runAgentTick(deps: AgentRunnerDeps, agent: AgentRecord, de
   }
 
   if (briefFired.length > 0 && agent.writeBriefs) {
-    const afterTrade = evaluateBudget({ ...agent, spentTodayCents: agent.spentTodayCents + spentDelta, spendDay: budget.spentTodayCents === agent.spentTodayCents ? agent.spendDay : agent.spendDay }, desk, now);
+    const afterTrade = evaluateBudget({ ...agent, spentTodayCents: budget.spentTodayCents + spentDelta, spendDay: utcDay(now) }, desk, now);
     if (!afterTrade.canAffordBrief) {
       activities.push(activity("refused", "There is not enough budget left for a $0.05 brief.", now, { trigger: briefFired[0] }));
     } else {
@@ -201,8 +198,8 @@ export async function runAgentTick(deps: AgentRunnerDeps, agent: AgentRecord, de
   }
 
   await deps.store.recordRun(agent.id, {
-    ...(message === null ? {} : { lastMessage: message }),
-    ...(messageSource === null ? {} : { lastMessageSource: messageSource }),
+    lastMessage: message,
+    lastMessageSource: messageSource,
     spentDeltaCents: spentDelta,
     lastTriggerAt,
     activity: activities,
