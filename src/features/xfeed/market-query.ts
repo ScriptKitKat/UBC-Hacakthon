@@ -33,7 +33,7 @@ function properNouns(tokens: readonly string[]): string[] {
   return tokens.filter((token) =>
     /^[\p{Lu}][\p{Ll}]+$/u.test(token) &&
     searchTokens(token).some((term) => !QUERY_STOPWORDS.has(term))
-  );
+  ).map((token) => token.toLowerCase());
 }
 
 export function marketQuery(eventTitle: string): string {
