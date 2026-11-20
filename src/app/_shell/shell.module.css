@@ -113,37 +113,6 @@
   flex-direction: column;
 }
 
-.topbar {
-  display: flex;
-  justify-content: flex-end;
-  padding: 16px 24px;
-}
-
-.mode {
-  display: flex;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid #262626;
-  border-radius: 10px;
-  background: #111111;
-}
-
-.modeButton {
-  height: 28px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: #a1a1aa;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.modeButton[aria-pressed="true"] {
-  background: #ededed;
-  color: #0a0a0a;
-}
-
 .content {
   flex: 1;
   min-width: 0;

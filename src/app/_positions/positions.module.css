@@ -1,4 +1,4 @@
-.page { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 8px 32px 32px; }
+.page { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 24px 32px 32px; }
 .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .titleBlock { min-width: 0; }
 .title { margin: 0; font-size: 28px; font-weight: 650; letter-spacing: -0.03em; }

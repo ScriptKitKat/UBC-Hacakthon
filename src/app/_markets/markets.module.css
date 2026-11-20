@@ -1,5 +1,5 @@
 .page { display: flex; flex-direction: column; min-width: 0; }
-.header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 32px 0; }
+.header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 24px 32px 0; }
 .title { margin: 0 8px 0 0; font-size: 24px; font-weight: 600; letter-spacing: -0.03em; }
 .search { flex: 0 1 380px; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border: 1px solid #262626; border-radius: 20px; background: #111111; }
 .search svg { flex: 0 0 auto; color: #8a8a93; }

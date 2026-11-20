@@ -181,7 +181,7 @@
   font-size: 14px;
   font-weight: 500;
 }
-.pageTitle { margin: 0 32px 8px; font-size: 28px; font-weight: 600; letter-spacing: -0.03em; }
+.pageTitle { margin: 24px 32px 8px; font-size: 28px; font-weight: 600; letter-spacing: -0.03em; }
 .pageLead { margin: 0 32px 24px; color: #a1a1aa; }
 
 .watch {

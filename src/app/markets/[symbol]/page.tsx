@@ -20,7 +20,7 @@ export default async function MarketPage({
   const initialView: ViewMode | undefined = query.view === "pro" || query.view === "beginner" ? query.view : undefined;
   const initialPro = initialView === "pro" ? await loadProShell(decoded) : undefined;
   return (
-    <Shell {...(initialView === undefined ? {} : { initialView })}>
+    <Shell>
       <MarketDetail
         symbol={decoded}
         {...(initialView === undefined ? {} : { initialView })}
