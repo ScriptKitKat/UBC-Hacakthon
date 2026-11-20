@@ -1,6 +1,8 @@
 import type { Outcome, TradeSource } from "./types";
 
-export type DecisionSource = TradeSource | "research";
+type RetiredTradeSource = "voice";
+
+export type DecisionSource = TradeSource | RetiredTradeSource | "research";
 
 export type DecisionKind = "approve" | "needs-approval" | "refuse" | "execution-failed";
 

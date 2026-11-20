@@ -34,7 +34,6 @@ const envSchema = z.object({
   MARKET_ALLOWLIST: commaList.optional(),
   MARKET_CATEGORIES: commaList.default([...DEFAULT_MARKET_CATEGORIES]),
   FEED_OPERATOR_ID: z.string().trim().min(1).optional(),
-  VOICE_OPERATOR_ID: z.string().trim().min(1).optional(),
   SENDER_ALLOWLIST: commaList,
   GEMINI_API_BASE: z.url().default("https://api.gemini.com"),
   SOLANA_CLUSTER: z.enum(["devnet", "localnet"]).optional(),
@@ -118,7 +117,7 @@ export function loadDeskConfig(env: Readonly<Record<string, string | undefined>>
   if (!policy.ok) {
     return { ok: false, issues: ["AUTO_APPROVE_MAX_USD <= PER_TRADE_MAX_USD <= DAILY_CAP_USD must hold"] };
   }
-  const operatorId = values.FEED_OPERATOR_ID ?? values.VOICE_OPERATOR_ID ?? values.SENDER_ALLOWLIST[0];
+  const operatorId = values.FEED_OPERATOR_ID ?? values.SENDER_ALLOWLIST[0];
   if (operatorId === undefined) return { ok: false, issues: ["SENDER_ALLOWLIST: must list at least one value"] };
   const feed: FeedSettings = { operatorId, grok: loadGrokSettings(present) };
   const research: ResearchSettings = {
