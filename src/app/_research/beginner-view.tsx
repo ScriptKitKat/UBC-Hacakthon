@@ -9,29 +9,23 @@ import {
   crowdSentence,
   dayChangeCents,
   driversFromBrief,
-  formatBudgetCents,
   formatPercent,
   historySourceLabel,
   isBeginnerTimeframe,
   marketTitle,
-  needsApprovalNote,
-  overTradeLimitMessage,
   parseResolution,
-  payoutFor,
-  STAKE_OPTIONS_CENTS,
   trustOdds,
   yesCentsFromBrief,
 } from "@/shared";
-import type { CrowdMove, DecisionLogEntry, ResearchBrief, ResearchTimeframe, ResearchView, TradeBudget } from "@/shared";
-import { loadRail } from "../_shell/api";
-import type { HomeRail } from "../_shell/api";
+import type { CrowdMove, ResearchBrief, ResearchTimeframe, ResearchView } from "@/shared";
 import { MarketHeader, marketHeaderModel } from "../_market-detail/market-header";
 import { useWatchlist } from "../_watchlist/use-watchlist";
 import { usePolling } from "../_desk/use-polling";
-import { formatAxisTime, formatDollarsFromCents, formatPriceCents } from "./format";
+import { formatAxisTime } from "./format";
 import { DEFAULT_BOX, buildChartGeometry } from "./chart-geometry";
-import { loadResearchBriefs, placeDeskTrade, purchaseDeepDive } from "./api";
+import { loadResearchBriefs, purchaseDeepDive } from "./api";
 import type { StoredBrief } from "./api";
+import { TradeCard } from "./trade-card";
 import styles from "./beginner.module.css";
 
 const WATCH_MS = 15_000;
@@ -351,84 +345,6 @@ function Related({ markets }: { readonly markets: ResearchView["related"] }) {
           </Link>
         ))}
       </div>
-    </section>
-  );
-}
-
-function budgetFrom(rail: HomeRail | undefined): TradeBudget | undefined {
-  if (rail === undefined) return undefined;
-  return { perTradeMaxCents: rail.perTradeMaxCents, remainingCents: rail.remainingCents, autoApproveMaxCents: rail.autoApproveMaxCents };
-}
-
-function TradeCard({ view }: { readonly view: ResearchView }) {
-  const [side, setSide] = useState<"yes" | "no">("yes");
-  const [amountCents, setAmountCents] = useState<(typeof STAKE_OPTIONS_CENTS)[number]>(200);
-  const [rail, setRail] = useState<HomeRail | undefined>(undefined);
-  const [result, setResult] = useState<DecisionLogEntry | { readonly error: string } | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
-  usePolling(() => { void loadRail().then(setRail); }, WATCH_MS);
-  const budget = budgetFrom(rail);
-  const price = side === "yes" ? view.market.prices.buyYesCents : view.market.prices.buyNoCents;
-  const payout = view.market.quantityLimits ? payoutFor(price, amountCents, view.market.quantityLimits) : payoutFor(price, amountCents);
-  const over = overTradeLimitMessage(amountCents, budget);
-  const approval = needsApprovalNote(amountCents, budget);
-  const canBuy = over === null && payout.kind === "quote" && !busy && rail?.killSwitch !== true && (rail?.senderAllowlist[0] ?? "") !== "";
-  const buy = async () => {
-    const senderId = rail?.senderAllowlist[0];
-    if (senderId === undefined || over !== null) return;
-    setBusy(true);
-    setResult(undefined);
-    const placed = await placeDeskTrade({ symbol: view.symbol, outcome: side, senderId, notionalCents: amountCents });
-    setResult(placed.ok ? placed.entry : { error: placed.message });
-    setBusy(false);
-    void loadRail().then(setRail);
-  };
-  return (
-    <section className={styles.card} aria-label="Place a bet">
-      <div className={styles.sides}>
-        <button type="button" className={styles.side} data-on={side === "yes" ? "yes" : undefined} onClick={() => { setSide("yes"); }}>
-          Yes {formatPriceCents(view.market.prices.buyYesCents)}
-        </button>
-        <button type="button" className={styles.side} data-on={side === "no" ? "no" : undefined} onClick={() => { setSide("no"); }}>
-          No {formatPriceCents(view.market.prices.buyNoCents)}
-        </button>
-      </div>
-      <p className={styles.amountLabel}>Amount</p>
-      <div className={styles.amounts}>
-        {STAKE_OPTIONS_CENTS.map((option) => (
-          <button
-            key={option}
-            type="button"
-            className={styles.amount}
-            aria-pressed={option === amountCents}
-            onClick={() => { setAmountCents(option); }}
-          >
-            {formatBudgetCents(option)}
-          </button>
-        ))}
-      </div>
-      <div className={styles.payRow}><span className={styles.payLabel}>You pay</span><span className={styles.payValue}>{formatBudgetCents(amountCents)}</span></div>
-      <div className={styles.payRow}>
-        <span className={styles.payLabel}>{side === "yes" ? "If YES, you get" : "If NO, you get"}</span>
-        <span className={styles.payValue}>
-          {payout.kind === "quote" ? `${formatDollarsFromCents(payout.payoutCents)} (+${formatDollarsFromCents(payout.profitCents)})` : "n/a"}
-        </span>
-      </div>
-      <div className={styles.payRow}><span className={styles.payLabel}>If wrong</span><span className={styles.payValue}>{`−${formatBudgetCents(amountCents)}`}</span></div>
-      {over !== null ? <p className={styles.warning}>{over}</p> : null}
-      {approval !== null && over === null ? <p className={styles.warning}>{approval}</p> : null}
-      {payout.kind === "no-price" ? <p className={styles.warning}>Gemini has no live {side.toUpperCase()} price right now.</p> : null}
-      {payout.kind === "below-minimum" ? <p className={styles.warning}>That amount is below the smallest order for this market.</p> : null}
-      <button type="button" className={styles.buy} disabled={!canBuy} onClick={() => { void buy(); }}>
-        {busy ? "Placing…" : `Buy ${side.toUpperCase()} for ${formatBudgetCents(amountCents)}`}
-      </button>
-      <p className={styles.budget}>
-        {budget === undefined
-          ? "Loading your daily budget…"
-          : `Uses ${formatBudgetCents(amountCents)} of your ${formatBudgetCents(Math.max(0, budget.remainingCents))} left today`}
-      </p>
-      {result !== undefined && "error" in result ? <p className={styles.warning} role="alert">{result.error}</p> : null}
-      {result !== undefined && "kind" in result ? <p className={styles.status} data-kind={result.kind} role="status">{result.spokenReason}</p> : null}
     </section>
   );
 }

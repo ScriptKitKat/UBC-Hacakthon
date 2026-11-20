@@ -1,4 +1,4 @@
-import { formatVolumeUsd, friendlyEventTitle } from "@/shared";
+import { formatDeadline, formatVolumeUsd, friendlyEventTitle } from "@/shared";
 import type { ResearchBrief, ResearchPostContext, ResearchSeriesPoint, ResearchTimeframe, ResearchView } from "@/shared";
 
 export const BEGINNER_TIMEFRAMES = ["1D", "1W", "1M", "All"] as const;
@@ -30,6 +30,10 @@ export function safeHttpsUrl(value: string | null | undefined, hosts?: ReadonlyS
 
 export function marketTitle(view: ResearchView, now = new Date()): string {
   return friendlyEventTitle(view.market.eventTitle, view.market.expiryDate, now, ZONE);
+}
+
+export function marketDeadline(view: ResearchView): string | null {
+  return formatDeadline(view.market.expiryDate, ZONE);
 }
 
 export function dayChangeCents(view: ResearchView): number | null {

@@ -124,6 +124,7 @@ export {
   historySourceLabel,
   isBeginnerTimeframe,
   marketDrivers,
+  marketDeadline,
   marketTitle,
   parseResolution,
   safeHttpsUrl,
