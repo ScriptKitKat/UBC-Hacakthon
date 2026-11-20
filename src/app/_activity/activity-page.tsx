@@ -2,6 +2,7 @@
 
 import { Dashboard } from "../_desk/dashboard";
 import styles from "../_home/home.module.css";
+import { AgentActivity } from "./agent-activity";
 
 export function ActivityPage() {
   return (
@@ -11,6 +12,7 @@ export function ActivityPage() {
       <div className={styles.activityWrap}>
         <Dashboard hideChrome />
       </div>
+      <AgentActivity />
     </div>
   );
 }

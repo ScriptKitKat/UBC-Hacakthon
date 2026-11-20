@@ -1,7 +1,7 @@
 import type { WatchlistCard } from "@/shared";
 import { formatEndsOn, formatPercent, pointDelta } from "@/shared";
 
-export type WatchlistFilter = "all" | "moving" | "closing";
+export type WatchlistFilter = "all" | "moving" | "closing" | "agent";
 export type WatchlistSort = "move" | "closing" | "saved";
 
 const MOVING_POINTS = 5;
@@ -55,13 +55,14 @@ function moveScore(points: number | null): number {
 
 export function filterWatchlist(
   cards: readonly WatchlistCard[],
-  options: { readonly filter: WatchlistFilter; readonly search: string; readonly now?: Date },
+  options: { readonly filter: WatchlistFilter; readonly search: string; readonly now?: Date; readonly agentTickers?: ReadonlySet<string> },
 ): WatchlistCard[] {
   const needle = options.search.trim().toLowerCase();
   const now = options.now ?? new Date();
   return cards.filter((card) => {
     if (options.filter === "moving" && !isMoving(card)) return false;
     if (options.filter === "closing" && !isClosingSoon(card, now)) return false;
+    if (options.filter === "agent" && !(options.agentTickers?.has(card.eventTicker) ?? false)) return false;
     if (needle === "") return true;
     const haystack = `${card.eventTitle} ${card.categoryLabel} ${card.eventTicker} ${card.contractLabel}`.toLowerCase();
     return haystack.includes(needle);

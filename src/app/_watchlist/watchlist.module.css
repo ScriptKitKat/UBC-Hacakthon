@@ -42,6 +42,63 @@
 
 .hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
+
+.tabs { display: flex; gap: 18px; margin-top: 4px; }
+
+.tab {
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #8a8a93;
+  font-size: 14px;
+}
+
+.tab[aria-selected="true"] { color: #ededed; border-bottom-color: #ededed; }
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 0 16px;
+  padding: 12px 16px;
+  border: 1px solid #1f1f1f;
+  border-radius: 12px;
+  background: #111111;
+  color: #d4d4d8;
+  font-size: 13px;
+}
+
+.create {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #262626;
+  border-radius: 8px;
+  background: #1a1a1a;
+  color: #ededed;
+  font-size: 13px;
+}
+
+.subhead { margin: 0 0 16px; font-size: 13px; color: #8a8a93; }
+
+.agentLink {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #5a5a62;
+  font-size: 13px;
+}
+
+.agentLink[data-status="watching"] { color: #3ddc97; }
+
+.agentLink[data-status="paused"] { color: #f5a524; }
+
+
 .body { padding: 20px 28px 48px; display: flex; flex-direction: column; gap: 20px; }
 
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
@@ -132,7 +189,7 @@
 .foot {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 8px;
   padding-top: 12px;
   margin-top: auto;
