@@ -3,10 +3,9 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { PRO_TIMEFRAMES } from "@/shared";
-import type { ProBudget, ProChart, ProIndicatorRow, ProLadderRung, ProLive, ProMarket, ProPosition, ProShell, ProSpot, ProStat, ProTimeframe } from "@/shared";
+import type { ProBudget, ProChart, ProIndicatorRow, ProLadderRung, ProLive, ProPosition, ProShell, ProSpot, ProStat, ProTimeframe } from "@/shared";
 import { usePolling } from "../../_desk/use-polling";
-import { useViewMode } from "../../_research/use-view-mode";
-import { StarButton } from "../../_watchlist/star-button";
+import { MarketHeader, marketHeaderModel } from "../market-header";
 import { useWatchlist } from "../../_watchlist/use-watchlist";
 import { loadProLive, loadProShell } from "./api";
 import { CandleChart } from "./candle-chart";
@@ -54,37 +53,6 @@ function Skeleton({ rows = 4 }: { readonly rows?: number }) {
         <div key={index} className={index === 0 ? [styles.bone, styles.boneLg].join(" ") : (styles.bone ?? "")} />
       ))}
     </div>
-  );
-}
-
-function Header({
-  market,
-  watched,
-  onToggle,
-}: {
-  readonly market: ProMarket;
-  readonly watched: boolean;
-  readonly onToggle: () => void;
-}) {
-  const [mode, setMode] = useViewMode();
-  const letter = (market.asset ?? market.displayTitle).slice(0, 1);
-  const category = market.subcategory !== null && market.subcategory !== "" ? market.subcategory : market.category;
-  return (
-    <header className={styles.header}>
-      <div className={styles.identity}>
-        <div className={styles.icon} style={{ background: market.iconBackground }} aria-hidden="true">{letter}</div>
-        <div className={styles.titles}>
-          <h1 className={styles.title}>{market.displayTitle}</h1>
-          <p className={styles.subtitle}>{market.eventTicker} · {category} · {market.contractLabel || "YES contract"}</p>
-        </div>
-      </div>
-      <div className={styles.grow} />
-      <div className={styles.mode} role="group" aria-label="Mode">
-        <button type="button" className={styles.modeButton} aria-pressed={mode === "beginner"} onClick={() => { setMode("beginner"); }}>Beginner</button>
-        <button type="button" className={styles.modeButton} aria-pressed={mode === "pro"} onClick={() => { setMode("pro"); }}>Pro</button>
-      </div>
-      <StarButton pressed={watched} onToggle={onToggle} />
-    </header>
   );
 }
 
@@ -416,10 +384,10 @@ export function ProPage({ symbol, initial }: { readonly symbol: string; readonly
   return (
     <div className={styles.page}>
       {market !== undefined ? (
-        <Header
-          market={market}
+        <MarketHeader
+          model={marketHeaderModel({ category: market.category, title: market.displayTitle, imageUrl: market.imageUrl, expiryDate: market.expiryDate, volume: market.volume, nowMs })}
           watched={watched}
-          onToggle={() => {
+          onToggleWatch={() => {
             void watchlist.toggle({ eventTicker: market.eventTicker, instrumentSymbol: market.symbol, yesCents: market.yesAskCents });
           }}
         />

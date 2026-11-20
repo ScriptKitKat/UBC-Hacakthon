@@ -10,7 +10,6 @@ import {
   dayChangeCents,
   driversFromBrief,
   formatBudgetCents,
-  formatEndLine,
   formatPercent,
   historySourceLabel,
   isBeginnerTimeframe,
@@ -19,22 +18,20 @@ import {
   overTradeLimitMessage,
   parseResolution,
   payoutFor,
-  safeHttpsUrl,
   STAKE_OPTIONS_CENTS,
   trustOdds,
-  volumeLabel,
   yesCentsFromBrief,
 } from "@/shared";
 import type { CrowdMove, DecisionLogEntry, ResearchBrief, ResearchTimeframe, ResearchView, TradeBudget } from "@/shared";
 import { loadRail } from "../_shell/api";
 import type { HomeRail } from "../_shell/api";
+import { MarketHeader, marketHeaderModel } from "../_market-detail/market-header";
 import { useWatchlist } from "../_watchlist/use-watchlist";
 import { usePolling } from "../_desk/use-polling";
 import { formatAxisTime, formatDollarsFromCents, formatPriceCents } from "./format";
 import { DEFAULT_BOX, buildChartGeometry } from "./chart-geometry";
 import { loadResearchBriefs, placeDeskTrade, purchaseDeepDive } from "./api";
 import type { StoredBrief } from "./api";
-import { useViewMode } from "./use-view-mode";
 import styles from "./beginner.module.css";
 
 const WATCH_MS = 15_000;
@@ -58,12 +55,6 @@ function isSafeHttpUrl(url: string): boolean {
   return parsed !== null && parsed.protocol === "https:";
 }
 
-function displayCategory(category: string): string {
-  const trimmed = category.trim();
-  if (trimmed === "") return "Other";
-  return trimmed.toLowerCase() === "economics" ? "Economy" : trimmed;
-}
-
 export function BeginnerView({
   view,
   timeframe,
@@ -75,16 +66,11 @@ export function BeginnerView({
   readonly onTimeframe: (timeframe: ResearchTimeframe) => void;
   readonly banners: readonly string[];
 }) {
-  const [, setMode] = useViewMode();
+  const watchlist = useWatchlist();
   const title = marketTitle(view);
   const nowMs = Date.parse(view.generatedAt);
-  const ends = formatEndLine(view.market.expiryDate, Number.isFinite(nowMs) ? nowMs : Date.now());
-  const volume = volumeLabel(view.market.volume);
   const change = dayChangeCents(view);
   const sentence = crowdSentence(view, Number.isFinite(nowMs) ? new Date(nowMs) : new Date());
-  const image = safeHttpsUrl(view.market.imageUrl);
-  const monogram = title.replace(/[^A-Za-z0-9]/g, "").slice(0, 1).toUpperCase() || "M";
-  const category = displayCategory(view.market.category);
   const resolution = parseResolution(view.market.rulesText, view.market.termsLink);
   const trust = trustOdds(view);
   const moves = crowdMoves(view.series.points, view.matchedPosts);
@@ -99,48 +85,26 @@ export function BeginnerView({
   const selected = moves[activeMove - 1] ?? moves.at(-1);
   return (
     <div className={styles.page}>
-      <div className={styles.hero}>
-        <div className={styles.top}>
-          <nav className={styles.crumb} aria-label="Breadcrumb">
-            <Link href="/markets">Markets</Link>
-            <span aria-hidden="true">/</span>
-            <span>{category}</span>
-          </nav>
-          <div className={styles.actions}>
-            <div className={styles.mode} role="group" aria-label="Mode">
-              <button type="button" className={styles.modeButton} aria-pressed>Beginner</button>
-              <button type="button" className={styles.modeButton} aria-pressed={false} onClick={() => { setMode("pro"); }}>Pro</button>
+      <MarketHeader
+        model={marketHeaderModel({ category: view.market.category, title, imageUrl: view.market.imageUrl, expiryDate: view.market.expiryDate, volume: view.market.volume, nowMs: Number.isFinite(nowMs) ? nowMs : Date.now() })}
+        watched={watchlist.starred(view.market.eventTicker, view.symbol)}
+        onToggleWatch={() => {
+          void watchlist.toggle({ eventTicker: view.market.eventTicker, instrumentSymbol: view.symbol, yesCents: view.market.prices.buyYesCents });
+        }}
+      />
+      {banners.map((message) => (
+        <p key={message} className={styles.warning} role="status">{message}</p>
+      ))}
+      <div className={styles.summary}>
+        {sentence !== null ? <p className={styles.sentence}>{sentence}</p> : <span />}
+        <div className={styles.odds}>
+          <div className={styles.yes}>{formatPercent(view.market.prices.buyYesCents)}</div>
+          {change !== null ? (
+            <div className={styles.change} data-trend={change > 0 ? "up" : change < 0 ? "down" : "flat"}>
+              {signedPoints(change)} today
             </div>
-          </div>
+          ) : null}
         </div>
-        {banners.map((message) => (
-          <p key={message} className={styles.warning} role="status">{message}</p>
-        ))}
-        <header className={styles.header}>
-          <div className={styles.identity}>
-            {image !== null ? <img className={styles.icon} src={image} alt="" /> : <div className={styles.monogram} aria-hidden="true">{monogram}</div>}
-            <div className={styles.titles}>
-              <h1 className={styles.title}>{title}</h1>
-              <p className={styles.meta}>
-                {ends.ends !== null ? <span>{ends.ends}</span> : null}
-                {ends.daysLeft !== null ? <span>{ends.daysLeft}</span> : null}
-                {volume !== null ? <span>{volume}</span> : null}
-              </p>
-            </div>
-          </div>
-          <div className={styles.headEnd}>
-            <div className={styles.odds}>
-              <div className={styles.yes}>{formatPercent(view.market.prices.buyYesCents)}</div>
-              {change !== null ? (
-                <div className={styles.change} data-trend={change > 0 ? "up" : change < 0 ? "down" : "flat"}>
-                  {signedPoints(change)} today
-                </div>
-              ) : null}
-            </div>
-            <WatchButton eventTicker={view.market.eventTicker} symbol={view.symbol} yesCents={view.market.prices.buyYesCents} />
-          </div>
-        </header>
-        {sentence !== null ? <p className={styles.sentence}>{sentence}</p> : null}
       </div>
       <div className={styles.layout}>
         <div className={styles.main}>
@@ -388,26 +352,6 @@ function Related({ markets }: { readonly markets: ResearchView["related"] }) {
         ))}
       </div>
     </section>
-  );
-}
-
-function WatchButton({ eventTicker, symbol, yesCents }: { readonly eventTicker: string; readonly symbol: string; readonly yesCents: number | null }) {
-  const watchlist = useWatchlist();
-  const watched = watchlist.starred(eventTicker, symbol);
-  return (
-    <button
-      type="button"
-      className={styles.star}
-      aria-pressed={watched}
-      aria-label={watched ? "Remove from watchlist" : "Add to watchlist"}
-      onClick={() => {
-        void watchlist.toggle({ eventTicker, instrumentSymbol: symbol, yesCents });
-      }}
-    >
-      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill={watched ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 3l2.6 5.5 6 .8-4.4 4.2 1.1 6L12 16.6 6.7 19.5l1.1-6L3.4 9.3l6-.8z" />
-      </svg>
-    </button>
   );
 }
 
