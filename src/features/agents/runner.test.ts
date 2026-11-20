@@ -41,6 +41,7 @@ function entry(kind: DecisionLogEntry["kind"], outcome: "yes" | "no"): DecisionL
 }
 
 const DELIVERED: DeepDiveResult = { status: "delivered", alreadyPurchased: false, trace: [], failureReason: null, brief: null, purchase: null };
+const REUSED: DeepDiveResult = { ...DELIVERED, alreadyPurchased: true };
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -149,6 +150,47 @@ describe("runAgentTick", () => {
     const saved = await store.get("agent-1");
     expect(saved?.spentTodayCents).toBe(200);
     expect(saved?.activity.map((item) => item.kind)).toEqual(["message", "bet", "refused"]);
+  });
+
+  it("does not re-buy or charge for a brief during an immediate review", async () => {
+    const { agent, deps, buyDeepDive, store } = await setup({
+      yesNow: 60,
+      yesBefore: 40,
+      draft: {
+        permission: "watch",
+        writeBriefs: true,
+        briefTriggers: { oddsMove10: true, everyMonday: false, endingSoon: false },
+      },
+    });
+
+    await runAgentTick(deps, agent, DESK, NOW);
+    const spentAfterFirstBrief = (await store.get(agent.id))?.spentTodayCents;
+    await runAgentTick(deps, agent, DESK, NOW, { review: true, origin: "manual" });
+
+    expect(buyDeepDive).toHaveBeenCalledTimes(1);
+    expect(spentAfterFirstBrief).toBe(5);
+    expect((await store.get(agent.id))?.spentTodayCents).toBe(spentAfterFirstBrief);
+  });
+
+  it("does not charge for a deep-dive brief already purchased", async () => {
+    const { agent, deps, buyDeepDive, store } = await setup({
+      yesNow: 60,
+      yesBefore: 40,
+      draft: {
+        permission: "watch",
+        writeBriefs: true,
+        briefTriggers: { oddsMove10: true, everyMonday: false, endingSoon: false },
+      },
+    });
+    buyDeepDive.mockResolvedValueOnce(REUSED);
+
+    await runAgentTick(deps, agent, DESK, NOW);
+
+    expect(buyDeepDive).toHaveBeenCalledTimes(1);
+    expect((await store.get(agent.id))?.spentTodayCents).toBe(0);
+    expect((await store.get(agent.id))?.activity).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "brief", text: "A saved deep-dive brief was reused." }),
+    ]));
   });
 
   it("lets X-only watch triggers lead to an autonomous decision and records breaking post links", async () => {

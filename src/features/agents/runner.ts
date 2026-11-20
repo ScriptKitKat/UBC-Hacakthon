@@ -269,8 +269,8 @@ export async function runAgentTick(deps: AgentRunnerDeps, agent: AgentRecord, de
     } else {
       const dive = await deps.desk.buyDeepDive(agent.instrumentSymbol);
       if (dive.status === "delivered") {
-        spentDelta += BRIEF_COST_CENTS;
-        activities.push(activity("brief", "A deep-dive brief was written and saved.", now, { trigger: briefFired[0], origin }));
+        if (!dive.alreadyPurchased) spentDelta += BRIEF_COST_CENTS;
+        activities.push(activity("brief", dive.alreadyPurchased ? "A saved deep-dive brief was reused." : "A deep-dive brief was written and saved.", now, { trigger: briefFired[0], origin }));
         if (action === "none" || action === "notify") action = "brief";
       } else {
         activities.push(activity("refused", dive.failureReason ?? "The deep-dive brief could not be purchased.", now, { trigger: briefFired[0], origin }));

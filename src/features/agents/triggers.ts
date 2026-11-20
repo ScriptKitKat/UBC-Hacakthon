@@ -150,15 +150,15 @@ export function evaluateTriggers(
   if (agent.writeBriefs) {
     const briefs = agent.briefTriggers;
     if (briefs.oddsMove10 && points !== null && Math.abs(points) >= BRIEF_ODDS_MOVE_POINTS) {
-      if (cooled("briefOddsMove10", agent, now, TRIGGER_COOLDOWN_MS, skipped, options.ignoreCooldowns)) fired.push("briefOddsMove10");
+      if (cooled("briefOddsMove10", agent, now, TRIGGER_COOLDOWN_MS, skipped)) fired.push("briefOddsMove10");
     }
     if (briefs.everyMonday && isMondayInZone(now, options.timeZone)) {
-      if (cooled("briefMonday", agent, now, 6 * DAY_MS, skipped, options.ignoreCooldowns)) fired.push("briefMonday");
+      if (cooled("briefMonday", agent, now, 6 * DAY_MS, skipped)) fired.push("briefMonday");
     }
     if (briefs.endingSoon) {
       const remaining = snapshot.expiryDate === null ? Number.NaN : Date.parse(snapshot.expiryDate) - now.getTime();
       if (Number.isFinite(remaining) && remaining > 0 && remaining <= ENDING_SOON_MS) {
-        if (cooled("briefEndingSoon", agent, now, ENDING_SOON_MS, skipped, options.ignoreCooldowns)) fired.push("briefEndingSoon");
+        if (cooled("briefEndingSoon", agent, now, ENDING_SOON_MS, skipped)) fired.push("briefEndingSoon");
       }
     }
   }
