@@ -22,13 +22,12 @@ function shortSignature(signature: string): string {
   return signature.length <= 14 ? signature : `${signature.slice(0, 8)}…${signature.slice(-4)}`;
 }
 
-export function composeNewsReply(match: Extract<MatchView, { kind: "matched" }>, policy: PolicyView): string {
+export function composeNewsReply(match: Extract<MatchView, { kind: "matched" }>): string {
   const { market } = match;
   const head = `${market.eventTitle} — ${market.contractLabel}`;
   const tail = [
     "",
     `Yes ${formatOdds(market.yesCents)} · No ${formatOdds(market.noCents)}`,
-    `Daily budget left: ${formatDollars(policy.remainingCents)}`,
     BET_INSTRUCTION,
   ].join("\n");
   return fitTweet(head, tail);

@@ -39,7 +39,7 @@
   gap: 16px;
 }
 
-.range, .amount, .side, .buy, .refresh, .older {
+.range, .refresh, .older {
   font: inherit;
   border-radius: 7px;
   cursor: pointer;
@@ -235,82 +235,13 @@
 .relatedCard:hover { border-color: #3a3a3a; }
 .relatedPct { font-family: var(--mono); }
 
-.sides { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-
-.side {
-  height: 48px;
-  border: 1px solid #262626;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 15px;
-  font-family: var(--mono);
-}
-
-.side[data-on="yes"] {
-  border-color: #1e5a43;
-  background: #0f2a20;
-  color: var(--green);
-  font-weight: 600;
-}
-
-.side[data-on="no"] {
-  border-color: #6b3020;
-  background: #2a140d;
-  color: var(--red);
-  font-weight: 600;
-}
-
-.amounts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.amountLabel { margin: 0; color: #8a8a93; font-size: 12px; }
-
-.amount {
-  height: 44px;
-  border: 1px solid #262626;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 14px;
-}
-
-.amount[aria-pressed="true"] {
-  border-color: #ededed;
-  background: #1a1a1a;
-  color: var(--text);
-}
-
-.payRow {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 14px;
-}
-
-.payLabel { color: #8a8a93; }
-.payValue { font-family: var(--mono); }
-
-.buy {
-  height: 48px;
-  border: 0;
-  border-radius: 10px;
-  background: #ededed;
-  color: #0a0a0a;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.buy:disabled { opacity: 0.4; cursor: not-allowed; }
-
-.budget, .note, .status, .warning {
+.warning {
   margin: 0;
   font-size: 12px;
   color: var(--muted);
 }
 
 .warning { color: var(--amber); padding: 0 20px; }
-.status[data-kind="approve"] { color: var(--green); }
-.status[data-kind="needs-approval"] { color: var(--amber); }
 
 .trustList { flex-direction: column; align-items: stretch; gap: 8px; }
 .trustLine { margin: 0; font-size: 14px; line-height: 1.45; }

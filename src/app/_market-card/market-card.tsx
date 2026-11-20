@@ -79,16 +79,11 @@ export function MarketCard({
       ) : null}
       <div className={styles.outcomes}>
         {model.outcomes.map((outcome) => (
-          <Link
-            key={outcome.key}
-            href={outcome.href}
-            className={styles.outcome}
-            aria-label={`${outcome.label}, ${formatPercent(outcome.percent)} chance. Research and trade this market.`}
-          >
+          <div key={outcome.key} className={styles.outcome}>
             <span className={styles.outcomeLabel}>{outcome.label}</span>
             {outcome.payout !== null ? <span className={styles.payout}>{outcome.payout}</span> : null}
-            <span className={styles.pill}>{formatPercent(outcome.percent)}</span>
-          </Link>
+            <span className={styles.pill} aria-label={`${formatPercent(outcome.percent)} chance`}>{formatPercent(outcome.percent)}</span>
+          </div>
         ))}
       </div>
       {hasFoot ? (

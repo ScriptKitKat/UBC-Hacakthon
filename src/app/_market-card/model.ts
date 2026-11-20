@@ -13,7 +13,6 @@ export interface MarketCardOutcome {
   readonly label: string;
   readonly percent: number | null;
   readonly payout: string | null;
-  readonly href: string;
 }
 
 export interface MarketCardChange {
@@ -47,10 +46,10 @@ export function monogramFor(title: string): string {
   return title.replace(/[^A-Za-z0-9]/gu, "").slice(0, 1).toUpperCase() || "M";
 }
 
-function yesNoOutcomes(card: CatalogCard, href: string, beginner: boolean, buyable: boolean): MarketCardOutcome[] {
+function yesNoOutcomes(card: CatalogCard, beginner: boolean, buyable: boolean): MarketCardOutcome[] {
   return [
-    { key: "yes", label: "Yes", percent: card.yesCents, payout: buyable ? formatPayoutFromAsk(card.yesAskCents, beginner) : null, href },
-    { key: "no", label: "No", percent: card.noCents, payout: buyable ? formatPayoutFromAsk(card.noCents, beginner) : null, href },
+    { key: "yes", label: "Yes", percent: card.yesCents, payout: buyable ? formatPayoutFromAsk(card.yesAskCents, beginner) : null },
+    { key: "no", label: "No", percent: card.noCents, payout: buyable ? formatPayoutFromAsk(card.noCents, beginner) : null },
   ];
 }
 
@@ -67,7 +66,7 @@ export function catalogCardModel(card: CatalogCard, beginner: boolean): MarketCa
     closes: formatDeadline(card.expiryDate) ?? card.endsIn,
     live: false,
     change: changeLabel(card.changePercent),
-    outcomes: yesNoOutcomes(card, href, beginner, true),
+    outcomes: yesNoOutcomes(card, beginner, true),
   };
 }
 
@@ -83,7 +82,7 @@ export function watchlistCardModel(card: WatchlistCard, beginner: boolean): Mark
     closes: card.status === "settled" ? "Settled" : card.status === "ended" ? "Ended" : formatDeadline(card.expiryDate),
     live: false,
     change: card.status === "live" ? changeLabel(card.changePercent) : null,
-    outcomes: yesNoOutcomes(card, card.href, beginner, card.status === "live"),
+    outcomes: yesNoOutcomes(card, beginner, card.status === "live"),
   };
 }
 
@@ -103,7 +102,6 @@ export function browseCardModel(card: BrowseCard, beginner: boolean): MarketCard
       label: row.label,
       percent: row.yesCents,
       payout: beginner ? row.payoutBeginner : row.payoutPro,
-      href: row.href,
     })),
   };
 }

@@ -34,7 +34,7 @@ export function GuardrailPanel({ policy, ledger, busy, onKillSwitch }: Guardrail
         aria-valuemin={0}
         aria-valuemax={policy.dailyCapCents}
         aria-valuenow={policy.spentCents}
-        aria-label="Daily budget"
+        aria-label="Daily spend limit"
         data-tone={tone}
       >
         <div className={styles.meterFill} style={{ width: `${String(spentShare)}%` }} />

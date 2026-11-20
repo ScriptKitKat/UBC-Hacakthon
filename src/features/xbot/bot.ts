@@ -240,8 +240,7 @@ export function createXBot(deps: XBotDeps): XBot {
       await reply(post.id, post.id, NO_MATCH_NOTE);
       return { kind: "ingested", match, posted: false };
     }
-    const { policy } = await desk.getSnapshot();
-    const posted = await reply(post.id, post.id, composeNewsReply(match, policy));
+    const posted = await reply(post.id, post.id, composeNewsReply(match));
     return { kind: "ingested", match, posted };
   }
 

@@ -84,7 +84,7 @@ describe("market card model", () => {
       ["Yes", 63, "$1 → $1.59"],
       ["No", 38, "$1 → $2.63"],
     ]);
-    expect(model.outcomes.every((outcome) => outcome.href === "/markets/GEMI-BTC261119-YES")).toBe(true);
+    expect(model.href).toBe("/markets/GEMI-BTC261119-YES");
     expect(catalogCardModel(card(), false).outcomes[0]?.payout).toBe("1.6x");
     const lastTradeOnly = catalogCardModel(card({ yesAskCents: null }), true);
     expect(lastTradeOnly.outcomes.map((outcome) => [outcome.percent, outcome.payout])).toEqual([[63, null], [38, "$1 → $2.63"]]);
