@@ -19,8 +19,8 @@ export { payoutFor } from "./payout";
 export { parseDollarsToCents } from "./money";
 export { MAX_FEED_BUY_CENTS } from "./feed";
 export type { PayoutQuote, PayoutResult } from "./payout";
-export { feedPositionsSchema, positionsViewSchema } from "./positions";
-export type { FeedPositions, PositionFillView, PositionStatus, PositionView, PositionsView, ResearchPurchaseView } from "./positions";
+export { feedPositionsSchema, portfolioRangeSchema, portfolioViewSchema, positionsViewSchema } from "./positions";
+export type { FeedPositions, PortfolioActivity, PortfolioRange, PortfolioStat, PortfolioView, PositionFillView, PositionStatus, PositionView, PositionsView, ResearchPurchaseView } from "./positions";
 export {
   BRIEF_SECTION_TITLES,
   RESEARCH_TIMEFRAMES,

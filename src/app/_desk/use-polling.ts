@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-export function usePolling(task: () => void, intervalMs: number): void {
+export function usePolling(task: () => void, intervalMs: number, restartKey?: string | number): void {
   const latest = useRef(task);
   useEffect(() => {
     latest.current = task;
@@ -15,5 +15,5 @@ export function usePolling(task: () => void, intervalMs: number): void {
     return () => {
       clearInterval(timer);
     };
-  }, [intervalMs]);
+  }, [intervalMs, restartKey]);
 }

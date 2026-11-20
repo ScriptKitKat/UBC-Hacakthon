@@ -48,6 +48,7 @@ const stubDesk: Desk = {
   listBriefLibrary: vi.fn(),
   getFeedPositions: vi.fn<Desk["getFeedPositions"]>(),
   getPositions: vi.fn(),
+  getPortfolio: vi.fn(),
   reconcile: vi.fn(),
   buyDeepDive: vi.fn(),
   buyFromFeed: vi.fn(),
