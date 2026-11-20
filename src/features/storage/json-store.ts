@@ -49,6 +49,7 @@ export function createJsonStore<S extends z.ZodType>(options: JsonStoreOptions<S
   const { fs, path, schema, empty } = options;
   const nowMs = options.nowMs ?? Date.now;
   let inFlight: Promise<void> = Promise.resolve();
+  let lastFailure: { readonly error: unknown } | undefined;
   let queued: { readonly value: z.output<S> } | undefined;
   let queuedDone: Promise<void> | undefined;
 
@@ -57,7 +58,15 @@ export function createJsonStore<S extends z.ZodType>(options: JsonStoreOptions<S
     queued = undefined;
     queuedDone = undefined;
     if (next === undefined) return Promise.resolve();
-    return fs.writeTextAtomic(path, JSON.stringify(next.value));
+    return fs.writeTextAtomic(path, JSON.stringify(next.value)).then(
+      () => {
+        lastFailure = undefined;
+      },
+      (error: unknown) => {
+        lastFailure = { error };
+        throw error;
+      },
+    );
   }
 
   async function quarantine(): Promise<StoreUnavailableError> {
@@ -92,8 +101,8 @@ export function createJsonStore<S extends z.ZodType>(options: JsonStoreOptions<S
     save(value) {
       queued = { value };
       if (queuedDone === undefined) {
-        queuedDone = inFlight.catch(() => undefined).then(drain);
-        inFlight = queuedDone;
+        queuedDone = inFlight.then(drain);
+        inFlight = queuedDone.catch(() => undefined);
       }
       return queuedDone;
     },
@@ -101,7 +110,11 @@ export function createJsonStore<S extends z.ZodType>(options: JsonStoreOptions<S
       for (;;) {
         const pending = inFlight;
         await pending;
-        if (pending === inFlight && queued === undefined && queuedDone === undefined) return;
+        if (pending !== inFlight || queued !== undefined || queuedDone !== undefined) continue;
+        const failure = lastFailure;
+        lastFailure = undefined;
+        if (failure !== undefined) throw failure.error;
+        return;
       }
     },
   };

@@ -115,6 +115,25 @@ describe("createJsonStore with a memory file system", () => {
     await store.save({ items: [2] });
     expect(await store.load()).toEqual({ items: [2] });
   });
+
+  it("reports a failed write once and lets later read-only flushes through", async () => {
+    const memory = createMemoryFileSystem();
+    let failing = true;
+    const fs = {
+      ...memory,
+      writeTextAtomic: (path: string, contents: string) =>
+        failing ? Promise.reject(new Error("ENOSPC")) : memory.writeTextAtomic(path, contents),
+    };
+    const store = createJsonStore({ fs, path: "/d/a.json", schema, empty });
+    const save = store.save({ items: [1] });
+    const saveResult = expect(save).rejects.toThrow("ENOSPC");
+    await expect(store.flush()).rejects.toThrow("ENOSPC");
+    await saveResult;
+
+    failing = false;
+    await expect(store.flush()).resolves.toBeUndefined();
+    await expect(store.flush()).resolves.toBeUndefined();
+  });
 });
 
 describe("nodeFileSystem", () => {
