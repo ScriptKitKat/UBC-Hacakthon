@@ -35,7 +35,7 @@ export function SettingsPage() {
   return (
     <div className={styles.page}>
       <h1 className={styles.pageTitle}>Settings</h1>
-      <p className={styles.pageLead}>Guardrails, daily budget, and the trading kill switch from the live desk policy.</p>
+      <p className={styles.pageLead}>Guardrails, daily spend limit, and the trading kill switch from the live desk policy.</p>
       {actionError ? <p className={styles.error} role="alert">{actionError}</p> : null}
       {result === null ? <p className={styles.empty}>Loading policy…</p> : null}
       {result?.kind === "not-configured" ? (

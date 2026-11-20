@@ -2,9 +2,6 @@
 
 import { useState } from "react";
 import {
-  buildSparkline,
-  formatBudgetCents,
-  formatChangePercent,
   formatPercent,
   marketDeadline,
   marketTitle,
@@ -24,8 +21,6 @@ import styles from "./trade-card.module.css";
 
 const RAIL_MS = 15_000;
 const DEFAULT_AMOUNT = "2.00";
-const CHART_WIDTH = 96;
-const CHART_HEIGHT = 32;
 
 type Side = "yes" | "no";
 
@@ -43,25 +38,6 @@ function estimateText(payout: PayoutResult | undefined, priceCents: number | nul
   if (payout.kind === "quote") return `${formatPercent(priceCents)} chance · ${formatUsdc(payout.payoutCents)} potential payout`;
   if (payout.kind === "no-price") return `Gemini has no live ${side === "yes" ? "Yes" : "No"} price right now`;
   return "That amount is below the smallest order for this market";
-}
-
-function Trend({ view }: { readonly view: ResearchView }) {
-  const values = view.series.points.map((point) => point.cents);
-  const sparkline = buildSparkline(values, CHART_WIDTH, CHART_HEIGHT);
-  const first = values[0];
-  const last = values.at(-1);
-  if (sparkline === undefined || first === undefined || last === undefined) return null;
-  const change = formatChangePercent(first, last);
-  const window = view.timeframe === "All" ? "" : ` ${view.timeframe.toLowerCase()}`;
-  return (
-    <div className={styles.trend}>
-      <svg className={styles.chart} viewBox={`0 0 ${String(CHART_WIDTH)} ${String(CHART_HEIGHT)}`} aria-hidden="true">
-        <path className={styles.area} d={sparkline.area} data-trend={sparkline.trend} />
-        <path className={styles.line} d={sparkline.line} data-trend={sparkline.trend} />
-      </svg>
-      {change !== null ? <span className={styles.change} data-trend={sparkline.trend}>{change}{window}</span> : null}
-    </div>
-  );
 }
 
 export function TradeCard({ view }: { readonly view: ResearchView }) {
@@ -103,7 +79,6 @@ export function TradeCard({ view }: { readonly view: ResearchView }) {
           <p className={styles.title}>{title}</p>
           {closes !== null ? <p className={styles.deadline}>{closes}</p> : null}
         </div>
-        <Trend view={view} />
       </div>
       {contract !== "" ? <p className={styles.contract}>{contract}</p> : null}
       <div className={styles.outcomes} role="group" aria-label="Prediction outcome">
@@ -127,11 +102,6 @@ export function TradeCard({ view }: { readonly view: ResearchView }) {
       <button type="button" className={styles.buy} disabled={!canBuy} onClick={() => { void buy(); }}>
         {busy ? "Placing order…" : "Trade now"}
       </button>
-      <p className={styles.note}>
-        {budget === undefined || amountCents === undefined
-          ? "Loading your daily budget…"
-          : `Uses ${formatBudgetCents(amountCents)} of your ${formatBudgetCents(Math.max(0, budget.remainingCents))} left today`}
-      </p>
       {result !== undefined && "error" in result ? <p className={styles.note} data-tone="warn" role="alert">{result.error}</p> : null}
       {result !== undefined && "kind" in result ? <p className={styles.note} data-kind={result.kind} role="status">{result.spokenReason}</p> : null}
     </section>

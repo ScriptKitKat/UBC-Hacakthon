@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { ticketQuote, cappedStakeCents, needsApproval } from "@/features/market-pro";
-import { formatBudgetCents, formatResetLabel, parseDollarsToCents } from "@/shared";
+import { formatBudgetCents, parseDollarsToCents } from "@/shared";
 import type { ProBudget, ProMarket } from "@/shared";
 import { proposeTrade } from "../../_shell/api";
-import { budgetNote, formatCents, formatDollars } from "./format";
+import { formatCents, formatDollars, overLimitNote } from "./format";
 import { Tip } from "./tip";
 import styles from "./pro.module.css";
 
@@ -94,10 +94,7 @@ export function OrderTicket({ market, budget }: { readonly market: ProMarket; re
       <button type="button" className={styles.submit} disabled={!canSubmit} onClick={submit}>
         {approval ? "Needs approval" : "Place market"} · {side.toUpperCase()} {formatBudgetCents(stakeCents)}
       </button>
-      <p className={overLimit ? [styles.hint, styles.warn].join(" ") : (styles.hint ?? "")}>
-        {budgetNote(stakeCents, budget.remainingCents, budget.autoApproveMaxCents, remainingCap, budget.perTradeMaxCents)}
-        {` · ${formatResetLabel(budget.resetAt, "America/Chicago")}`}
-      </p>
+      {overLimit ? <p className={[styles.hint, styles.warn].join(" ")}>{overLimitNote(budget.perTradeMaxCents, budget.remainingCents)}</p> : null}
       {budget.senderId === null ? <p className={styles.hint}>The desk has no allowed sender, so it cannot place this order.</p> : null}
       {message !== null ? <p className={styles.hint} role="status">{message}</p> : null}
     </section>

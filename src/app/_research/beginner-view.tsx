@@ -395,7 +395,7 @@ function BriefCard({ symbol, yesCents }: { readonly symbol: string; readonly yes
         {stale?.needsRefresh === true ? <span className={styles.badgeNote}>Needs refresh</span> : null}
       </div>
       {current === null ? (
-        <p className={styles.briefSummary}>No brief purchased for this market yet. The desk's agent can buy one for $0.05 over x402, inside the same daily budget as its bets.</p>
+        <p className={styles.briefSummary}>No brief purchased for this market yet. The desk's agent can buy one for $0.05 over x402.</p>
       ) : (
         <>
           {stale !== null ? <p className={styles.briefSummary}>{stale.summary}</p> : null}

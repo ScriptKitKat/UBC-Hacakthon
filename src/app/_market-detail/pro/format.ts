@@ -85,13 +85,8 @@ export function statClass(stat: ProStat): "up" | "down" | "muted" | "plain" {
   return "plain";
 }
 
-export function budgetNote(stakeCents: number, remainingCents: number, autoApproveMaxCents: number, remainingCap: number, perTradeMaxCents: number): string {
-  const used = formatBudgetCents(stakeCents);
-  const left = formatBudgetCents(remainingCents);
-  if (stakeCents > remainingCap) {
-    return `Over your limit: max ${formatBudgetCents(perTradeMaxCents)} per trade (${left} left today)`;
-  }
-  return `Uses ${used} of your ${left} left today · needs your OK over ${formatBudgetCents(autoApproveMaxCents)}`;
+export function overLimitNote(perTradeMaxCents: number, remainingCents: number): string {
+  return `Over your limit: max ${formatBudgetCents(perTradeMaxCents)} per trade (${formatBudgetCents(remainingCents)} left today)`;
 }
 
 export { formatBudgetCents, formatResetLabel } from "@/shared";

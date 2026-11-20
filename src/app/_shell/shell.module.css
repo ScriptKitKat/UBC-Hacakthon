@@ -70,42 +70,6 @@
 
 .spacer { flex: 1; min-height: 24px; }
 
-.budget {
-  margin: 0 4px 12px;
-  padding: 12px;
-  border: 1px solid #1f1f1f;
-  border-radius: 10px;
-  background: #111111;
-}
-
-.budgetRow {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: #a1a1aa;
-}
-
-.budgetValue { font-family: "Geist Mono", ui-monospace, monospace; }
-
-.track {
-  height: 4px;
-  border-radius: 2px;
-  background: #262626;
-  margin-top: 8px;
-}
-
-.fill {
-  height: 4px;
-  border-radius: 2px;
-  background: #ededed;
-}
-
-.budgetHint {
-  font-size: 12px;
-  color: #8a8a93;
-  margin-top: 8px;
-}
-
 .column {
   flex: 999 1 560px;
   min-width: 0;

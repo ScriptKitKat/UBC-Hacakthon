@@ -22,7 +22,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.head { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.head { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; align-items: start; }
 
 .icon {
   width: 32px;
@@ -40,18 +40,6 @@
 .titles { min-width: 0; }
 .title { margin: 0; color: var(--tc-muted); font-size: 13px; line-height: 18px; font-weight: 600; overflow-wrap: anywhere; }
 .deadline { margin: 0; color: var(--tc-muted); font-size: 11px; line-height: 15px; }
-
-.trend { display: grid; justify-items: end; gap: 1px; }
-.chart { width: 96px; height: 32px; overflow: visible; }
-.line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke: var(--tc-muted); }
-.line[data-trend="up"] { stroke: var(--tc-yes); }
-.line[data-trend="down"] { stroke: var(--tc-no); }
-.area { fill: var(--tc-flat-area); }
-.area[data-trend="up"] { fill: rgba(86, 214, 132, 0.2); }
-.area[data-trend="down"] { fill: rgba(255, 138, 138, 0.2); }
-.change { font-size: 10px; line-height: 12px; font-weight: 700; white-space: nowrap; color: var(--tc-muted); }
-.change[data-trend="up"] { color: var(--tc-yes); }
-.change[data-trend="down"] { color: var(--tc-no); }
 
 .contract { margin: 0; font-size: 18px; line-height: 24px; font-weight: 700; letter-spacing: -0.4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

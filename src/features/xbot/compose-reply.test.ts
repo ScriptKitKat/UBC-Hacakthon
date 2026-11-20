@@ -66,23 +66,22 @@ function randomText(random: () => number, length: number): string {
 }
 
 describe("composeNewsReply", () => {
-  it("includes the market, both odds, the budget and the bet instruction", () => {
-    expect(composeNewsReply(matched(), policy)).toBe(
+  it("includes the market, both odds and the bet instruction", () => {
+    expect(composeNewsReply(matched())).toBe(
       [
         "Fed decision in December? — Fed maintains rate",
         "Yes 62¢ · No 40¢",
-        "Daily budget left: $17.00",
         BET_LINE,
       ].join("\n"),
     );
   });
 
   it("renders missing odds as a dash", () => {
-    expect(composeNewsReply(matched({ yesCents: null, noCents: null }), policy)).toContain("Yes — · No —");
+    expect(composeNewsReply(matched({ yesCents: null, noCents: null }))).toContain("Yes — · No —");
   });
 
   it("clips CJK titles to the weighted tweet limit", () => {
-    const text = composeNewsReply(matched({ eventTitle: "界".repeat(TWEET_LIMIT) }), policy);
+    const text = composeNewsReply(matched({ eventTitle: "界".repeat(TWEET_LIMIT) }));
     expect(text.length + Array.from(text).filter((character) => character === "界").length).toBeLessThanOrEqual(TWEET_LIMIT);
     expect(text).toContain(BET_LINE);
   });
@@ -92,8 +91,7 @@ describe("composeNewsReply", () => {
     for (let run = 0; run < 300; run += 1) {
       const eventTitle = randomText(random, Math.floor(random() * 900));
       const contractLabel = randomText(random, Math.floor(random() * 400));
-      const remainingCents = Math.floor(random() * 1e12);
-      const text = composeNewsReply(matched({ eventTitle, contractLabel }), { ...policy, remainingCents });
+      const text = composeNewsReply(matched({ eventTitle, contractLabel }));
       expect(text.length).toBeLessThanOrEqual(TWEET_LIMIT);
       expect(text).toContain("Yes 62¢ · No 40¢");
       expect(text).toContain(BET_LINE);
