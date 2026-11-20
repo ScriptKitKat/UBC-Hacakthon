@@ -3,7 +3,7 @@ import type { Policy } from "@/features/guardrails";
 import type { HistoryStore, PriceSnapshot } from "@/features/history";
 import { parseInstrumentSymbol, type Candle, type GeminiMarketsClient, type MarketContract, type MarketEvent } from "@/features/markets";
 import type { CatalogCard, CatalogPage } from "@/shared";
-import { uniqueByKey } from "@/shared";
+import { marketSearchTerm, uniqueByKey } from "@/shared";
 import { categoryLabel, categoryQuery, changePercent, downsample, formatEndsIn, smoothSeries, SPARKLINE_POINTS, WINDOW_MS } from "./format";
 
 const FETCH_LIMIT = 40;
@@ -49,7 +49,7 @@ function candlesToValues(points: readonly Candle[], cutoff: number): { values: n
 
 export async function listCatalog(deps: CatalogDeps, query: CatalogQuery = {}): Promise<CatalogListResult> {
   const limit = Math.min(Math.max(query.limit ?? DEFAULT_LIMIT, 1), 48);
-  const search = query.search?.trim();
+  const search = query.search === undefined ? undefined : marketSearchTerm(query.search);
   const category = categoryQuery(query.category ?? "");
   const searched = await deps.markets.searchEvents({
     status: "active",

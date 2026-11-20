@@ -5,6 +5,7 @@ import {
   formatPayoutFromAsk,
   formatVolumeUsd,
   friendlyEventTitle,
+  marketSearchTerm,
   uniqueByKey,
 } from "@/shared";
 import type { BrowseCard, BrowsePage, BrowseRow, BrowseSort } from "@/shared";
@@ -241,7 +242,7 @@ export async function listBrowse(deps: BrowseDeps, query: BrowseQuery = {}): Pro
       status: "active",
       limit: FETCH_SIZE,
       offset: pageOffset,
-      ...(query.search === undefined || query.search.trim() === "" ? {} : { search: query.search.trim() }),
+      ...(query.search === undefined || query.search.trim() === "" ? {} : { search: marketSearchTerm(query.search) }),
       ...(geminiCategory === undefined ? {} : { category: geminiCategory }),
     });
     if (!searched.ok) return { ok: false, reason: searched.error.kind === "busy" ? "busy" : "unavailable" };

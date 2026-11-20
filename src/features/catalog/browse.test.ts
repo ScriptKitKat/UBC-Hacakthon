@@ -245,6 +245,24 @@ describe("listBrowse", () => {
     expect(new Set(tickers).size).toBe(tickers.length);
   });
 
+  it("searches Gemini by ticker when the user types an asset name", async () => {
+    const searches: (string | undefined)[] = [];
+    const deps = {
+      markets: {
+        searchEvents: (query: SearchEventsQuery = {}) => {
+          searches.push(query.search);
+          return Promise.resolve({ ok: true as const, value: { events: [], total: 0 } });
+        },
+        candles: () => Promise.resolve({ ok: true as const, value: [] }),
+        pubticker: () => Promise.resolve({ ok: false as const, error: { kind: "http" as const, status: 404 } }),
+      },
+      history: createMemoryHistory(),
+      now: () => new Date("2026-11-19T16:00:00.000Z"),
+    };
+    await listBrowse(deps, { sort: "trending", search: " Bitcoin " });
+    expect(searches).toEqual(["BTC"]);
+  });
+
   it("reports unavailability when Gemini search fails", async () => {
     const result = await listBrowse({
       markets: {

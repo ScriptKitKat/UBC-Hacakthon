@@ -94,6 +94,19 @@ const ASSET_NAMES: Readonly<Record<string, string>> = {
 
 const PRICE_TITLE = /^([A-Za-z0-9]+(?:\s+[A-Za-z0-9]+){0,3})\s+price(?:\s+on\s+.+|\s+today(?:\s+at\s+.+)?|\s+tomorrow(?:\s+at\s+.+)?)?\??$/iu;
 
+const ASSET_TICKERS: ReadonlyMap<string, string> = Object.entries(ASSET_NAMES).reduce((tickers, [ticker, name]) => {
+  const key = name.toUpperCase();
+  if (ticker !== key && !tickers.has(key)) tickers.set(key, ticker);
+  return tickers;
+}, new Map<string, string>());
+
+export function marketSearchTerm(search: string): string {
+  const trimmed = search.trim();
+  const whole = ASSET_TICKERS.get(trimmed.toUpperCase());
+  if (whole !== undefined) return whole;
+  return trimmed.split(/\s+/u).map((word) => ASSET_TICKERS.get(word.toUpperCase()) ?? word).join(" ");
+}
+
 export function assetDisplayName(token: string): string {
   return ASSET_NAMES[token.toUpperCase()] ?? token;
 }
