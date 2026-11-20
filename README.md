@@ -140,12 +140,17 @@ npm run test:integration  # Solana ledger against a live cluster
 - Agents can never exceed their own budget or the global caps, and suggestions always require approval.
 - Write routes check the Origin and Sec-Fetch-Site headers. No keys or keypairs are committed.
 
+
+## Grok Bot's role
+
+Grok Bot (this project's dedicated "UBC hackathon bot") was the build and ops agent for Predictle throughout the hackathon: spinning up parallel agents for pages, reviewing and merging PRs, researching what beginners and pros need on market research screens, drafting the pitch video script, and writing this README. Inside the product, the xAI Grok API matches X posts to Gemini markets, polishes research briefs, and powers watchlist-agent decisions and messages. A cleaned export of the build chat is in [`docs/grok-bot-chat-export.md`](docs/grok-bot-chat-export.md).
+
 ## Sponsor tools
 
 - **Gemini Prediction Markets:** market discovery, order books, trades, candles and the order-ticket format.
 - **Solana:** devnet USDC transfers with memos for every bet and brief, with Explorer receipts.
 - **x402:** pay-per-request research briefs.
-- **Grok (xAI):** post-to-market matching, brief polish and agent decisions and messages.
+- **Grok Bot / xAI Grok:** Grok Bot built and operated the project during the hackathon; the Grok API matches posts to markets, polishes briefs, and powers agent decisions. See [Grok Bot's role](#grok-bots-role) and the [chat export](docs/grok-bot-chat-export.md).
 
 ## What's next
 
