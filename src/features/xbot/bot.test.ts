@@ -285,7 +285,7 @@ describe("handleReply bets", () => {
     if (!created.ok) throw new Error("invalid policy");
     const desk = createDesk({
       policy: created.value,
-      feed: { operatorId: "@Priscilla", grok: { apiKey: undefined, model: "grok-test" } },
+      feed: { operatorId: "@Priscilla", grok: { apiKey: undefined, model: "grok-test" }, claude: { apiKey: undefined, model: "claude-test" } },
       markets,
       ledger: { debit, signPayment: vi.fn(), checkSignature: vi.fn(), balance: vi.fn() },
       ledgerView: { configured: false, missing: [] },

@@ -1,41 +1,30 @@
 import type { GeminiMarketsClient, MarketEvent } from "@/features/markets";
+import type { LlmCompleter, LlmProvider } from "@/features/llm";
 import { matchPostToEvents, trimWhy } from "@/features/matcher";
 import { createCandidateSource, selectCandidates } from "./candidates";
-import type { GrokSettings } from "./env";
-import { postGrokChat } from "./chat";
-import { buildRequestBody, parseCompletion } from "./request";
+import { buildUserPrompt, parseAnswer, RESPONSE_SCHEMA, SYSTEM_PROMPT } from "./request";
 import type { PostCandidate, PostInput, PostMatcher, PostMatchResult } from "./types";
 
 export const MIN_CONFIDENCE = 0.6;
 
 export interface PostMatcherOptions {
   readonly markets: Pick<GeminiMarketsClient, "searchEvents">;
-  readonly settings: GrokSettings;
+  readonly llm: LlmCompleter | undefined;
   readonly categories: readonly string[];
-  readonly fetch: typeof fetch;
   readonly now: () => Date;
   readonly timeoutMs?: number;
 }
 
-function noMatch(matchedBy: "grok" | "keywords", reason: string): PostMatchResult {
+function noMatch(matchedBy: LlmProvider | "keywords", reason: string): PostMatchResult {
   return { kind: "no-match", matchedBy, reason };
 }
 
 export function createPostMatcher(options: PostMatcherOptions): PostMatcher {
-  const { markets, settings, now } = options;
+  const { markets, llm, now } = options;
   const source = createCandidateSource({ markets, categories: options.categories, now });
 
-  async function askGrok(apiKey: string, post: PostInput, candidates: readonly PostCandidate[]) {
-    const body = await postGrokChat({
-      apiKey,
-      fetch: options.fetch,
-      body: buildRequestBody(settings.model, post, candidates),
-      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-    });
-    return body === undefined ? undefined : parseCompletion(body);
-  }
-
-  async function matchWithGrok(apiKey: string, post: PostInput): Promise<PostMatchResult | undefined> {
+  async function matchWithLlm(post: PostInput): Promise<PostMatchResult | undefined> {
+    if (llm === undefined) return undefined;
     let candidates: readonly PostCandidate[];
     try {
       candidates = selectCandidates(await source.eventsFor(post.text), post.text);
@@ -43,14 +32,26 @@ export function createPostMatcher(options: PostMatcherOptions): PostMatcher {
       return undefined;
     }
     if (candidates.length === 0) return undefined;
-    const answer = await askGrok(apiKey, post, candidates);
+    let answer: ReturnType<typeof parseAnswer>;
+    try {
+      answer = parseAnswer(await llm.complete({
+        system: SYSTEM_PROMPT,
+        user: buildUserPrompt(post, candidates),
+        schemaName: "post_market_pick",
+        schema: RESPONSE_SCHEMA,
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      }));
+    } catch {
+      return undefined;
+    }
     if (!answer) return undefined;
     const picked = answer.pick
       ? candidates.find((candidate) => candidate.contract.instrumentSymbol === answer.pick?.instrumentSymbol)
       : undefined;
-    if (!picked) return noMatch("grok", "Grok found no live market this post moves.");
-    if (answer.confidence < MIN_CONFIDENCE) return noMatch("grok", "Grok was not confident enough in a market for this post.");
-    return { kind: "matched", matchedBy: "grok", confidence: answer.confidence, why: trimWhy(answer.why), candidate: picked };
+    const providerName = llm.provider === "claude" ? "Claude" : "Grok";
+    if (!picked) return noMatch(llm.provider, `${providerName} found no live market this post moves.`);
+    if (answer.confidence < MIN_CONFIDENCE) return noMatch(llm.provider, `${providerName} was not confident enough in a market for this post.`);
+    return { kind: "matched", matchedBy: llm.provider, confidence: answer.confidence, why: trimWhy(answer.why), candidate: picked };
   }
 
   async function matchWithKeywords(post: PostInput): Promise<PostMatchResult> {
@@ -79,8 +80,8 @@ export function createPostMatcher(options: PostMatcherOptions): PostMatcher {
 
   return {
     async matchPost(post) {
-      const grok = settings.apiKey === undefined ? undefined : await matchWithGrok(settings.apiKey, post);
-      return grok ?? matchWithKeywords(post);
+      const match = llm === undefined ? undefined : await matchWithLlm(post);
+      return match ?? matchWithKeywords(post);
     },
   };
 }

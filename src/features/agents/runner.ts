@@ -1,4 +1,5 @@
 import type { Desk, ProposeRequest } from "@/features/desk";
+import type { ClaudeSettings } from "@/features/claude";
 import type { GrokSettings } from "@/features/grok";
 import type { HistoryStore } from "@/features/history";
 import type { GeminiMarketsClient, MarketContract, MarketEvent } from "@/features/markets";
@@ -21,6 +22,7 @@ export interface AgentRunnerDeps {
   readonly history: HistoryStore;
   readonly desk: Pick<Desk, "proposeTrade" | "buyDeepDive" | "getSnapshot">;
   readonly grok: GrokSettings;
+  readonly claude: ClaudeSettings;
   readonly fetch: typeof fetch;
   readonly operatorId: string;
   readonly now?: () => Date;
@@ -135,7 +137,7 @@ export async function runAgentTick(deps: AgentRunnerDeps, agent: AgentRecord, de
   const lastTriggerAt: Record<string, string> = {};
   for (const id of result.fired) lastTriggerAt[id] = now.toISOString();
 
-  const composed = await composeMessage({ agent, result, snapshot, now, grok: deps.grok, fetch: deps.fetch });
+  const composed = await composeMessage({ agent, result, snapshot, now, grok: deps.grok, claude: deps.claude, fetch: deps.fetch });
   const message = composed.text;
   const messageSource = composed.source;
   activities.push(activity("message", composed.text, now, { trigger: result.fired[0], messageSource: composed.source }));

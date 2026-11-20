@@ -55,6 +55,7 @@ async function setup(options: { readonly yesNow: number; readonly yesBefore: num
     history,
     desk: { proposeTrade, buyDeepDive, getSnapshot: vi.fn<Desk["getSnapshot"]>() },
     grok: { apiKey: undefined, model: "unused" },
+    claude: { apiKey: undefined, model: "unused" },
     fetch: vi.fn<typeof fetch>(),
     operatorId: "operator",
     ...(options.allowAutonomous === undefined ? {} : { allowAutonomous: options.allowAutonomous }),

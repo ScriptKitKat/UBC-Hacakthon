@@ -2,6 +2,8 @@ import { PublicKey } from "@solana/web3.js";
 import { z } from "zod";
 import { loadGrokSettings } from "@/features/grok";
 import type { GrokSettings } from "@/features/grok";
+import { loadClaudeSettings } from "@/features/claude";
+import type { ClaudeSettings } from "@/features/claude";
 import { DEFAULT_MARKET_CATEGORIES, createPolicy } from "@/features/guardrails";
 import type { Policy } from "@/features/guardrails";
 import { instrumentSymbol, usdCents } from "@/shared";
@@ -63,6 +65,7 @@ export type LedgerSettings =
 export interface FeedSettings {
   readonly operatorId: string;
   readonly grok: GrokSettings;
+  readonly claude: ClaudeSettings;
 }
 
 export interface ResearchSettings {
@@ -119,7 +122,7 @@ export function loadDeskConfig(env: Readonly<Record<string, string | undefined>>
   }
   const operatorId = values.FEED_OPERATOR_ID ?? values.SENDER_ALLOWLIST[0];
   if (operatorId === undefined) return { ok: false, issues: ["SENDER_ALLOWLIST: must list at least one value"] };
-  const feed: FeedSettings = { operatorId, grok: loadGrokSettings(present) };
+  const feed: FeedSettings = { operatorId, grok: loadGrokSettings(present), claude: loadClaudeSettings(present) };
   const research: ResearchSettings = {
     recipient: values.RESEARCH_RECIPIENT ?? values.VAULT_RECIPIENT,
     priceCents: values.RESEARCH_PRICE_USD,

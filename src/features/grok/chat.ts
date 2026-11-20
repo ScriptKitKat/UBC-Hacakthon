@@ -32,6 +32,7 @@ export interface GrokJsonRequest {
   readonly user: string;
   readonly schemaName: string;
   readonly schema: Record<string, unknown>;
+  readonly timeoutMs?: number;
 }
 
 export async function requestGrokJson(request: GrokJsonRequest): Promise<unknown> {
@@ -49,6 +50,7 @@ export async function requestGrokJson(request: GrokJsonRequest): Promise<unknown
       ],
       response_format: { type: "json_schema", json_schema: { name: request.schemaName, strict: true, schema: request.schema } },
     },
+    ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
   });
   return body === undefined ? undefined : completionJson(body);
 }

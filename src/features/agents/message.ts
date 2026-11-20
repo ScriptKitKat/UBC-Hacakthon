@@ -1,3 +1,4 @@
+import { requestClaudeJson, type ClaudeSettings } from "@/features/claude";
 import { requestGrokJson, type GrokSettings } from "@/features/grok";
 import { formatPercent } from "@/shared";
 import type { MarketSnapshot, TriggerResult } from "./triggers";
@@ -58,20 +59,23 @@ export async function composeMessage(options: {
   readonly snapshot: MarketSnapshot;
   readonly now: Date;
   readonly grok: GrokSettings;
+  readonly claude: ClaudeSettings;
   readonly fetch: typeof fetch;
 }): Promise<{ readonly text: string; readonly source: MessageSource }> {
   const fallback = templateMessage(options.agent, options.result, options.snapshot, options.now);
-  if (options.agent.model !== "grok" || options.grok.apiKey === undefined) return { text: fallback, source: "template" };
   const facts = options.result.fired.map((id) => triggerLine(id, options.result, options.snapshot, options.now)).join(" ");
   const custom = options.agent.instructions.trim();
-  const body = await requestGrokJson({
-    settings: options.grok,
+  const prompt = {
     fetch: options.fetch,
     schemaName: "agent_message",
     schema: MESSAGE_SCHEMA,
     system: `You are ${options.agent.name}, a prediction-market desk agent. ${PERSONALITY_COPY[options.agent.personality].voice} Write 2-4 short sentences. Do not invent prices, volume, or news that were not provided. Do not claim you placed a bet.`,
     user: `Market facts:\n${facts}\nCurrent Yes: ${formatPercent(options.snapshot.yesCents)}\n${custom === "" ? "" : `Extra instructions from the user: ${custom}`}`,
-  });
+  };
+  let body: unknown;
+  if (options.agent.model === "grok" && options.grok.apiKey !== undefined) body = await requestGrokJson({ ...prompt, settings: options.grok });
+  else if (options.agent.model === "claude" && options.claude.apiKey !== undefined) body = await requestClaudeJson({ ...prompt, settings: options.claude });
+  else return { text: fallback, source: "template" };
   const message = typeof body === "object" && body !== null && "message" in body && typeof body.message === "string" ? body.message.trim() : "";
   if (message === "") return { text: fallback, source: "template" };
   return { text: message, source: "llm" };
