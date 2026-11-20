@@ -3,6 +3,7 @@ import type { AgentDraft, AgentPatch } from "@/features/agents";
 import type { HomeServices } from "@/features/desk";
 import { agentRecordSchema, agentsViewSchema } from "@/shared";
 import type { AgentsView } from "@/shared";
+import { loadXFeedSettings } from "@/features/xfeed";
 import { z } from "zod";
 
 type Services = Extract<HomeServices, { ok: true }>;
@@ -46,6 +47,7 @@ export async function agentsPayload(services: Services): Promise<AgentsView> {
   return agentsViewSchema.parse({
     agents: agentRecordSchema.array().parse(agents),
     models: modelAvailability(process.env),
+    xFeed: { available: loadXFeedSettings(process.env).bearerToken !== undefined },
     desk: {
       dailyCapCents: snapshot.policy.dailyCapCents,
       remainingCents: snapshot.policy.remainingCents,

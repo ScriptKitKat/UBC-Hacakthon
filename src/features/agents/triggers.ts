@@ -5,13 +5,17 @@ import {
   ODDS_MOVE_POINTS,
   TRIGGER_COOLDOWN_MS,
   VOLUME_SPIKE_MULTIPLE,
+  X_SURGE_MIN_POSTS,
+  X_SURGE_MULTIPLE,
   type AgentRecord,
   type BriefTriggerId,
   type TriggerId,
   type WatchTriggerId,
 } from "./types";
+import type { XSignals } from "@/features/xfeed";
 
 export interface MarketSnapshot {
+  readonly eventTitle: string | null;
   readonly yesCents: number | null;
   readonly yesCents24hAgo: number | null;
   readonly volume24h: number | null;
@@ -29,6 +33,7 @@ export interface TriggerResult {
   readonly fired: readonly TriggerId[];
   readonly skipped: readonly TriggerSkip[];
   readonly todayPoints: number | null;
+  readonly x?: XSignals | undefined;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -84,7 +89,7 @@ export function evaluateTriggers(
   agent: AgentRecord,
   snapshot: MarketSnapshot,
   now: Date,
-  options: { readonly xFeedAvailable: boolean; readonly timeZone?: string } = { xFeedAvailable: false },
+  options: { readonly xFeedAvailable: boolean; readonly x?: XSignals | undefined; readonly timeZone?: string } = { xFeedAvailable: false },
 ): TriggerResult {
   const skipped: TriggerSkip[] = [];
   const fired: TriggerId[] = [];
@@ -102,8 +107,32 @@ export function evaluateTriggers(
       if (cooled("volumeSpike", agent, now, TRIGGER_COOLDOWN_MS, skipped)) fired.push("volumeSpike");
     }
   }
-  if (watch.xMentions) skipped.push({ id: "xMentions", reason: "needs X feed" });
-  if (watch.breakingNews) skipped.push({ id: "breakingNews", reason: "needs X feed" });
+  if (watch.xMentions) {
+    if (!options.xFeedAvailable) {
+      skipped.push({ id: "xMentions", reason: "needs X_BEARER_TOKEN" });
+    } else if (options.x === undefined) {
+      skipped.push({ id: "xMentions", reason: "X data unavailable" });
+    } else if (
+      options.x.lastHourCount >= X_SURGE_MULTIPLE * Math.max(options.x.baselineHourlyCount, 1) &&
+      options.x.lastHourCount >= X_SURGE_MIN_POSTS &&
+      cooled("xMentions", agent, now, TRIGGER_COOLDOWN_MS, skipped)
+    ) {
+      fired.push("xMentions");
+    }
+  }
+  if (watch.breakingNews) {
+    if (!options.xFeedAvailable) {
+      skipped.push({ id: "breakingNews", reason: "needs X_BEARER_TOKEN" });
+    } else if (options.x === undefined) {
+      skipped.push({ id: "breakingNews", reason: "X data unavailable" });
+    } else if (
+      options.x.breakingPost !== null &&
+      options.x.breakingPost.id !== agent.lastBreakingPostId &&
+      cooled("breakingNews", agent, now, TRIGGER_COOLDOWN_MS, skipped)
+    ) {
+      fired.push("breakingNews");
+    }
+  }
   if (watch.oddsCross) {
     if (crossedLevel(snapshot.yesCents24hAgo, snapshot.yesCents, watch.oddsCrossLevel)) {
       if (cooled("oddsCross", agent, now, TRIGGER_COOLDOWN_MS, skipped)) fired.push("oddsCross");
@@ -132,7 +161,7 @@ export function evaluateTriggers(
     }
   }
 
-  return { fired, skipped, todayPoints: points };
+  return { fired, skipped, todayPoints: points, ...(options.x === undefined ? {} : { x: options.x }) };
 }
 
 export function isBriefTrigger(id: TriggerId): id is BriefTriggerId {

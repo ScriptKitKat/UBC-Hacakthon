@@ -2,6 +2,7 @@ import type { Desk, ProposeRequest } from "@/features/desk";
 import type { GrokSettings } from "@/features/grok";
 import type { HistoryStore } from "@/features/history";
 import type { GeminiMarketsClient, MarketContract, MarketEvent } from "@/features/markets";
+import { marketQuery, type XFeed } from "@/features/xfeed";
 import type { AgentBudget, DeskBudget } from "./budget";
 import { evaluateBudget } from "./budget";
 import { composeMessage } from "./message";
@@ -23,6 +24,7 @@ export interface AgentRunnerDeps {
   readonly grok: GrokSettings;
   readonly fetch: typeof fetch;
   readonly operatorId: string;
+  readonly xFeed?: XFeed;
   readonly now?: () => Date;
   readonly allowAutonomous?: boolean;
 }
@@ -68,6 +70,7 @@ export async function loadMarketSnapshot(deps: AgentRunnerDeps, agent: AgentReco
   const symbol = contract?.instrumentSymbol ?? agent.instrumentSymbol;
   const yesNow = contract?.prices.buyYesCents ?? null;
   return {
+    eventTitle: event.title,
     yesCents: yesNow,
     yesCents24hAgo: await yesCentsAt(deps, symbol, now.getTime() - DAY_MS),
     volume24h: event.volume24h,
@@ -91,7 +94,7 @@ function tradeOutcome(result: TriggerResult): "yes" | "no" | undefined {
   return result.todayPoints > 0 ? "yes" : "no";
 }
 
-function activity(kind: AgentActivity["kind"], text: string, now: Date, extra: { trigger?: TriggerId | undefined; messageSource?: AgentActivity["messageSource"]; intentId?: string | undefined } = {}): AgentActivity {
+function activity(kind: AgentActivity["kind"], text: string, now: Date, extra: { trigger?: TriggerId | undefined; messageSource?: AgentActivity["messageSource"]; intentId?: string | undefined; url?: string | undefined } = {}): AgentActivity {
   return {
     id: crypto.randomUUID(),
     at: now.toISOString(),
@@ -100,6 +103,7 @@ function activity(kind: AgentActivity["kind"], text: string, now: Date, extra: {
     ...(extra.trigger === undefined ? {} : { trigger: extra.trigger }),
     ...(extra.messageSource === undefined ? {} : { messageSource: extra.messageSource }),
     ...(extra.intentId === undefined ? {} : { intentId: extra.intentId }),
+    ...(extra.url === undefined ? {} : { url: extra.url }),
   };
 }
 
@@ -123,7 +127,16 @@ export async function runAgentTick(deps: AgentRunnerDeps, agent: AgentRecord, de
     await deps.store.recordRun(agent.id, {});
     return { agentId: agent.id, fired: [], skipped: [], message: null, messageSource: null, action: "none" };
   }
-  const result = evaluateTriggers(agent, snapshot, now);
+  const xEnabled = agent.triggers.xMentions || agent.triggers.breakingNews;
+  const xFeed = xEnabled ? deps.xFeed : undefined;
+  const xFeedAvailable = xFeed !== undefined;
+  const xSignals = xFeed === undefined
+    ? undefined
+    : await xFeed.signals(marketQuery(snapshot.eventTitle ?? ""));
+  const result = evaluateTriggers(agent, snapshot, now, {
+    xFeedAvailable,
+    ...(xFeedAvailable ? { x: xSignals } : {}),
+  });
   const watchFired = result.fired.filter(isWatchTrigger);
   const briefFired = result.fired.filter(isBriefTrigger);
   if (watchFired.length === 0 && briefFired.length === 0) {
@@ -138,7 +151,12 @@ export async function runAgentTick(deps: AgentRunnerDeps, agent: AgentRecord, de
   const composed = await composeMessage({ agent, result, snapshot, now, grok: deps.grok, fetch: deps.fetch });
   const message = composed.text;
   const messageSource = composed.source;
-  activities.push(activity("message", composed.text, now, { trigger: result.fired[0], messageSource: composed.source }));
+  const breakingPostUrl = result.fired.includes("breakingNews") ? result.x?.breakingPost?.url : undefined;
+  activities.push(activity("message", composed.text, now, {
+    trigger: result.fired[0],
+    messageSource: composed.source,
+    ...(breakingPostUrl === undefined ? {} : { url: breakingPostUrl }),
+  }));
 
   let spentDelta = 0;
   let action: AgentTickResult["action"] = "none";
@@ -200,6 +218,9 @@ export async function runAgentTick(deps: AgentRunnerDeps, agent: AgentRecord, de
   await deps.store.recordRun(agent.id, {
     lastMessage: message,
     lastMessageSource: messageSource,
+    ...(result.fired.includes("breakingNews") && result.x?.breakingPost !== null && result.x?.breakingPost !== undefined
+      ? { lastBreakingPostId: result.x.breakingPost.id }
+      : {}),
     spentDeltaCents: spentDelta,
     lastTriggerAt,
     activity: activities,

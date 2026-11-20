@@ -42,6 +42,7 @@ export const agentActivitySchema = z.object({
   trigger: triggerIdSchema.optional(),
   messageSource: messageSourceSchema.optional(),
   intentId: z.string().optional(),
+  url: z.url().optional(),
 });
 
 export const agentRecordSchema = z.object({
@@ -64,6 +65,7 @@ export const agentRecordSchema = z.object({
   lastRunAt: z.string().nullable(),
   lastMessage: z.string().nullable(),
   lastMessageSource: messageSourceSchema.nullable(),
+  lastBreakingPostId: z.string().min(1).optional(),
   spentTodayCents: z.number().int().nonnegative(),
   spendDay: z.string().min(1),
   lastTriggerAt: z.record(z.string(), z.string()),
@@ -91,6 +93,7 @@ export const agentDeskBudgetSchema = z.object({
 export const agentsViewSchema = z.object({
   agents: z.array(agentRecordSchema),
   models: agentModelsSchema,
+  xFeed: z.object({ available: z.boolean() }),
   desk: agentDeskBudgetSchema,
   assignedCents: z.number().int().nonnegative(),
 });

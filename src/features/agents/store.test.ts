@@ -47,4 +47,14 @@ describe("agent store", () => {
     expect(await store.get(created.id)).toBeUndefined();
     expect(await store.remove(created.id)).toBe(false);
   });
+
+  it("records the last breaking post while records without it still load", async () => {
+    const store = openAgentStore({ fs: createMemoryFileSystem(), path: "agents.json" });
+    const created = await store.create({ eventTicker: "BTC", instrumentSymbol: "GEMI-BTC-YES" });
+    expect(created.lastBreakingPostId).toBeUndefined();
+    expect((await store.get(created.id))?.lastBreakingPostId).toBeUndefined();
+    const updated = await store.recordRun(created.id, { lastBreakingPostId: "post-1" });
+    expect(updated?.lastBreakingPostId).toBe("post-1");
+    expect((await store.get(created.id))?.lastBreakingPostId).toBe("post-1");
+  });
 });
