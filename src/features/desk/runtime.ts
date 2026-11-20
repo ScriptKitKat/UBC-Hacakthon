@@ -1,8 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { Connection } from "@solana/web3.js";
-import { requestClaudeJson } from "@/features/claude";
-import { requestGrokJson } from "@/features/grok";
+import { selectLlm } from "@/features/llm";
 import { createSampler, openHistoryStore } from "@/features/history";
 import { createSolanaLedger, createUnconfiguredLedger, isExpectedGenesis } from "@/features/ledger";
 import type { UsdcLedger } from "@/features/ledger";
@@ -15,7 +14,7 @@ import { createGeminiMarketsClient } from "@/features/markets";
 import { createMarketPro } from "@/features/market-pro";
 import type { MarketPro } from "@/features/market-pro";
 import { createResearch } from "@/features/research";
-import type { Polisher, Research } from "@/features/research";
+import type { Research } from "@/features/research";
 import { StoreUnavailableError, nodeFileSystem, resolveDataDirectory } from "@/features/storage";
 import { createNonceCodec, createX402Server, openUsedPayments, priceToBaseUnits, x402NetworkFor } from "@/features/x402";
 import type { LedgerView } from "@/shared";
@@ -196,12 +195,8 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
       : {}),
   });
   const { grok, claude } = config.value.feed;
-  const polisher: Polisher | undefined = grok.apiKey !== undefined
-    ? { by: "grok", complete: (request) => requestGrokJson({ settings: grok, fetch, ...request }) }
-    : claude.apiKey !== undefined
-      ? { by: "claude", complete: (request) => requestClaudeJson({ settings: claude, fetch, ...request }) }
-      : undefined;
-  const research = createResearch({ markets, history, nowMs: () => Date.now(), postContextFor: desk.postContextFor, matchedPostsFor: desk.matchedPostsFor, ...(polisher ? { polisher } : {}) });
+  const llm = selectLlm({ grok, claude, fetch });
+  const research = createResearch({ markets, history, nowMs: () => Date.now(), postContextFor: desk.postContextFor, matchedPostsFor: desk.matchedPostsFor, ...(llm ? { llm } : {}) });
   const deepDive = payments ? createDeepDiveResource({ payments, research, publicOrigin }) : undefined;
   deferredDeepDive.bind(deepDive);
   const reconcile = async () => {

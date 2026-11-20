@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { LlmCompleter } from "@/features/llm";
 import { BRIEF_SECTION_TITLES } from "@/shared";
 import type { ResearchBrief, ResearchRelatedContract, ResearchView } from "@/shared";
 
@@ -11,20 +12,6 @@ const PERCENT = 100;
 
 const NUMBER_PATTERN = /\d[\d,]*(?:\.\d+)?/g;
 const NUMBER_WORDS = /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|half|double|triple)\b/gi;
-
-export interface JsonRequest {
-  readonly system: string;
-  readonly user: string;
-  readonly schemaName: string;
-  readonly schema: Record<string, unknown>;
-}
-
-export type JsonCompleter = (request: JsonRequest) => Promise<unknown>;
-
-export interface Polisher {
-  readonly by: Exclude<ResearchBrief["polishedBy"], "template">;
-  readonly complete: JsonCompleter;
-}
 
 const polishedSchema = z.object({ headline: z.string().min(1), sections: z.array(z.string().min(1)) });
 
@@ -197,11 +184,11 @@ function briefText(brief: Pick<ResearchBrief, "headline" | "sections">): string 
   return [brief.headline, ...brief.sections.map((section) => section.body)].join("\n");
 }
 
-export async function polishBrief(template: ResearchBrief, polisher: Polisher | undefined): Promise<ResearchBrief> {
-  if (!polisher) return template;
+export async function polishBrief(template: ResearchBrief, llm: LlmCompleter | undefined): Promise<ResearchBrief> {
+  if (!llm) return template;
   let raw: unknown;
   try {
-    raw = await polisher.complete({
+    raw = await llm.complete({
       system: POLISH_SYSTEM,
       user: JSON.stringify({ headline: template.headline, sections: template.sections.map((section) => section.body) }),
       schemaName: "brief_polish",
@@ -218,5 +205,5 @@ export async function polishBrief(template: ResearchBrief, polisher: Polisher | 
   };
   const allowed = numbersIn(briefText(template));
   if ([...numbersIn(briefText(polished))].some((token) => !allowed.has(token))) return template;
-  return { ...template, ...polished, polishedBy: polisher.by };
+  return { ...template, ...polished, polishedBy: llm.provider };
 }

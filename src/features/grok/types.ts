@@ -15,7 +15,7 @@ export interface PostCandidate {
   readonly contract: MarketContract;
 }
 
-export type PostMatchedBy = "grok" | "keywords";
+export type PostMatchedBy = "grok" | "claude" | "keywords";
 
 export type PostMatchResult =
   | {

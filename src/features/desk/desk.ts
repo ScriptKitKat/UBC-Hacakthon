@@ -2,6 +2,7 @@ import { executeApproved } from "@/features/execution";
 import type { ExecutionError, PaperOrderTicket } from "@/features/execution";
 import { CARD_CATEGORIES, createPostMatcher } from "@/features/grok";
 import type { PostCandidate, PostInput } from "@/features/grok";
+import { selectLlm } from "@/features/llm";
 import { confirm, evaluate, evaluateResearch, marketPolicyRefusal, policyStateFromSpends, remainingBudget, restorePendingApproval } from "@/features/guardrails";
 import type { ApprovedTrade, Decision, Policy, PolicyState } from "@/features/guardrails";
 import { createMemoryHistory } from "@/features/history";
@@ -251,11 +252,11 @@ function failureReason(error: ExecutionError): string {
 
 export function createDesk(deps: DeskDeps): Desk {
   const { markets, ledger, now, idGen } = deps;
+  const llm = selectLlm({ grok: deps.feed.grok, claude: deps.feed.claude, fetch: deps.fetch ?? fetch });
   const postMatcher = createPostMatcher({
     markets,
-    settings: deps.feed.grok,
+    llm,
     categories: CARD_CATEGORIES,
-    fetch: deps.fetch ?? fetch,
     now,
   });
   let policy = deps.policy;

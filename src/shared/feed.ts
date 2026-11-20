@@ -2,7 +2,7 @@ import type { MarketView } from "./desk";
 
 export const MAX_FEED_BUY_CENTS = 100_000;
 
-export type FeedMatchedBy = "grok" | "keywords";
+export type FeedMatchedBy = "grok" | "claude" | "keywords";
 
 export interface PricePoint {
   readonly at: string;

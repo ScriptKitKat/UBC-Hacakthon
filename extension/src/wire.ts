@@ -23,7 +23,7 @@ const feedMarket = z.object({
   tradeBlockedReason: z.string().optional(),
 });
 
-const matchedBy = z.enum(["grok", "keywords"]);
+const matchedBy = z.enum(["grok", "claude", "keywords"]);
 
 export const feedMatchSchema = z.discriminatedUnion("kind", [
   z.object({
