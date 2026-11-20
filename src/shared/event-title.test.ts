@@ -56,6 +56,8 @@ describe("market search terms", () => {
   it("swaps asset names for the tickers Gemini titles use and leaves other words alone", () => {
     expect(marketSearchTerm(" bitcoin ")).toBe("BTC");
     expect(marketSearchTerm("Bitcoin Cash")).toBe("BCH");
+    expect(marketSearchTerm("bitcoin cash price")).toBe("BCH price");
+    expect(marketSearchTerm("will bitcoin  beat wrapped bitcoin")).toBe("will BTC beat WBTC");
     expect(marketSearchTerm("ethereum price")).toBe("ETH price");
     expect(marketSearchTerm("btc")).toBe("btc");
     expect(marketSearchTerm("near")).toBe("near");

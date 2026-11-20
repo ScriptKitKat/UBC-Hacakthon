@@ -100,11 +100,25 @@ const ASSET_TICKERS: ReadonlyMap<string, string> = Object.entries(ASSET_NAMES).r
   return tickers;
 }, new Map<string, string>());
 
+const LONGEST_ASSET_WORDS = Math.max(...[...ASSET_TICKERS.keys()].map((name) => name.split(" ").length));
+
+function leadingAsset(words: readonly string[]): { readonly ticker: string; readonly length: number } | null {
+  for (let length = Math.min(LONGEST_ASSET_WORDS, words.length); length > 0; length -= 1) {
+    const ticker = ASSET_TICKERS.get(words.slice(0, length).join(" ").toUpperCase());
+    if (ticker !== undefined) return { ticker, length };
+  }
+  return null;
+}
+
 export function marketSearchTerm(search: string): string {
-  const trimmed = search.trim();
-  const whole = ASSET_TICKERS.get(trimmed.toUpperCase());
-  if (whole !== undefined) return whole;
-  return trimmed.split(/\s+/u).map((word) => ASSET_TICKERS.get(word.toUpperCase()) ?? word).join(" ");
+  const words = search.trim().split(/\s+/u);
+  const terms: string[] = [];
+  for (let index = 0; index < words.length;) {
+    const asset = leadingAsset(words.slice(index));
+    terms.push(asset?.ticker ?? words[index] ?? "");
+    index += asset?.length ?? 1;
+  }
+  return terms.join(" ");
 }
 
 export function assetDisplayName(token: string): string {
