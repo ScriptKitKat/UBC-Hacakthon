@@ -18,6 +18,7 @@ export function startAgentLoop(deps: AgentRunnerDeps): ReturnType<typeof setInte
   return timer;
 }
 
-export function agentCycle(deps: AgentRunnerDeps): () => Promise<AgentCycleReport> {
-  return singleFlight(() => runAgentCycle(deps));
+export function agentCycle(deps: AgentRunnerDeps): (agentId?: string) => Promise<AgentCycleReport> {
+  const tick = singleFlight(() => runAgentCycle(deps));
+  return (agentId) => agentId === undefined ? tick() : runAgentCycle(deps, agentId);
 }

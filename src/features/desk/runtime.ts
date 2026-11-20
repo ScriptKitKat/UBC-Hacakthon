@@ -42,7 +42,7 @@ export type DeskAccess =
 
 export interface AgentRuntime {
   readonly store: AgentStore;
-  readonly run: () => Promise<AgentCycleReport>;
+  readonly run: (agentId?: string) => Promise<AgentCycleReport>;
 }
 
 export interface HomeCatalog {

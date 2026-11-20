@@ -7,7 +7,7 @@ import { createMemoryFileSystem } from "@/features/storage";
 import { instrumentSymbol } from "@/shared";
 import type { DecisionLogEntry, DeepDiveResult } from "@/shared";
 import type { DeskBudget } from "./budget";
-import { runAgentTick } from "./runner";
+import { runAgentCycle, runAgentTick } from "./runner";
 import type { AgentRunnerDeps } from "./runner";
 import { openAgentStore } from "./store";
 import type { AgentDraft } from "./store";
@@ -41,7 +41,8 @@ function entry(kind: DecisionLogEntry["kind"], outcome: "yes" | "no"): DecisionL
 const DELIVERED: DeepDiveResult = { status: "delivered", alreadyPurchased: false, trace: [], failureReason: null, brief: null, purchase: null };
 
 async function setup(options: { readonly yesNow: number; readonly yesBefore: number; readonly volume24h?: number; readonly draft?: Partial<AgentDraft>; readonly allowAutonomous?: boolean }) {
-  const store = openAgentStore({ fs: createMemoryFileSystem(), path: "agents.json", now: () => NOW, id: () => "agent-1" });
+  let idCount = 0;
+  const store = openAgentStore({ fs: createMemoryFileSystem(), path: "agents.json", now: () => NOW, id: () => `agent-${String(++idCount)}` });
   const agent = await store.create({ eventTicker: "BTC", instrumentSymbol: SYMBOL, name: "Scout", ...options.draft });
   const history = createMemoryHistory();
   history.watch(SYMBOL);
@@ -53,7 +54,13 @@ async function setup(options: { readonly yesNow: number; readonly yesBefore: num
     store,
     markets: { getEvent, candles: () => Promise.resolve(fail({ kind: "network" })) },
     history,
-    desk: { proposeTrade, buyDeepDive, getSnapshot: vi.fn<Desk["getSnapshot"]>() },
+    desk: {
+      proposeTrade,
+      buyDeepDive,
+      getSnapshot: vi.fn<Desk["getSnapshot"]>(() => Promise.resolve({
+        policy: { dailyCapCents: DESK.dailyCapCents, remainingCents: DESK.remainingCents, perTradeMaxCents: DESK.perTradeMaxCents, autoApproveMaxCents: DESK.autoApproveMaxCents },
+      } as Awaited<ReturnType<Desk["getSnapshot"]>>)),
+    },
     grok: { apiKey: undefined, model: "unused" },
     fetch: vi.fn<typeof fetch>(),
     operatorId: "operator",
@@ -118,5 +125,16 @@ describe("runAgentTick", () => {
     const saved = await store.get("agent-1");
     expect(saved?.spentTodayCents).toBe(200);
     expect(saved?.activity.map((item) => item.kind)).toEqual(["message", "bet", "refused"]);
+  });
+});
+
+describe("runAgentCycle", () => {
+  it("runs only the selected agent", async () => {
+    const { agent, deps, store } = await setup({ yesNow: 55, yesBefore: 50, draft: { permission: "watch" } });
+    const other = await store.create({ eventTicker: "ETH", instrumentSymbol: "GEMI-ETH-YES", name: "Other", permission: "watch" });
+    const report = await runAgentCycle(deps, other.id);
+    expect(report).toMatchObject({ ran: 1, ticks: [{ agentId: other.id }] });
+    expect(await store.get(agent.id)).toMatchObject({ lastRunAt: null });
+    expect(await store.get(other.id)).toMatchObject({ lastRunAt: NOW.toISOString() });
   });
 });

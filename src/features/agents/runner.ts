@@ -208,12 +208,14 @@ export async function runAgentTick(deps: AgentRunnerDeps, agent: AgentRecord, de
   return intentId === undefined ? tick : { ...tick, intentId };
 }
 
-export async function runAgentCycle(deps: AgentRunnerDeps): Promise<AgentCycleReport> {
+export async function runAgentCycle(deps: AgentRunnerDeps, agentId?: string): Promise<AgentCycleReport> {
   const now = (deps.now ?? (() => new Date()))();
   const snapshot = await deps.desk.getSnapshot();
   const desk = deskBudgetFromSnapshot(snapshot.policy);
   const ticks: AgentTickResult[] = [];
-  for (const agent of await deps.store.list()) {
+  const agents = await deps.store.list();
+  for (const agent of agents) {
+    if (agentId !== undefined && agent.id !== agentId) continue;
     if (agent.status !== "watching") continue;
     ticks.push(await runAgentTick(deps, agent, desk, now));
   }
