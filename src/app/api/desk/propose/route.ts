@@ -10,8 +10,11 @@ const body = z.object({
   notionalCents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   senderId: z.string().trim().min(1),
   source: z.enum(["x", "desk"]).default("desk"),
+  seenPriceCents: z.number().positive().max(100).optional(),
 });
 
 export function POST(request: Request): Promise<Response> {
-  return withDashboardBody(request, body, async (proposal, desk) => Response.json({ entry: await desk.proposeTrade(proposal) }));
+  return withDashboardBody(request, body, async ({ seenPriceCents, ...proposal }, desk) => Response.json({
+    entry: await desk.proposeTrade({ ...proposal, ...(seenPriceCents === undefined ? {} : { seenPriceCents }) }),
+  }));
 }

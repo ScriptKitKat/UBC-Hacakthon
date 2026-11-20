@@ -18,8 +18,9 @@ export function GuardrailPanel({ policy, ledger, busy, onKillSwitch }: Guardrail
   const autoApproveShare = percentOf(policy.autoApproveMaxCents, policy.dailyCapCents);
   const tone = budgetTone(policy.remainingCents, policy.dailyCapCents);
   return (
+    <div className={styles.layout}>
     <section className={styles.panel} aria-labelledby="guardrail-heading">
-      <h2 id="guardrail-heading" className={styles.panelTitle}>Guardrails</h2>
+      <h2 id="guardrail-heading" className={styles.panelTitle}>Spending limits</h2>
       <p className={styles.budgetLine}>
         <span className={styles.budgetSpent}>{formatDollars(policy.spentCents)}</span> of {formatDollars(policy.dailyCapCents)} spent today
       </p>
@@ -44,13 +45,13 @@ export function GuardrailPanel({ policy, ledger, busy, onKillSwitch }: Guardrail
           title={`Auto-approve up to ${formatDollars(policy.autoApproveMaxCents)}`}
         />
       </div>
-      <p className={styles.remaining} data-tone={tone}>{formatDollars(policy.remainingCents)} remaining</p>
+      <p className={styles.remaining} data-tone={tone}>{formatDollars(policy.remainingCents)} left today</p>
       <dl className={styles.facts}>
-        <dt>Auto-approve up to</dt>
+        <dt>Auto-approve up to<small>Smaller trades go through without asking you</small></dt>
         <dd>{formatDollars(policy.autoApproveMaxCents)}</dd>
-        <dt>Per-trade limit</dt>
+        <dt>Most you can put on one trade</dt>
         <dd>{formatDollars(policy.perTradeMaxCents)}</dd>
-        <dt>Categories</dt>
+        <dt>Categories you can trade</dt>
         <dd>
           <ul className={styles.chips}>
             {policy.marketCategories.map((category) => (
@@ -60,7 +61,7 @@ export function GuardrailPanel({ policy, ledger, busy, onKillSwitch }: Guardrail
         </dd>
         {policy.marketAllowlist.length > 0 ? (
           <>
-            <dt>Allowlist</dt>
+            <dt>Markets you can trade</dt>
             <dd>
               <ul className={styles.chips}>
                 {policy.marketAllowlist.map((symbol) => (
@@ -71,28 +72,42 @@ export function GuardrailPanel({ policy, ledger, busy, onKillSwitch }: Guardrail
           </>
         ) : null}
       </dl>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={policy.killSwitch}
-        className={policy.killSwitch ? styles.killOn : styles.killOff}
-        disabled={busy}
-        onClick={() => {
-          onKillSwitch(!policy.killSwitch);
-        }}
-      >
-        <span className={styles.killTrack} aria-hidden="true">
-          <span className={styles.killKnob} />
-        </span>
-        {policy.killSwitch ? "Kill switch ON — trading paused" : "Kill switch off — trading live"}
-      </button>
+    </section>
+    <div className={styles.side}>
+      <section className={styles.kill} data-on={policy.killSwitch} aria-labelledby="kill-heading">
+        <div className={styles.killHead}>
+          <h2 id="kill-heading" className={styles.killTitle}>{policy.killSwitch ? "Trading is paused" : "Trading is on"}</h2>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={!policy.killSwitch}
+            aria-label="Trading"
+            className={styles.killSwitch}
+            disabled={busy}
+            onClick={() => {
+              onKillSwitch(!policy.killSwitch);
+            }}
+          >
+            <span className={styles.killKnob} aria-hidden="true" />
+          </button>
+        </div>
+        <p className={styles.killText}>
+          {policy.killSwitch
+            ? "No new trades can go through. Turn this back on to start trading again."
+            : "Turn this off to stop every new trade right away, including trades from agents and X."}
+        </p>
+      </section>
       {ledger.configured ? (
         <p className={styles.ledgerLine}>
           Ledger {ledger.cluster}: authority {shorten(ledger.authority)} → {shorten(ledger.recipient)} · mint {shorten(ledger.mint)}
         </p>
       ) : (
-        <p className={styles.warning}>Ledger not configured. Missing: {ledger.missing.join(", ")}. Trades will not execute.</p>
+        <p className={styles.warning}>
+          <strong>Wallet not connected</strong>
+          Trades won&apos;t go through until the Solana wallet is set up. Missing: {ledger.missing.join(", ")}.
+        </p>
       )}
-    </section>
+    </div>
+    </div>
   );
 }

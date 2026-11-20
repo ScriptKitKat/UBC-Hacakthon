@@ -1,10 +1,13 @@
 .header {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px 20px 20px;
-  border-bottom: 1px solid #1f1f1f;
-  color: #ededed;
+  padding: 22px 28px 26px;
+  border-radius: 32px;
+  background: radial-gradient(120% 90% at 50% 0%, #1574d9 0%, #2f92ec 50%, #5aaef3 100%);
+  color: #ffffff;
 }
 
 .crumb {
@@ -12,12 +15,13 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  color: #8a8a93;
+  color: rgba(255, 255, 255, 0.85);
   font-size: 13px;
+  font-weight: 600;
 }
 
-.crumb a { color: #8a8a93; text-decoration: none; }
-.crumb a:hover { color: #ededed; }
+.crumb a { color: inherit; text-decoration: none; }
+.crumb a:hover { color: #ffffff; }
 
 .row {
   display: flex;
@@ -36,37 +40,39 @@
 }
 
 .icon {
-  width: 44px;
-  height: 44px;
+  width: 56px;
+  height: 56px;
   flex: 0 0 auto;
-  border-radius: 12px;
+  border-radius: 18px;
   object-fit: cover;
-  background: #1a1a1a;
+  background: #ffffff;
+  box-shadow: 0 10px 20px rgba(10, 60, 120, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  font-weight: 600;
-  color: #d6e4ff;
+  font-size: 20px;
+  font-weight: 800;
+  color: #0789e0;
 }
 
 .titles { min-width: 0; }
 
 .title {
   margin: 0;
-  font-size: 28px;
-  font-weight: 600;
-  line-height: 1.2;
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.15;
   letter-spacing: -0.02em;
+  text-shadow: 0 1px 10px rgba(10, 60, 120, 0.35);
 }
 
 .meta {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 14px;
-  color: #8a8a93;
+  gap: 6px;
   font-size: 13px;
+  font-weight: 600;
 }
 
 .actions {
@@ -79,26 +85,31 @@
   display: inline-flex;
   gap: 2px;
   padding: 3px;
-  border: 1px solid #262626;
-  border-radius: 12px;
-  background: #111111;
+  border-radius: 999px;
+  background: rgba(10, 60, 120, 0.32);
 }
 
 .modeButton {
   height: 34px;
   padding: 0 18px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 999px;
   background: transparent;
-  color: #a1a1aa;
+  color: #ffffff;
   font: inherit;
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 700;
   cursor: pointer;
 }
 
-.modeButton[aria-pressed="true"] { background: #ededed; color: #0a0a0a; }
+.modeButton[aria-pressed="true"] {
+  background: #ffffff;
+  color: #1d293d;
+}
 
 @media (max-width: 960px) {
   .title { font-size: 24px; }
 }
+
+.meta span { padding: 5px 11px; border-radius: 999px; background: rgba(10, 60, 120, 0.32); }
+.actions button[aria-label] { background: #ffffff; }

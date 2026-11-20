@@ -1,12 +1,12 @@
 .page { display: flex; flex-direction: column; gap: var(--gap); }
 .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px 24px; flex-wrap: wrap; }
-.symbol { font-family: var(--mono); font-size: 14px; color: var(--accent); margin: 0; overflow-wrap: anywhere; }
+.symbol { font-size: 14px; color: var(--accent); margin: 0; overflow-wrap: anywhere; }
 .status { font-size: 20px; color: var(--muted); }
-.banner { background: var(--red-bg); border: 1px solid var(--red); color: #ffd7d7; padding: 12px 18px; border-radius: 12px; font-size: 16px; margin: 0; }
+.banner { background: var(--red-bg); border: 0; color: #8f1d20; padding: 12px 18px; border-radius: 18px; font-size: 16px; margin: 0; }
 .notice { background: var(--amber-bg); border: 1px solid var(--amber); color: var(--amber); padding: 12px 18px; border-radius: 12px; font-size: 15px; margin: 0; }
 .empty { color: var(--muted); font-size: 15px; margin: 8px 0; }
 .warning { color: var(--amber); font-size: 15px; margin: 8px 0; }
-.panel, .panelWide, .deepDive { background: linear-gradient(180deg, var(--panel-top), var(--panel)); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 24px; min-width: 0; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25); }
+.panel, .panelWide, .deepDive { background: linear-gradient(180deg, var(--panel-top), var(--panel)); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 24px; min-width: 0; box-shadow: 0 10px 30px rgba(29, 41, 61, 0.06); }
 .panelTitle { margin: 0 0 16px; font-size: 13px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
 .subTitle { margin: 12px 0 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
 .columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: var(--gap); align-items: start; }
@@ -17,7 +17,7 @@
 
 .tip { position: relative; display: inline-block; cursor: help; border-bottom: 1px dotted color-mix(in srgb, var(--muted) 70%, transparent); }
 .tip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-.tipBubble { position: absolute; z-index: 20; left: 0; top: calc(100% + 6px); width: max-content; max-width: 280px; padding: 8px 12px; border-radius: 10px; background: #0b121b; border: 1px solid var(--border); color: var(--text); font-size: 13px; font-weight: 500; letter-spacing: 0; text-transform: none; line-height: 1.4; white-space: normal; visibility: hidden; opacity: 0; transition: opacity 0.12s ease; pointer-events: none; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5); }
+.tipBubble { position: absolute; z-index: 20; left: 0; top: calc(100% + 6px); width: max-content; max-width: 280px; padding: 8px 12px; border-radius: 10px; background: #1d293d; border: 1px solid var(--border); color: #ffffff; font-size: 13px; font-weight: 500; letter-spacing: 0; text-transform: none; line-height: 1.4; white-space: normal; visibility: hidden; opacity: 0; transition: opacity 0.12s ease; pointer-events: none; box-shadow: 0 10px 24px rgba(29, 41, 61, 0.12); }
 .tip:hover > .tipBubble, .tip:focus > .tipBubble, .tip:focus-within > .tipBubble { visibility: visible; opacity: 1; }
 
 .segmented { display: inline-flex; gap: 6px; }
@@ -67,7 +67,7 @@
 .dotSnapshot { fill: var(--green); }
 .crosshair { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
 .hoverDot { fill: var(--text); stroke: var(--accent); stroke-width: 2; }
-.hoverCard { position: absolute; top: 10px; display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border-radius: 12px; background: #0b121bee; border: 1px solid var(--border); font-size: 13px; color: var(--muted); pointer-events: none; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5); }
+.hoverCard { position: absolute; top: 10px; display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border-radius: 12px; background: #1d293d; border: 1px solid var(--border); font-size: 13px; color: var(--muted); pointer-events: none; box-shadow: 0 10px 24px rgba(29, 41, 61, 0.12); }
 .hoverTime { color: var(--muted); }
 .hoverPrice { color: var(--text); font-size: 18px; font-weight: 800; }
 .legend { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--muted); }

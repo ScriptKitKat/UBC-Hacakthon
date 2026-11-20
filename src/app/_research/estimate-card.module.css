@@ -1,0 +1,13 @@
+.card { display: flex; flex-direction: column; gap: 12px; padding: 20px 22px; border-radius: 26px; background: #ffffff; box-shadow: var(--card-shadow); }
+.heading { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -0.01em; }
+.lead { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.sliderRow { display: flex; align-items: center; gap: 14px; }
+.slider { flex: 1; min-width: 0; accent-color: var(--sky); }
+.value { flex: 0 0 auto; min-width: 64px; text-align: right; font-family: var(--font-script); font-style: italic; font-size: 30px; font-weight: 800; color: var(--muted); }
+.value[data-set="true"] { color: var(--sky); }
+.verdict { margin: 0; padding: 12px 14px; border-radius: 16px; background: var(--field); font-size: 14px; line-height: 1.5; }
+.verdict[data-kind="edge"] { background: var(--green-bg); color: #145c33; }
+.average { padding: 12px 14px; border-radius: 16px; background: var(--field); }
+.averageRow { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; font-size: 13px; color: var(--muted); }
+.averageRow strong { color: var(--green); font-size: 15px; font-weight: 800; }
+.averageNote { margin: 6px 0 0; font-size: 13px; line-height: 1.45; color: var(--muted); }

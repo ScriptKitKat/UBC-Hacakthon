@@ -16,18 +16,19 @@
   min-width: 0;
 }
 
-.agentLine { height: 32px; padding: 0; border: 0; background: transparent; font-size: 13px; color: #8c98a4; cursor: pointer; }
+.agentLine { height: 32px; padding: 0; border: 0; background: transparent; font-size: 13px; color: #62748e; cursor: pointer; }
 
-.agentLine:focus-visible { outline: 2px solid rgb(26, 107, 255); outline-offset: 2px; border-radius: 4px; }
+.agentLine:focus-visible { outline: 2px solid #0789e0; outline-offset: 2px; border-radius: 4px; }
 
-.agentLine[data-status="watching"] { color: #3ddc97; }
+.agentLine[data-status="watching"] { color: #1e8a4c; }
 
-.agentLine[data-status="paused"] { color: #f5a524; }
+.agentLine[data-status="paused"] { color: #b77400; }
 
 .editor {
-  border: 1px solid #1f1f1f;
-  border-radius: 14px;
-  background: #111111;
+  border: 0;
+  border-radius: 26px;
+  background: #ffffff;
+  box-shadow: var(--card-shadow);
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -37,7 +38,7 @@
 
 .editorHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 
-.forLabel { margin: 0 0 4px; font-size: 12px; color: #8a8a93; }
+.forLabel { margin: 0 0 4px; font-size: 12px; color: #62748e; }
 
 .forTitle { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
 
@@ -45,27 +46,27 @@
   height: 28px;
   padding: 0 10px;
   border: 0;
-  border-radius: 14px;
+  border-radius: 999px;
   font-size: 12px;
-  color: #0a0a0a;
-  background: #3ddc97;
+  color: #f1f5f9;
+  background: #1e8a4c;
 }
 
-.badge[data-status="paused"] { background: #f5a524; }
+.badge[data-status="paused"] { background: #b77400; }
 
 .field { display: flex; flex-direction: column; gap: 8px; }
 
-.label { font-size: 13px; color: #d4d4d8; }
+.label { font-size: 13px; color: #314158; }
 
-.hint { font-size: 12px; color: #8a8a93; line-height: 1.45; }
+.hint { font-size: 12px; color: #62748e; line-height: 1.45; }
 
 .input, .textarea, .level {
   height: 40px;
   padding: 0 12px;
-  border: 1px solid #262626;
-  border-radius: 8px;
-  background: #0a0a0a;
-  color: #ededed;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #1d293d;
   font: inherit;
   font-size: 14px;
 }
@@ -77,29 +78,29 @@
 .seg, .check, .radio, .preset {
   height: 34px;
   padding: 0 12px;
-  border: 1px solid #262626;
-  border-radius: 17px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
   background: transparent;
-  color: #a1a1aa;
+  color: #62748e;
   font-size: 13px;
 }
 
-.seg[aria-pressed="true"], .preset[aria-pressed="true"] { background: #1a1a1a; color: #ededed; }
+.seg[aria-pressed="true"], .preset[aria-pressed="true"] { background: #1d293d; color: #ffffff; }
 
 .seg:disabled, .preset:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .preview {
   margin: 0;
   padding: 12px 14px;
-  border: 1px solid #1f1f1f;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
-  background: #0a0a0a;
-  color: #d4d4d8;
+  background: #f1f5f9;
+  color: #314158;
   font-size: 13px;
   line-height: 1.5;
 }
 
-.source { font-size: 11px; color: #8a8a93; text-transform: uppercase; letter-spacing: 0.04em; }
+.source { font-size: 11px; color: #62748e; text-transform: uppercase; letter-spacing: 0.04em; }
 
 .checks { display: flex; flex-direction: column; gap: 8px; }
 
@@ -114,7 +115,7 @@
   text-align: left;
 }
 
-.check[aria-pressed="true"], .radio[aria-pressed="true"] { background: #1a1a1a; color: #ededed; }
+.check[aria-pressed="true"], .radio[aria-pressed="true"] { background: #1d293d; color: #ffffff; }
 
 .levelRow { display: flex; align-items: center; gap: 8px; padding-left: 8px; }
 
@@ -122,28 +123,29 @@
 
 .sliderRow { display: flex; align-items: center; gap: 12px; }
 
-.slider { flex: 1; accent-color: #ededed; }
+.slider { flex: 1; accent-color: #1d293d; }
 
-.budgetValue { font-family: var(--mono); font-size: 14px; color: #ededed; white-space: nowrap; }
+.budgetValue { font-size: 14px; color: #1d293d; white-space: nowrap; }
 
 .rowActions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
 
 .danger {
   height: 36px;
   padding: 0 12px;
-  border: 1px solid #3a1f1f;
-  border-radius: 8px;
+  border: 0;
+  background: #ffe0e1;
+  border-radius: 999px;
   background: transparent;
-  color: #ff9a7a;
+  color: #d9363a;
   font-size: 13px;
 }
 
 .empty {
   padding: 28px 20px;
-  border: 1px solid #1f1f1f;
+  border: 1px solid #e2e8f0;
   border-radius: 14px;
-  background: #111111;
-  color: #a1a1aa;
+  background: #ffffff;
+  color: #62748e;
   font-size: 14px;
   line-height: 1.5;
 }

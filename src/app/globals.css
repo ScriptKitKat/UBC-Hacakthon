@@ -1,25 +1,32 @@
 :root {
-  --bg: #0a0a0a;
-  --panel: #111111;
-  --panel-top: #161616;
-  --field: #111111;
-  --border: #1f1f1f;
-  --border-soft: #262626;
-  --text: #ededed;
-  --muted: #a1a1aa;
-  --accent: #ededed;
-  --green: #3ddc97;
-  --red: #ff9a7a;
-  --amber: #f5a524;
-  --green-bg: #0f2a20;
-  --red-bg: #2a140d;
-  --amber-bg: #2a2010;
-  --accent-bg: #1a1a1a;
-  --radius: 12px;
+  --bg: #f1f5f9;
+  --panel: #ffffff;
+  --panel-top: #ffffff;
+  --field: #f1f5f9;
+  --border: #e2e8f0;
+  --border-soft: #e2e8f0;
+  --text: #1d293d;
+  --ink-soft: #314158;
+  --muted: #62748e;
+  --accent: #0789e0;
+  --green: #1e8a4c;
+  --red: #d9363a;
+  --amber: #b77400;
+  --green-bg: #d8f9e1;
+  --red-bg: #ffe0e1;
+  --amber-bg: #fff0c2;
+  --accent-bg: #e3f2fd;
+  --lime: #c8f31d;
+  --lime-deep: #9bc40a;
+  --sky: #0789e0;
+  --sky-soft: #55b6f6;
+  --radius: 26px;
   --gap: 18px;
-  --font-sans: var(--font-geist), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color-scheme: dark;
+  --card-shadow: 0 1px 2px rgba(29, 41, 61, 0.05), 0 10px 30px rgba(29, 41, 61, 0.06);
+  --font-sans: var(--font-bricolage), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-script: var(--font-shantell), var(--font-bricolage), cursive;
+  --mono: var(--font-sans);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }

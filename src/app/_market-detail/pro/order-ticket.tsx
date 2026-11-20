@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ticketQuote, cappedStakeCents, needsApproval } from "@/features/market-pro";
 import { formatBudgetCents, parseDollarsToCents } from "@/shared";
 import type { ProBudget, ProMarket } from "@/shared";
-import { proposeTrade } from "../../_shell/api";
+import { placeDeskTrade } from "../../_research/api";
 import { formatCents, formatDollars, overLimitNote } from "./format";
 import { Tip } from "./tip";
 import styles from "./pro.module.css";
@@ -34,13 +34,9 @@ export function OrderTicket({ market, budget }: { readonly market: ProMarket; re
     if (notional <= 0) return;
     setBusy(true);
     setMessage(null);
-    void proposeTrade({ symbol: market.symbol, outcome: side, senderId: budget.senderId, notionalCents: notional }).then((result) => {
+    void placeDeskTrade({ symbol: market.symbol, outcome: side, senderId: budget.senderId, notionalCents: notional, seenPriceCents: price }).then((result) => {
       setBusy(false);
-      if (result.ok) {
-        setMessage(approval ? "Sent. This is over the $2 auto-approve limit, so it is waiting for your OK." : "Sent. The desk placed a paper market order.");
-        return;
-      }
-      setMessage(result.message);
+      setMessage(result.ok ? result.entry.spokenReason : result.message);
     });
   };
   return (

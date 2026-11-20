@@ -141,7 +141,8 @@ export function HomePage({ initialView }: { readonly initialView?: HomeView } = 
   return (
     <div className={styles.page}>
       <section className={styles.ask} aria-label="Ask">
-        <h1 className={styles.title}>What do you want to predict?</h1>
+        <p className={styles.kicker}>Research first, then predict</p>
+        <h1 className={styles.title}>What do you want to <span className={styles.script}>predict?</span></h1>
         <form className={styles.box} onSubmit={(event) => { event.preventDefault(); onSearch(); }}>
           <label htmlFor="ask" className={styles.hidden}>Ask about a market</label>
           <input id="ask" className={styles.field} value={search} placeholder="Explore different markets, or paste an X link…" onChange={(event) => { setSearch(event.target.value); }} />

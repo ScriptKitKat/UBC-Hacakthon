@@ -87,6 +87,7 @@ export async function placeDeskTrade(input: {
   readonly outcome: "yes" | "no";
   readonly senderId: string;
   readonly notionalCents: number;
+  readonly seenPriceCents: number | null;
 }): Promise<{ readonly ok: true; readonly entry: DecisionLogEntry } | { readonly ok: false; readonly message: string }> {
   try {
     const response = await fetch("/api/desk/propose", {
@@ -98,6 +99,7 @@ export async function placeDeskTrade(input: {
         notionalCents: input.notionalCents,
         senderId: input.senderId,
         source: "desk",
+        ...(input.seenPriceCents === null ? {} : { seenPriceCents: input.seenPriceCents }),
       }),
     });
     if (!response.ok) {

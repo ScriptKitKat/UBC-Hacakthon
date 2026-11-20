@@ -7,6 +7,7 @@ import type { AgentsView, WatchlistCard, WatchlistView } from "@/shared";
 import { formatBudgetCents } from "@/shared";
 import { usePolling } from "../_desk/use-polling";
 import { loadAgents, loadWatchlistCards } from "../_shell/api";
+import { PageHero } from "../_shell/page-hero";
 import { AgentsPanel } from "./agents-panel";
 import { MarketCard, MarketCardGrid } from "../_market-card/market-card";
 import { watchlistCardModel } from "../_market-card/model";
@@ -105,16 +106,19 @@ export function WatchlistPage({
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <div className={styles.titleRow}>
-          <h1 className={styles.title}>Watchlist</h1>
-          <span className={styles.count}>{savedCount === 1 ? "1 saved market" : `${String(savedCount)} saved markets`}</span>
+      <PageHero
+        title="Watchlist"
+        lead={tab === "markets"
+          ? `${savedCount === 1 ? "1 saved market" : `${String(savedCount)} saved markets`} · ${String(watching)} ${watching === 1 ? "agent" : "agents"} watching · ${String(paused)} paused`
+          : `${String(watching)} ${watching === 1 ? "agent" : "agents"} running · ${formatBudgetCents(assigned)} of ${formatBudgetCents(cap)} daily budget assigned`}
+      >
           <form className={styles.search} onSubmit={(event) => { event.preventDefault(); }}>
             <label htmlFor="wsearch" className={styles.hidden}>Search saved markets</label>
             <SearchIcon />
             <input id="wsearch" value={search} placeholder="Search saved markets" onChange={(event) => { setSearch(event.target.value); }} />
           </form>
-        </div>
+      </PageHero>
+      <div className={styles.header}>
         <div className={styles.tabs} role="tablist" aria-label="Watchlist sections">
           <button type="button" role="tab" className={styles.tab} aria-selected={tab === "markets"} onClick={() => { setTab("markets"); syncUrl("markets", selectedTicker); }}>
             Saved markets
@@ -124,25 +128,18 @@ export function WatchlistPage({
           </button>
         </div>
         {tab === "markets" ? (
-          <div className={styles.banner}>
-            <span>{`${String(watching)} watching · ${String(paused)} paused`}</span>
-            <button
-              type="button"
-              className={styles.create}
-              onClick={() => {
-                const open = visibleCards.find((card) => !agentTickers.has(card.eventTicker)) ?? visibleCards[0];
-                openAgents(open?.eventTicker ?? null);
-              }}
-            >
-              Create an agent
-            </button>
-          </div>
-        ) : (
-          <p className={styles.subhead}>
-            {`${String(watching)} ${watching === 1 ? "agent" : "agents"} running · ${formatBudgetCents(assigned)} of ${formatBudgetCents(cap)} daily budget assigned`}
-          </p>
-        )}
-      </header>
+          <button
+            type="button"
+            className={styles.create}
+            onClick={() => {
+              const open = visibleCards.find((card) => !agentTickers.has(card.eventTicker)) ?? visibleCards[0];
+              openAgents(open?.eventTicker ?? null);
+            }}
+          >
+            Create an agent
+          </button>
+        ) : null}
+      </div>
 
       <div className={styles.body}>
         {tab === "markets" ? (
@@ -175,7 +172,8 @@ export function WatchlistPage({
             {error === null && !loaded ? <p className={styles.status}>Loading your watchlist…</p> : null}
             {error === null && loaded && savedCount === 0 ? (
               <div className={styles.empty}>
-                <span>You have not saved any markets yet. On Markets, tap the star on a card to add it here.</span>
+                <strong className={styles.emptyTitle}>Nothing saved yet</strong>
+                <span>Save markets you want to keep an eye on before deciding anything. On Markets, tap the star on a card to add it here.</span>
                 <Link href="/markets" className={styles.emptyLink}>Browse markets</Link>
               </div>
             ) : null}
