@@ -273,3 +273,5 @@
 
 .stats .tip { position: static; }
 .stats .tipBubble { left: 8px; right: 8px; width: auto; max-width: none; }
+:is(td, dd) .tipBubble { left: auto; right: 0; }
+.tipBubble { max-width: min(240px, calc(100vw - 32px)); }
