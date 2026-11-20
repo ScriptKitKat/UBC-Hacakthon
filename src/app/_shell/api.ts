@@ -1,5 +1,5 @@
-import { browsePageSchema, homeRailSchema, homeViewSchema, watchlistViewSchema } from "@/shared";
-import type { BrowsePage, BrowseSort, CatalogPage, FeedMatch, HomeRail, HomeView, WatchlistView } from "@/shared";
+import { agentActivityViewSchema, agentCycleReportSchema, agentsViewSchema, browsePageSchema, homeRailSchema, homeViewSchema, watchlistViewSchema } from "@/shared";
+import type { AgentActivityView, AgentsView, BrowsePage, BrowseSort, CatalogPage, FeedMatch, HomeRail, HomeView, WatchlistView } from "@/shared";
 
 export async function loadRail(): Promise<HomeRail | undefined> {
   const response = await fetch("/api/home/rail", { headers: { accept: "application/json" } });
@@ -137,4 +137,51 @@ export async function loadSparklines(symbols: readonly string[]): Promise<Readon
   } catch {
     return {};
   }
+}
+
+
+export async function loadAgents(): Promise<AgentsView | undefined> {
+  const response = await fetch("/api/agents", { headers: { accept: "application/json" } });
+  if (!response.ok) return undefined;
+  const parsed = agentsViewSchema.safeParse(await response.json());
+  return parsed.success ? parsed.data : undefined;
+}
+
+export async function saveAgent(input: Record<string, unknown>, id?: string): Promise<AgentsView | undefined> {
+  const response = await fetch(id === undefined ? "/api/agents" : `/api/agents/${encodeURIComponent(id)}`, {
+    method: id === undefined ? "POST" : "PATCH",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) return undefined;
+  const parsed = agentsViewSchema.safeParse(await response.json());
+  return parsed.success ? parsed.data : undefined;
+}
+
+export async function deleteAgent(id: string): Promise<AgentsView | undefined> {
+  const response = await fetch(`/api/agents/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: "{}",
+  });
+  if (!response.ok) return undefined;
+  const parsed = agentsViewSchema.safeParse(await response.json());
+  return parsed.success ? parsed.data : undefined;
+}
+
+export async function loadAgentActivity(): Promise<AgentActivityView | undefined> {
+  const response = await fetch("/api/agents/activity", { headers: { accept: "application/json" } });
+  if (!response.ok) return undefined;
+  const parsed = agentActivityViewSchema.safeParse(await response.json());
+  return parsed.success ? parsed.data : undefined;
+}
+
+export async function runAgents(): Promise<boolean> {
+  const response = await fetch("/api/agents/run", {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: "{}",
+  });
+  if (!response.ok) return false;
+  return agentCycleReportSchema.safeParse(await response.json()).success;
 }

@@ -132,3 +132,13 @@ export type {
   ProTimeframe,
   ProTrade,
 } from "./market-pro";
+
+export {
+  agentActivitySchema,
+  agentActivityViewSchema,
+  agentCycleReportSchema,
+  agentFeedItemSchema,
+  agentRecordSchema,
+  agentsViewSchema,
+} from "./agents";
+export type { AgentActivityView, AgentFeedItem, AgentRecordView, AgentsView } from "./agents";
