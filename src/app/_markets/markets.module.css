@@ -17,7 +17,6 @@
 .body { padding: 20px 32px 48px; display: flex; flex-direction: column; gap: 16px; }
 .explainer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #262626; border-radius: 12px; background: #111111; font-size: 13px; color: #a1a1aa; }
 .explainerPct { font-family: var(--mono); color: #ededed; border: 1px solid #3a3a3a; border-radius: 14px; padding: 2px 10px; }
-.vol { font-family: var(--mono); }
 .status { color: #a1a1aa; text-align: center; padding: 24px 8px; }
 .moreBtn { height: 44px; padding: 0 20px; border: 1px solid #2a2a2a; border-radius: 10px; background: #111111; color: #ededed; font-size: 14px; font-weight: 500; align-self: center; }
 .moreWrap { display: flex; justify-content: center; padding-top: 8px; }

@@ -203,7 +203,6 @@ export function BrowsePage({ initialPage }: { readonly initialPage?: BrowsePage 
                     },
                   }}
                   footStart={card.moreCount > 0 ? <span>+{String(card.moreCount)} more</span> : undefined}
-                  footEnd={card.volumeLabel !== null ? <span className={styles.vol}>{card.volumeLabel} vol.</span> : undefined}
                 />
               );
             })}
