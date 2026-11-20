@@ -10,7 +10,7 @@ const seriesPoint = z.object({
   t: z.number(),
   cents: z.number(),
   volume: z.number().nullable(),
-  source: z.enum(["gemini", "snapshot"]),
+  source: z.enum(["gemini", "trades", "snapshot"]),
   bidCents: cents,
   askCents: cents,
   ma: cents,
@@ -104,7 +104,7 @@ export const researchViewSchema = z.object({
     trades: z.enum(["live", "unavailable"]),
   }),
   series: z.object({
-    source: z.enum(["gemini", "snapshot", "mixed", "none"]),
+    source: z.enum(["gemini", "trades", "snapshot", "mixed", "none"]),
     points: z.array(seriesPoint),
   }),
   book: z.object({ bids: z.array(depthLevel), asks: z.array(depthLevel) }),

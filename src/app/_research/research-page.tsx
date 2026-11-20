@@ -33,14 +33,8 @@ function problemMessage(problem: NonNullable<Loaded["problem"]>): string {
 }
 
 function dataBanners(view: ResearchView): readonly string[] {
-  const { data } = view;
   return [
-    data.event === "stale" ? "Gemini isn't responding, so the prices and details below are the last ones we saw." : null,
-    data.candles === "unavailable"
-      ? view.series.points.length > 0
-        ? "Gemini's price history is unavailable, so the chart shows the desk's own price snapshots."
-        : "Gemini's price history is unavailable and the desk has no snapshots for this market yet."
-      : null,
+    view.data.event === "stale" ? "Gemini isn't responding, so the prices and details below are the last ones we saw." : null,
   ].filter((message) => message !== null);
 }
 

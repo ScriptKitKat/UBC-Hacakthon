@@ -5,6 +5,7 @@ import type { Candle, MarketContract, MarketEvent, MarketsResult, OrderBook, Rec
 import { createMemoryFileSystem } from "@/features/storage";
 import { instrumentSymbol, researchViewSchema } from "@/shared";
 import type { ResearchPostContext } from "@/shared";
+import { ALL_CANDLE_TIMEFRAMES } from "./series";
 import { createResearch } from "./view";
 import type { ResearchMarkets } from "./view";
 
@@ -109,11 +110,46 @@ describe("research view", () => {
     ]);
   });
 
-  it("requests the candle size for the chosen timeframe plus hourly candles for indicators", async () => {
-    const candles = vi.fn<ResearchMarkets["candles"]>(() => Promise.resolve(ok<readonly Candle[]>([])));
+  it("requests the planned candle size plus hourly candles when that series has data", async () => {
+    const row: Candle = { timeMs: NOW - 60_000, openCents: 50, highCents: 50, lowCents: 50, closeCents: 50, volume: 1 };
+    const candles = vi.fn<ResearchMarkets["candles"]>((_symbol, timeframe) => Promise.resolve(ok<readonly Candle[]>(timeframe === "1m" ? [row] : [])));
     const { research } = await setup({ candles });
     await research.view(SYMBOL, "1H");
     expect(candles.mock.calls.map(([, timeframe]) => timeframe).sort()).toEqual(["1hr", "1m"]);
+  });
+
+  it("tries every Gemini candle size when the planned timeframe is empty", async () => {
+    const candles = vi.fn<ResearchMarkets["candles"]>(() => Promise.resolve(ok<readonly Candle[]>([])));
+    const { research } = await setup({ candles });
+    await research.view(SYMBOL, "1H");
+    expect(new Set(candles.mock.calls.map(([, timeframe]) => timeframe))).toEqual(new Set(ALL_CANDLE_TIMEFRAMES));
+  });
+
+  it("uses a fallback candle size when the planned timeframe errors empty", async () => {
+    const row: Candle = { timeMs: NOW - 60_000, openCents: 41, highCents: 41, lowCents: 41, closeCents: 41, volume: 2 };
+    const candles = vi.fn<ResearchMarkets["candles"]>((_symbol, timeframe) => {
+      if (timeframe === "1m") return Promise.resolve(ok<readonly Candle[]>([row]));
+      return Promise.resolve(fail({ kind: "http", status: 400 }));
+    });
+    const { research } = await setup({ candles });
+    const result = await research.view(SYMBOL, "1D");
+    if (result.kind !== "ok") throw new Error(result.kind);
+    expect(result.view.data.candles).toBe("live");
+    expect(result.view.series.points.some((point) => point.source === "gemini" && point.cents === 41)).toBe(true);
+  });
+
+  it("rebuilds the chart from Gemini trades when every candle size is empty", async () => {
+    const candles = vi.fn<ResearchMarkets["candles"]>(() => Promise.resolve(fail({ kind: "http", status: 400 })));
+    const recentTrades = vi.fn<ResearchMarkets["recentTrades"]>(() => Promise.resolve(ok([
+      { tradeId: 1, timeMs: NOW - 2_000, priceCents: 33, amount: 4, side: "buy" as const },
+      { tradeId: 2, timeMs: NOW - 1_000, priceCents: 35, amount: 1, side: "sell" as const },
+    ])));
+    const { research } = await setup({ candles, recentTrades, getEvent: () => Promise.resolve(ok(event("FED261211", "Economics", [contract(SYMBOL, "Fed maintains rate", null, null)]))) });
+    const result = await research.view(SYMBOL, "1D");
+    if (result.kind !== "ok") throw new Error(result.kind);
+    expect(result.view.data.candles).toBe("unavailable");
+    expect(result.view.series.source).toBe("trades");
+    expect(result.view.series.points.map((point) => point.cents)).toEqual([33, 35]);
   });
 
   it("includes the matched post context", async () => {
@@ -145,7 +181,11 @@ describe("research view", () => {
   });
 
   it("has an empty series when there is neither candle nor snapshot data", async () => {
-    const { research } = await setup({ candles: () => Promise.resolve(ok([])), getEvent: () => Promise.resolve(ok(event("FED261211", "Economics", [contract(SYMBOL, "Fed maintains rate", null, null)]))) });
+    const { research } = await setup({
+      candles: () => Promise.resolve(ok([])),
+      recentTrades: () => Promise.resolve(ok([])),
+      getEvent: () => Promise.resolve(ok(event("FED261211", "Economics", [contract(SYMBOL, "Fed maintains rate", null, null)]))),
+    });
     const result = await research.view(SYMBOL, "All");
     expect(result.kind === "ok" && result.view.series).toEqual({ source: "none", points: [] });
   });
