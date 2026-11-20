@@ -58,8 +58,8 @@ export const CARD_CSS = `
 }
 .body { padding: 12px 14px 10px; display: grid; gap: 10px; }
 .head { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; align-items: start; }
-.icon { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, #00b9f5, #1a6bff); }
-.icon svg { width: 16px; height: 16px; }
+.icon { width: 28px; height: 28px; display: grid; place-items: center; }
+.icon svg { width: 100%; height: 100%; }
 .titles { min-width: 0; }
 .title { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ntd-muted); overflow-wrap: anywhere; }
 .deadline { font-size: 11px; line-height: 15px; color: var(--ntd-muted); }
@@ -134,7 +134,6 @@ a:hover { text-decoration: underline; }
   .chart { width: 100%; height: 28px; }
   .change { justify-self: end; }
   .icon { width: 24px; height: 24px; }
-  .icon svg { width: 14px; height: 14px; }
   .contract-trigger { font-size: 16px; }
   .outcome { font-size: 12px; min-height: 32px; }
   .amount-field { padding: 7px 10px; }
