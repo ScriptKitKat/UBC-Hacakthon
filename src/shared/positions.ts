@@ -136,6 +136,7 @@ export const portfolioViewSchema = z.object({
     })),
     windowLabel: z.string(),
     caption: z.string(),
+    resetNote: z.string(),
   }),
   openPositions: z.object({
     rows: z.array(z.object({

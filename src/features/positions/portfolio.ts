@@ -40,6 +40,11 @@ export function formatPolicyDayLabel(day: string): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: CST, month: "short", day: "numeric" }).format(startMs);
 }
 
+export function formatPolicyReset(nowMs: number): string {
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: CST, hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(policyDayStartMs(policyDayUtc(nowMs)));
+  return `Days reset at ${time}.`;
+}
+
 export function formatRangeDate(ms: number): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: CST, month: "short", day: "numeric" }).format(ms);
 }
@@ -156,13 +161,13 @@ function spendCaption(
   days: readonly { readonly day: string; readonly betsCents: number; readonly briefsCents: number }[],
   dailyCapCents: number,
 ): string {
-  if (days.length === 0) return "No settled spend in this window.";
   let busiest = days[0];
-  if (busiest === undefined) return "No settled spend in this window.";
+  if (busiest === undefined) return "No spend in this window";
   for (const day of days) {
     if (day.betsCents + day.briefsCents > busiest.betsCents + busiest.briefsCents) busiest = day;
   }
   const peak = busiest.betsCents + busiest.briefsCents;
+  if (peak === 0) return "No spend in this window";
   const hit = days.filter((day) => day.betsCents + day.briefsCents >= dailyCapCents);
   const peakLabel = formatPolicyDayLabel(busiest.day);
   const peakText = `Busiest day: $${(peak / CENTS_PER_DOLLAR).toFixed(2)} on ${peakLabel}`;
@@ -450,6 +455,7 @@ export function buildPortfolio(input: PortfolioInputs): PortfolioView {
       days: spendDays,
       windowLabel,
       caption: spendCaption(spendDays, dailyCapCents),
+      resetNote: formatPolicyReset(nowMs),
     },
     openPositions: {
       rows: openRows.map((position) => {

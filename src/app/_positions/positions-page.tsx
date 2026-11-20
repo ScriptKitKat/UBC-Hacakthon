@@ -298,7 +298,7 @@ export function PositionsPage() {
                 <span className={styles.swatch} style={{ color: "var(--amber)" }}>Briefs</span>
                 <span className={styles.swatchLine}>${(view.dailyCapCents / 100).toFixed(0)} cap</span>
               </p>
-              <p className={styles.caption}>{view.dailySpend.caption}. Days reset at 6:00 PM CST.</p>
+              <p className={styles.caption}>{view.dailySpend.caption}. {view.dailySpend.resetNote}</p>
             </section>
           </div>
           <section className={styles.panel}>

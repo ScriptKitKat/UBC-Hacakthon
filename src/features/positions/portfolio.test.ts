@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { portfolioViewSchema } from "@/shared";
 import type { SpendEntry } from "@/features/journal";
-import { activityCsv, buildPortfolio, formatPolicyDayLabel, MIN_CALIBRATION_BETS, policyDayUtc, rangeWindow } from "./portfolio";
+import { activityCsv, buildPortfolio, formatPolicyDayLabel, formatPolicyReset, MIN_CALIBRATION_BETS, policyDayUtc, rangeWindow } from "./portfolio";
 import type { PortfolioInputs, PortfolioMarket } from "./portfolio";
 
 const NOW = Date.parse("2026-11-19T21:00:00.000Z");
@@ -78,9 +78,20 @@ describe("rangeWindow and policy days", () => {
     expect(policyDayUtc(Date.parse("2026-11-13T00:00:00.000Z"))).toBe("2026-11-13");
     expect(formatPolicyDayLabel("2026-11-13")).toBe("Nov 12");
   });
+
+  it("states the reset time in Central Time for the season", () => {
+    expect(formatPolicyReset(Date.parse("2026-11-19T12:00:00.000Z"))).toBe("Days reset at 6:00 PM CST.");
+    expect(formatPolicyReset(Date.parse("2026-07-01T12:00:00.000Z"))).toBe("Days reset at 7:00 PM CDT.");
+  });
 });
 
 describe("buildPortfolio", () => {
+  it("names no busiest day when nothing was spent", () => {
+    const view = buildPortfolio(inputs());
+    expect(view.dailySpend.caption).toBe("No spend in this window");
+    expect(view.dailySpend.resetNote).toBe(formatPolicyReset(NOW));
+  });
+
   const openSol = entry({
     operationId: "sol-1",
     kind: "trade",
