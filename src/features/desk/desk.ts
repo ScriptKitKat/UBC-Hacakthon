@@ -89,6 +89,7 @@ export interface DeskDeps {
   readonly initialMatches?: readonly StoredMatch[];
   readonly saveMatches?: (matches: readonly StoredMatch[]) => Promise<void>;
   readonly saveKillSwitch?: (on: boolean) => Promise<void>;
+  readonly flush?: () => Promise<void>;
 }
 
 export interface FeedBuyRequest {
@@ -134,6 +135,7 @@ export interface Desk {
   readonly confirmPending: (intentId: string, approverId: string) => Promise<ConfirmResult>;
   readonly rejectPending: (intentId: string, approverId: string) => Promise<ConfirmResult>;
   readonly setKillSwitch: (on: boolean) => Promise<void>;
+  readonly flush: () => Promise<void>;
   readonly getSnapshot: () => Promise<DeskSnapshot>;
 }
 
@@ -269,6 +271,7 @@ export function createDesk(deps: DeskDeps): Desk {
   const history = deps.history ?? createMemoryHistory();
   const saveLog = deps.saveLog ?? (() => Promise.resolve());
   const saveKillSwitch = deps.saveKillSwitch ?? (() => Promise.resolve());
+  const flushPersistence = deps.flush ?? (() => Promise.resolve());
   const lastMarks = new Map<string, MarketMark>();
   let log: readonly DecisionLogEntry[] = initialLog;
   let purchases: readonly StoredPurchase[] = (deps.initialPurchases ?? []).slice(0, PURCHASE_LIMIT);
@@ -278,10 +281,21 @@ export function createDesk(deps: DeskDeps): Desk {
   const deepDives = new Map<string, Promise<DeepDiveResult>>();
   const inFlight = new Set<string>();
   const pending = new Map<string, PendingRecord>();
+  const pendingWrites = new Set<Promise<void>>();
   const tickers = new Map<InstrumentSymbol, string>();
   const listedContracts = new Map<string, ReadonlySet<string>>();
   const matchCache = new Map<string, { readonly at: number; readonly post: PostInput; readonly match: Promise<FeedMatch> }>();
   const feedOrders = deps.feedOrders ?? createFeedOrders();
+
+  function trackWrite(write: Promise<void>): void {
+    pendingWrites.add(write);
+    void write.finally(() => pendingWrites.delete(write)).catch(() => undefined);
+  }
+
+  async function flush(): Promise<void> {
+    while (pendingWrites.size > 0) await Promise.all([...pendingWrites]);
+    await Promise.all([history.flush(), flushPersistence()]);
+  }
   const latestEntries = new Map<string, DecisionLogEntry>();
   for (const entry of initialLog) {
     if (!latestEntries.has(entry.intentId)) latestEntries.set(entry.intentId, entry);
@@ -354,7 +368,7 @@ export function createDesk(deps: DeskDeps): Desk {
 
   function appendRecord(complete: DecisionLogEntry): DecisionLogEntry {
     log = [complete, ...log].slice(0, LOG_LIMIT);
-    saveLog(log).catch(() => undefined);
+    trackWrite(saveLog(log));
     return complete;
   }
 
@@ -443,7 +457,7 @@ export function createDesk(deps: DeskDeps): Desk {
       atMs: tweetTimeMs(post.id) ?? seenAtMs,
     };
     matches = capMatches([stored, ...matches.filter((item) => item.postId !== stored.postId)]);
-    saveMatches(matches).catch(() => undefined);
+    trackWrite(saveMatches(matches));
   }
 
   function journalPurchase(entry: SpendEntry): StoredPurchase | undefined {
@@ -473,7 +487,7 @@ export function createDesk(deps: DeskDeps): Desk {
 
   function storePurchases(next: readonly StoredPurchase[]): void {
     purchases = next.slice(0, PURCHASE_LIMIT);
-    savePurchases(purchases).catch(() => undefined);
+    trackWrite(savePurchases(purchases));
   }
 
   function rememberPurchase(result: DeepDiveResult, symbol: string): void {
@@ -1079,6 +1093,8 @@ export function createDesk(deps: DeskDeps): Desk {
       await saveKillSwitch(on);
       policy = policy.withKillSwitch(on);
     },
+
+    flush,
 
     async getSnapshot() {
       const rolled = currentState();

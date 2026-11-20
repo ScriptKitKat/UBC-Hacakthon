@@ -42,6 +42,7 @@ export interface Watchlist {
   readonly items: () => Promise<readonly WatchlistItem[]>;
   readonly add: (input: string | WatchlistWrite) => Promise<readonly WatchlistItem[]>;
   readonly remove: (input: string | WatchlistWrite) => Promise<readonly WatchlistItem[]>;
+  readonly flush: () => Promise<void>;
 }
 
 export function itemFromIdentifier(symbol: string): WatchlistItem | undefined {
@@ -137,6 +138,10 @@ export function openWatchlist(options: { readonly fs: FileSystem; readonly path:
         if (resolved === undefined) return loadItems();
         return write((await loadItems()).filter((item) => !matchesWatchlistItem(item, resolved)));
       });
+    },
+    async flush() {
+      await queue.flush();
+      await store.flush();
     },
   };
 }

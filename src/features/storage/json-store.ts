@@ -34,6 +34,7 @@ export class StoreUnavailableError extends Error {
 export interface JsonStore<T> {
   readonly load: () => Promise<T>;
   readonly save: (value: T) => Promise<void>;
+  readonly flush: () => Promise<void>;
 }
 
 export interface JsonStoreOptions<S extends z.ZodType> {
@@ -95,6 +96,13 @@ export function createJsonStore<S extends z.ZodType>(options: JsonStoreOptions<S
         inFlight = queuedDone;
       }
       return queuedDone;
+    },
+    async flush() {
+      for (;;) {
+        const pending = inFlight;
+        await pending;
+        if (pending === inFlight && queued === undefined && queuedDone === undefined) return;
+      }
     },
   };
 }

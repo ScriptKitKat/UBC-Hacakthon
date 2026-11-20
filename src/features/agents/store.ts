@@ -56,6 +56,7 @@ export interface AgentStore {
     readonly activity?: readonly AgentActivity[];
     readonly lastRoutineAt?: string;
   }) => Promise<AgentRecord | undefined>;
+  readonly flush: () => Promise<void>;
 }
 
 export function defaultAgent(draft: AgentDraft, now: Date): AgentRecord {
@@ -201,6 +202,10 @@ export function openAgentStore(options: { readonly fs: FileSystem; readonly path
         await write(replace(agents, next));
         return next;
       });
+    },
+    async flush() {
+      await queue.flush();
+      await store.flush();
     },
   };
 }

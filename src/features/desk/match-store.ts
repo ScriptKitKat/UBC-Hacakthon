@@ -23,6 +23,7 @@ export type StoredMatch = z.output<typeof storedMatchSchema>;
 export interface MatchPersistence {
   readonly initialMatches: readonly StoredMatch[];
   readonly saveMatches: (matches: readonly StoredMatch[]) => Promise<void>;
+  readonly flush: () => Promise<void>;
 }
 
 export function matchToContext(match: StoredMatch): ResearchPostContext {
@@ -42,5 +43,6 @@ export async function openMatchStore(options: { readonly fs: FileSystem; readonl
   return {
     initialMatches: capMatches(loaded.matches),
     saveMatches: (matches) => file.save({ version: 1, matches: capMatches(matches) }),
+    flush: file.flush,
   };
 }

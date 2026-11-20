@@ -19,7 +19,7 @@ const handle = vi.fn<DeepDiveResource["handle"]>();
 const buyDeepDive = vi.fn<Desk["buyDeepDive"]>();
 
 function access(deepDive: DeepDiveResource | undefined = { urlFor: vi.fn(), handle, recover: vi.fn() }): DeskAccess {
-  return { ok: true, desk: { buyDeepDive } as unknown as Desk, research: { view: vi.fn(), brief: vi.fn() }, deepDive, marketPro: { shell: vi.fn(), live: vi.fn() }, chatter: undefined };
+  return { ok: true, desk: { buyDeepDive, flush: vi.fn<Desk["flush"]>(() => Promise.resolve()) } as unknown as Desk, research: { view: vi.fn(), brief: vi.fn() }, deepDive, marketPro: { shell: vi.fn(), live: vi.fn() }, chatter: undefined };
 }
 
 beforeEach(() => {

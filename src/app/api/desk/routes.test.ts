@@ -84,7 +84,7 @@ describe("desk api validation", () => {
   it("returns 200 with the rejected entry", async () => {
     const entry = { kind: "refuse", code: "rejected", spokenReason: "You rejected this trade." };
     rejectPending.mockResolvedValue({ ok: true, entry });
-    getDesk.mockResolvedValue({ ok: true, desk: { rejectPending } });
+    getDesk.mockResolvedValue({ ok: true, desk: { rejectPending, flush: vi.fn() } });
     const response = await reject(post({ intentId: "i", approverId: "priscilla" }));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ entry });
@@ -96,10 +96,35 @@ describe("desk api validation", () => {
     ["unauthorized-approver", 403],
   ] as const)("maps %s to HTTP %i", async (error, status) => {
     rejectPending.mockResolvedValue({ ok: false, error });
-    getDesk.mockResolvedValue({ ok: true, desk: { rejectPending } });
+    getDesk.mockResolvedValue({ ok: true, desk: { rejectPending, flush: vi.fn() } });
     const response = await reject(post({ intentId: "i", approverId: "priscilla" }));
     expect(response.status).toBe(status);
     expect(await response.json()).toEqual({ error });
+  });
+
+  it("waits for the decision-log write before returning a proposal", async () => {
+    let releaseWrite!: () => void;
+    const write = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    const flush = vi.fn(() => write);
+    const proposeTrade = vi.fn().mockResolvedValue({ kind: "needs-approval", intentId: "intent-1" });
+    getDesk.mockResolvedValue({ ok: true, desk: { proposeTrade, flush } });
+    let completed = false;
+    const responsePromise = propose(post({
+      instrumentSymbol: "GEMI-FED261211-MAINTAIN",
+      outcome: "yes",
+      notionalCents: 500,
+      senderId: "priscilla",
+    })).then((response) => {
+      completed = true;
+      return response;
+    });
+    await vi.waitFor(() => {
+      expect(flush).toHaveBeenCalledOnce();
+    });
+    expect(completed).toBe(false);
+    releaseWrite();
+    expect((await responsePromise).status).toBe(200);
+    expect(completed).toBe(true);
   });
 
   it("returns 503 with the config issues when the desk is not configured", async () => {
@@ -110,7 +135,7 @@ describe("desk api validation", () => {
 
   it("returns 503 when a persisted write conflicts with another runtime", async () => {
     const proposeTrade = vi.fn().mockRejectedValue(new StoreConflictError("decision-log.json"));
-    getDesk.mockResolvedValue({ ok: true, desk: { proposeTrade } });
+    getDesk.mockResolvedValue({ ok: true, desk: { proposeTrade, flush: vi.fn() } });
     const response = await propose(post({
       instrumentSymbol: "GEMI-FED261211-MAINTAIN",
       outcome: "yes",

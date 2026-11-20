@@ -18,6 +18,7 @@ export type StoredChatter = z.output<typeof storedChatterSchema>;
 export interface ChatterPersistence {
   readonly initialChatter: readonly StoredChatter[];
   readonly saveChatter: (events: readonly StoredChatter[]) => Promise<void>;
+  readonly flush: () => Promise<void>;
 }
 
 export function capChatter(events: readonly StoredChatter[]): StoredChatter[] {
@@ -30,5 +31,6 @@ export async function openChatterStore(options: { readonly fs: FileSystem; reado
   return {
     initialChatter: capChatter(loaded.events),
     saveChatter: (events) => file.save({ version: 1, events: capChatter(events) }),
+    flush: file.flush,
   };
 }

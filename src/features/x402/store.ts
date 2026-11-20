@@ -30,6 +30,7 @@ export interface UsedPayments {
   readonly markFailed: (signature: string) => Promise<void>;
   readonly find: (signature: string) => UsedPayment | undefined;
   readonly claimed: () => readonly UsedPayment[];
+  readonly flush: () => Promise<void>;
 }
 
 interface RetentionOptions {
@@ -58,6 +59,7 @@ export function createUsedPayments(
   initial: readonly UsedPayment[],
   persist: (records: readonly UsedPayment[]) => Promise<void>,
   options: RetentionOptions = {},
+  flushStore: () => Promise<void> = () => Promise.resolve(),
 ): UsedPayments {
   let records: readonly UsedPayment[] = [...initial];
   const queue = createSerialQueue();
@@ -97,6 +99,10 @@ export function createUsedPayments(
     markFailed: (signature) => resolve(signature, "failed"),
     find: (signature) => records.find((record) => record.signature === signature),
     claimed: () => records.filter((record) => record.status === "claimed"),
+    async flush() {
+      await queue.flush();
+      await flushStore();
+    },
   };
 }
 
@@ -108,5 +114,5 @@ export async function openUsedPayments(options: RetentionOptions & { readonly fs
   if (records.length !== loaded.records.length) {
     await save(records).catch(() => { throw new StoreUnavailableError("unreadable", options.path); });
   }
-  return createUsedPayments(records, save, options);
+  return createUsedPayments(records, save, options, file.flush);
 }

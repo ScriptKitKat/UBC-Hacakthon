@@ -35,6 +35,7 @@ beforeEach(async () => {
     ok: true,
     catalog: { agents: { store, run: vi.fn() } },
     desk: {
+      flush: vi.fn(),
       getSnapshot: vi.fn<Desk["getSnapshot"]>(() => Promise.resolve({
         policy: { dailyCapCents: 1000, remainingCents: 1000, perTradeMaxCents: 200, autoApproveMaxCents: 200 },
       } as Awaited<ReturnType<Desk["getSnapshot"]>>)),

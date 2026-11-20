@@ -198,6 +198,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>, fs: 
     initialLog: decisionLog.initialLog,
     saveLog: decisionLog.saveLog,
     saveKillSwitch: deskState.setKillSwitch,
+    flush: () => runtime.flush?.() ?? Promise.resolve(),
     journal,
     feedOrders,
     ...(payments ? { paymentInFlight: payments.paymentInFlight } : {}),
@@ -249,20 +250,6 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>, fs: 
   };
   const cronMode = Boolean(env.VERCEL) || env.DESK_BACKGROUND === "cron";
   if (!cronMode) await reconcile();
-  runtime.sampler ??= createSampler({
-    history,
-    markets,
-    nowMs: () => Date.now(),
-    schedule(task, intervalMs) {
-      const timer = setInterval(() => { void runRuntimeOperation(runtime, task).catch(() => undefined); }, intervalMs);
-      timer.unref();
-      return () => { clearInterval(timer); };
-    },
-  });
-  if (!cronMode) {
-    runtime.reconciliationTimer ??= startReconciliation(() => runRuntimeOperation(runtime, reconcile));
-    runtime.sampler.start();
-  }
   const catalogDeps = { markets, history, now: () => new Date(), policy: config.value.policy };
   const agentStore = openAgentStore({ fs, path: join(dataDirectory, "agents.json") });
   const agentDeps = {
@@ -277,6 +264,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>, fs: 
     ...(xFeed === undefined ? {} : { xFeed }),
   };
   const runAgentCycle = agentCycle(agentDeps);
+  const watchlist = openWatchlist({ fs, path: join(dataDirectory, "watchlist.json") });
   homeCatalog = {
     list: async (query = {}) => {
       const cached = listCache.get(query);
@@ -301,10 +289,38 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>, fs: 
     spots: (assets) => loadSpotPrices({ markets }, assets),
     cardsFor: (symbols) => cardsForSymbols(catalogDeps, symbols),
     cardsForSaved: (items) => cardsForSaved(catalogDeps, items),
-    watchlist: openWatchlist({ fs, path: join(dataDirectory, "watchlist.json") }),
+    watchlist,
     agents: { store: agentStore, run: runAgentCycle },
   };
-  const watchlist = homeCatalog.watchlist;
+  runtime.flush = async () => {
+    await Promise.all([
+      history.flush(),
+      deskState.flush(),
+      decisionLog.flush(),
+      journal.flush(),
+      purchaseStore.flush(),
+      matchStore.flush(),
+      chatterStore.flush(),
+      feedOrders.flush(),
+      usedPayments.flush(),
+      agentStore.flush(),
+      watchlist.flush(),
+    ]);
+  };
+  runtime.sampler ??= createSampler({
+    history,
+    markets,
+    nowMs: () => Date.now(),
+    schedule(task, intervalMs) {
+      const timer = setInterval(() => { void runRuntimeOperation(runtime, task).catch(() => undefined); }, intervalMs);
+      timer.unref();
+      return () => { clearInterval(timer); };
+    },
+  });
+  if (!cronMode) {
+    runtime.reconciliationTimer ??= startReconciliation(() => runRuntimeOperation(runtime, reconcile));
+    runtime.sampler.start();
+  }
   if (!cronMode) runtime.agentTimer ??= startAgentLoop(agentDeps, (cycle) => runRuntimeOperation(runtime, cycle));
   runtime.cron = async () => {
     await reconcile();
@@ -336,6 +352,7 @@ interface DeskRuntime {
   agentTimer?: ReturnType<typeof startAgentLoop>;
   sampler?: Sampler;
   cron?: () => Promise<CronTickSummary>;
+  flush?: () => Promise<void>;
 }
 
 const holder = globalThis as typeof globalThis & { [deskKey]?: DeskRuntime };
@@ -361,7 +378,13 @@ function releaseLease(runtime: DeskRuntime): () => void {
 function runRuntimeOperation<T>(runtime: DeskRuntime, operation: () => Promise<T>): Promise<T> {
   if (runtime.stopping) return Promise.reject(new Error("Desk runtime is stopping"));
   const release = releaseLease(runtime);
-  return Promise.resolve().then(operation).finally(release);
+  return Promise.resolve().then(operation).finally(async () => {
+    try {
+      await runtime.flush?.();
+    } finally {
+      release();
+    }
+  });
 }
 
 function stopRuntimeTimers(runtime: DeskRuntime): void {
@@ -420,14 +443,16 @@ async function acquireRuntime(): Promise<RuntimeLease> {
       return { lease: { runtime: current, release: releaseLease(current) } };
     });
     if ("wait" in result) {
+      const staleRuntime = result.runtime;
+      if (staleRuntime === undefined) continue;
       const timedOut = await waitForIdleOrTimeout(result.wait, 15_000);
       if (timedOut) {
-        await runtimeQueue.run(async () => {
-          if (holder[deskKey] !== result.runtime) return;
-          disposeRuntime(result.runtime);
+        await runtimeQueue.run(() => Promise.resolve().then(() => {
+          if (holder[deskKey] !== staleRuntime) return;
+          disposeRuntime(staleRuntime);
           Reflect.deleteProperty(holder, deskKey);
           resetCatalogCaches();
-        });
+        }));
       }
       continue;
     }
@@ -489,6 +514,10 @@ export async function runCronTick(): Promise<CronTickSummary | null> {
     if (!access.ok || lease.runtime.cron === undefined) return null;
     return await lease.runtime.cron();
   } finally {
-    lease.release();
+    try {
+      await lease.runtime.flush?.();
+    } finally {
+      lease.release();
+    }
   }
 }

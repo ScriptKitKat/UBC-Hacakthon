@@ -31,6 +31,7 @@ beforeEach(() => {
   run.mockReset().mockResolvedValue(report);
   getHomeServicesForRequest.mockReset().mockResolvedValue({
     ok: true,
+    desk: { flush: vi.fn() },
     catalog: { agents: { store: { get: getAgent }, run } },
   } as unknown as HomeServices);
 });

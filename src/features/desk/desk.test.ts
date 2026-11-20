@@ -600,6 +600,35 @@ describe("desk feed", () => {
 });
 
 describe("desk persistence, positions and research context", () => {
+  it("flush waits for the decision log write before the response can finish", async () => {
+    const memory = createMemoryFileSystem();
+    const writeGate = deferred<undefined>();
+    const fs = {
+      ...memory,
+      writeTextAtomic: async (path: string, contents: string) => {
+        await writeGate.promise;
+        await memory.writeTextAtomic(path, contents);
+      },
+    };
+    const decisionLog = await openDecisionLog({ fs, path: "/d/log.json" });
+    const { desk } = await readyDesk({
+      extra: {
+        initialLog: decisionLog.initialLog,
+        saveLog: decisionLog.saveLog,
+        flush: decisionLog.flush,
+      },
+    });
+    const proposal = await desk.proposeTrade(propose("yes", 500));
+    expect(proposal.kind).toBe("needs-approval");
+    let finished = false;
+    const flushing = desk.flush().then(() => { finished = true; });
+    expect(finished).toBe(false);
+    writeGate.resolve(undefined);
+    await flushing;
+    expect(finished).toBe(true);
+    expect((await openDecisionLog({ fs, path: "/d/log.json" })).initialLog).toHaveLength(1);
+  });
+
   it("restores the decision log, positions and the day's spend after a restart", async () => {
     const fs = createMemoryFileSystem();
     const first = await openDecisionLog({ fs, path: "/d/log.json" });

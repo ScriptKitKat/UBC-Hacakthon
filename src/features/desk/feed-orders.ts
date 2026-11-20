@@ -28,6 +28,7 @@ export function awaitingPaymentResult(entry: FeedOrder["entry"]): boolean {
 export function createFeedOrders(
   initial: readonly FeedOrder[] = [],
   save: (file: OrderFile) => Promise<void> = () => Promise.resolve(),
+  flushStore: () => Promise<void> = () => Promise.resolve(),
 ) {
   let orders = new Map(initial.map((order) => [order.clientOrderId, order]));
   const queue = createSerialQueue();
@@ -54,6 +55,10 @@ export function createFeedOrders(
       await write(next);
       return true;
     }),
+    async flush() {
+      await queue.flush();
+      await flushStore();
+    },
   };
 }
 
@@ -61,5 +66,5 @@ export type FeedOrders = ReturnType<typeof createFeedOrders>;
 
 export async function openFeedOrders(options: { readonly fs: FileSystem; readonly path: string }): Promise<FeedOrders> {
   const file = createJsonStore({ ...options, schema: fileSchema, empty: () => ({ version: 1 as const, orders: [] }) });
-  return createFeedOrders((await file.load()).orders, file.save);
+  return createFeedOrders((await file.load()).orders, file.save, file.flush);
 }

@@ -1,5 +1,6 @@
 import { getDesk, releaseRuntimeAccess } from "@/features/desk";
 import { parseInstrumentSymbol } from "@/features/markets";
+import { responseAfterFlush } from "@/app/api/desk/route-helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,8 +13,12 @@ export async function GET(request: Request, context: { readonly params: Promise<
   const access = await getDesk();
   try {
     if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
-    if (!access.deepDive) return Response.json({ error: "research-payments-not-configured" }, { status: 503 });
-    return await access.deepDive.handle(request, symbol);
+    const deepDive = access.deepDive;
+    if (!deepDive) return Response.json({ error: "research-payments-not-configured" }, { status: 503 });
+    return await responseAfterFlush(
+      () => deepDive.handle(request, symbol),
+      () => access.desk.flush(),
+    );
   } finally {
     releaseRuntimeAccess(access);
   }
