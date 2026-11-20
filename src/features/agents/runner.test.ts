@@ -302,6 +302,28 @@ describe("runAgentCycle", () => {
     expect((await store.get(agent.id))?.lastRoutineAt).toBe(NOW.toISOString());
   });
 
+  it("keeps a due routine pending when market data is unavailable", async () => {
+    const { agent, deps, store } = await setup({
+      yesNow: 60,
+      yesBefore: 40,
+      draft: { permission: "watch", schedule: { kind: "every", hours: 4 } },
+    });
+    const previousRoutineAt = "2026-11-19T13:00:00.000Z";
+    await store.recordRun(agent.id, { lastRoutineAt: previousRoutineAt });
+    vi.spyOn(deps.markets, "getEvent").mockResolvedValueOnce(fail({ kind: "network" }));
+
+    const failed = await runAgentCycle({ ...deps, now: () => NOW }, agent.id);
+
+    expect(failed.ticks[0]).toMatchObject({ origin: "scheduled", marketUnavailable: true });
+    expect((await store.get(agent.id))?.lastRoutineAt).toBe(previousRoutineAt);
+
+    const retried = await runAgentCycle({ ...deps, now: () => NOW }, agent.id);
+
+    expect(retried.ticks[0]).toMatchObject({ origin: "scheduled" });
+    expect(retried.ticks[0]?.marketUnavailable).toBeUndefined();
+    expect((await store.get(agent.id))?.lastRoutineAt).toBe(NOW.toISOString());
+  });
+
   it("does not run a routine before its due time", async () => {
     const { agent, deps, store } = await setup({ yesNow: 60, yesBefore: 40, draft: { permission: "watch", schedule: { kind: "every", hours: 4 } } });
     const before = await store.get(agent.id);

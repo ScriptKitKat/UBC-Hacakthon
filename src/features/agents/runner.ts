@@ -152,7 +152,7 @@ export async function runAgentTick(deps: AgentRunnerDeps, agent: AgentRecord, de
   const routineUpdate = options.lastRoutineAt === undefined ? {} : { lastRoutineAt: options.lastRoutineAt };
   const snapshot = await loadMarketSnapshot(deps, agent, now);
   if (snapshot === undefined) {
-    await deps.store.recordRun(agent.id, routineUpdate);
+    await deps.store.recordRun(agent.id, {});
     return { agentId: agent.id, fired: [], skipped: [], marketUnavailable: true, message: null, messageSource: null, action: "none", origin };
   }
   const xEnabled = agent.triggers.xMentions || agent.triggers.breakingNews;
