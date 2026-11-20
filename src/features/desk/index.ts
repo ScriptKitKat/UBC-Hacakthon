@@ -5,5 +5,7 @@ export { createDesk } from "./desk";
 export type { ConfirmResult, Desk, DeskDeps, FeedBuyRequest, ProposeRequest } from "./desk";
 export { loadDeskConfig } from "./config";
 export type { FeedSettings } from "./config";
+export { openDeskState } from "./desk-state";
+export type { DeskStateStore } from "./desk-state";
 export type { StoredPurchase } from "./purchase-store";
 export type { DeepDiveResource } from "./deep-dive-resource";

@@ -315,12 +315,12 @@ describe("desk", () => {
   it("kill switch blocks proposals and confirmations", async () => {
     const { desk, debit } = await readyDesk();
     const waiting = await desk.proposeTrade(propose("yes", 500));
-    desk.setKillSwitch(true);
+    await desk.setKillSwitch(true);
     expect((await desk.getSnapshot()).policy.killSwitch).toBe(true);
     expect(await desk.proposeTrade(propose("yes", 100))).toMatchObject({ kind: "refuse", code: "kill-switch" });
     expect(await desk.confirmPending(waiting.intentId, "priscilla")).toMatchObject({ ok: true, entry: { kind: "refuse", code: "kill-switch" } });
     expect(debit).not.toHaveBeenCalled();
-    desk.setKillSwitch(false);
+    await desk.setKillSwitch(false);
     expect(await desk.proposeTrade(propose("yes", 100))).toMatchObject({ kind: "approve" });
   });
 

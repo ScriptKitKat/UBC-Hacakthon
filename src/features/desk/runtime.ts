@@ -32,6 +32,7 @@ import { openFeedOrders } from "./feed-orders";
 import { startReconciliation } from "./reconciliation";
 import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
 import { openMatchStore } from "./match-store";
+import { openDeskState } from "./desk-state";
 import { UNDELIVERED_RECOVERY_MS, openPurchaseStore } from "./purchase-store";
 import { isStale, waitForIdleOrTimeout } from "./runtime-revision";
 import { withReleasedLease } from "./runtime-access";
@@ -124,12 +125,14 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>, fs: 
     : undefined;
   const stores = await openOrExplain(async () => {
     const decisionLog = await openDecisionLog({ fs, path: join(dataDirectory, "decision-log.json") });
+    const deskState = await openDeskState({ fs, path: join(dataDirectory, "desk-state.json") });
     const journal = await openMigratedSpendJournal({
       fs,
       path: join(dataDirectory, "spend-journal.json"),
       nowIso: () => new Date().toISOString(),
     }, decisionLog.initialLog);
     return {
+      deskState,
       decisionLog,
       journal,
       purchaseStore: await openPurchaseStore({ fs, path: join(dataDirectory, "research-purchases.json") }),
@@ -158,7 +161,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>, fs: 
     };
   });
   if (!stores.ok) return { ok: false, issues: [stores.issue] };
-  const { decisionLog, purchaseStore, matchStore, chatterStore, journal, usedPayments, feedOrders } = stores.value;
+  const { deskState, decisionLog, purchaseStore, matchStore, chatterStore, journal, usedPayments, feedOrders } = stores.value;
   const publicOrigin = config.value.research.publicOrigin;
   const deferredDeepDive = createDeferredDeepDive(publicOrigin);
   const payments = settings.configured && researchRecipient && connection
@@ -184,7 +187,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>, fs: 
       })
     : undefined;
   const desk = createDesk({
-    policy: config.value.policy,
+    policy: config.value.policy.withKillSwitch(deskState.killSwitch),
     feed: config.value.feed,
     markets,
     ledger,
@@ -194,6 +197,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>, fs: 
     history,
     initialLog: decisionLog.initialLog,
     saveLog: decisionLog.saveLog,
+    saveKillSwitch: deskState.setKillSwitch,
     journal,
     feedOrders,
     ...(payments ? { paymentInFlight: payments.paymentInFlight } : {}),

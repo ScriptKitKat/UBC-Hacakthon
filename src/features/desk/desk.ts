@@ -88,6 +88,7 @@ export interface DeskDeps {
   readonly savePurchases?: (purchases: readonly StoredPurchase[]) => Promise<void>;
   readonly initialMatches?: readonly StoredMatch[];
   readonly saveMatches?: (matches: readonly StoredMatch[]) => Promise<void>;
+  readonly saveKillSwitch?: (on: boolean) => Promise<void>;
 }
 
 export interface FeedBuyRequest {
@@ -132,7 +133,7 @@ export interface Desk {
   readonly proposeTrade: (request: ProposeRequest) => Promise<DecisionLogEntry>;
   readonly confirmPending: (intentId: string, approverId: string) => Promise<ConfirmResult>;
   readonly rejectPending: (intentId: string, approverId: string) => Promise<ConfirmResult>;
-  readonly setKillSwitch: (on: boolean) => void;
+  readonly setKillSwitch: (on: boolean) => Promise<void>;
   readonly getSnapshot: () => Promise<DeskSnapshot>;
 }
 
@@ -267,6 +268,7 @@ export function createDesk(deps: DeskDeps): Desk {
   let current: { readonly news: NewsItem; readonly match: MatchResult } | undefined;
   const history = deps.history ?? createMemoryHistory();
   const saveLog = deps.saveLog ?? (() => Promise.resolve());
+  const saveKillSwitch = deps.saveKillSwitch ?? (() => Promise.resolve());
   const lastMarks = new Map<string, MarketMark>();
   let log: readonly DecisionLogEntry[] = initialLog;
   let purchases: readonly StoredPurchase[] = (deps.initialPurchases ?? []).slice(0, PURCHASE_LIMIT);
@@ -1073,7 +1075,8 @@ export function createDesk(deps: DeskDeps): Desk {
 
     rejectPending,
 
-    setKillSwitch(on) {
+    async setKillSwitch(on) {
+      await saveKillSwitch(on);
       policy = policy.withKillSwitch(on);
     },
 
