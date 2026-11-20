@@ -5,6 +5,7 @@ import { POST as news } from "./news/route";
 import { POST as propose } from "./propose/route";
 import { POST as reject } from "./reject/route";
 import { GET as snapshot } from "./route";
+import { StoreConflictError } from "@/features/storage";
 
 const { getDesk, rejectPending } = vi.hoisted(() => ({
   getDesk: vi.fn(),
@@ -105,5 +106,18 @@ describe("desk api validation", () => {
     const response = await snapshot();
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({ error: "desk-misconfigured", issues: expect.arrayContaining([expect.stringContaining("DAILY_CAP_USD")]) as unknown });
+  });
+
+  it("returns 503 when a persisted write conflicts with another runtime", async () => {
+    const proposeTrade = vi.fn().mockRejectedValue(new StoreConflictError("decision-log.json"));
+    getDesk.mockResolvedValue({ ok: true, desk: { proposeTrade } });
+    const response = await propose(post({
+      instrumentSymbol: "GEMI-FED261211-MAINTAIN",
+      outcome: "yes",
+      notionalCents: 100,
+      senderId: "priscilla",
+    }));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "store-conflict" });
   });
 });

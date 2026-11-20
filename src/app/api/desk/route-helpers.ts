@@ -1,5 +1,6 @@
 import { getDesk, getHomeServicesForRequest, releaseRuntimeAccess } from "@/features/desk";
 import type { Desk, DeskAccess, HomeServices } from "@/features/desk";
+import { StoreConflictError } from "@/features/storage";
 import type { z } from "zod";
 
 export async function withDesk(handler: (desk: Desk) => Promise<Response>): Promise<Response> {
@@ -7,6 +8,9 @@ export async function withDesk(handler: (desk: Desk) => Promise<Response>): Prom
   try {
     if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
     return await handler(access.desk);
+  } catch (error) {
+    if (error instanceof StoreConflictError) return Response.json({ error: "store-conflict" }, { status: 503 });
+    throw error;
   } finally {
     releaseRuntimeAccess(access);
   }
@@ -64,6 +68,9 @@ export async function withDashboardServices(request: Request, handler: (services
   try {
     if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
     return await handler(access);
+  } catch (error) {
+    if (error instanceof StoreConflictError) return Response.json({ error: "store-conflict" }, { status: 503 });
+    throw error;
   } finally {
     releaseRuntimeAccess(access);
   }
@@ -83,6 +90,9 @@ export async function withHomeGet(
   try {
     if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
     return await handler(access);
+  } catch (error) {
+    if (error instanceof StoreConflictError) return Response.json({ error: "store-conflict" }, { status: 503 });
+    throw error;
   } finally {
     releaseRuntimeAccess(access);
   }
@@ -109,6 +119,9 @@ export async function withHomeBody<S extends z.ZodType>(
   try {
     if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
     return await handler(parsed.data, access);
+  } catch (error) {
+    if (error instanceof StoreConflictError) return Response.json({ error: "store-conflict" }, { status: 503 });
+    throw error;
   } finally {
     releaseRuntimeAccess(access);
   }

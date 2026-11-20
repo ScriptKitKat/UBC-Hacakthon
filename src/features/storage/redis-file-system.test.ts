@@ -1,10 +1,11 @@
 import type { Redis } from "@upstash/redis";
 import { expect, it } from "vitest";
+import { StoreConflictError } from "./json-store";
 import { nodeFileSystem } from "./file-system";
 import { resolveFileSystem } from "./resolve-file-system";
 import { createRedisFileSystem } from "./redis-file-system";
 
-function fakeRedis(): { readonly client: Pick<Redis, "get" | "set" | "incr">; readonly values: Map<string, string | number> } {
+function fakeRedis(): { readonly client: Pick<Redis, "get" | "mget" | "eval">; readonly values: Map<string, string | number> } {
   const values = new Map<string, string | number>();
   return {
     values,
@@ -12,14 +13,18 @@ function fakeRedis(): { readonly client: Pick<Redis, "get" | "set" | "incr">; re
       get<T>(key: string) {
         return Promise.resolve((values.get(key) as T | undefined) ?? null);
       },
-      set(key: string, value: unknown) {
-        values.set(key, value as string | number);
-        return Promise.resolve("OK" as const);
+      mget<TData extends unknown[]>(...keys: string[]) {
+        return Promise.resolve(keys.map((key) => values.get(key) ?? null) as TData);
       },
-      incr(key: string) {
-        const next = Number(values.get(key) ?? 0) + 1;
-        values.set(key, next);
-        return Promise.resolve(next);
+      eval<TResult>(_script: string, keys: string[], args: string[]) {
+        const [fileKey, versionKey, revisionKey] = keys;
+        const current = Number(values.get(versionKey ?? "") ?? 0);
+        if (current !== Number(args[0])) return Promise.resolve(0 as TResult);
+        const next = current + 1;
+        values.set(fileKey ?? "", args[1] ?? "");
+        values.set(versionKey ?? "", next);
+        values.set(revisionKey ?? "", Number(values.get(revisionKey ?? "") ?? 0) + 1);
+        return Promise.resolve(next as TResult);
       },
     },
   };
@@ -40,6 +45,28 @@ it("round-trips file contents under prefix and basename keys and increments the 
   expect(values.get("desk:rev")).toBe(1);
   expect(fs.ownWrites()).toBe(1);
   await expect(fs.currentRevision()).resolves.toBe(1);
+});
+
+it("allows sequential writes by one instance", async () => {
+  const { client, values } = fakeRedis();
+  const fs = createRedisFileSystem(client, "desk");
+  await fs.readText("/data/agents.json");
+  await fs.writeTextAtomic("/data/agents.json", "first");
+  await fs.writeTextAtomic("/data/agents.json", "second");
+  await expect(fs.readText("/data/agents.json")).resolves.toBe("second");
+  expect(values.get("desk:agents.json:v")).toBe(2);
+  expect(values.get("desk:rev")).toBe(2);
+});
+
+it("rejects a stale concurrent write without overwriting the newer value", async () => {
+  const { client, values } = fakeRedis();
+  const first = createRedisFileSystem(client, "desk");
+  const second = createRedisFileSystem(client, "desk");
+  await Promise.all([first.readText("/data/agents.json"), second.readText("/data/agents.json")]);
+  await first.writeTextAtomic("/data/agents.json", "newer");
+  await expect(second.writeTextAtomic("/data/agents.json", "stale")).rejects.toBeInstanceOf(StoreConflictError);
+  await expect(first.readText("/data/agents.json")).resolves.toBe("newer");
+  expect(values.get("desk:rev")).toBe(1);
 });
 
 it("preserves a copy of the file text", async () => {

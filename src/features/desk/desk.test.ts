@@ -14,7 +14,7 @@ import type { StoredMatch } from "./match-store";
 import { createFeedOrders, openFeedOrders } from "./feed-orders";
 import { startReconciliation } from "./reconciliation";
 import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
-import { createMemoryFileSystem } from "@/features/storage";
+import { createMemoryFileSystem, StoreConflictError } from "@/features/storage";
 
 const symbol = instrumentSymbol("GEMI-FED261211-MAINTAIN");
 const otherSymbol = instrumentSymbol("GEMI-FED261211-CUT25");
@@ -728,9 +728,9 @@ describe("desk persistence, positions and research context", () => {
     expect(journal.entries()).toMatchObject([{ status: "settled", signature: "sig-9" }]);
   });
 
-  it("refuses to trade, and never debits, when the reservation cannot be written", async () => {
+  it("refuses to trade, and never debits, when a reservation conflicts with another runtime", async () => {
     const memory = createMemoryFileSystem();
-    const fs = { ...memory, writeTextAtomic: () => Promise.reject(new Error("ENOSPC")) };
+    const fs = { ...memory, writeTextAtomic: (path: string) => Promise.reject(new StoreConflictError(path)) };
     const journal = await openSpendJournal({ fs, path: "/d/journal.json", nowIso: () => "2026-11-17T12:00:00.000Z" });
     const { desk, debit } = await readyDesk({ extra: { journal } });
     expect(await desk.proposeTrade(propose("yes", 200))).toMatchObject({

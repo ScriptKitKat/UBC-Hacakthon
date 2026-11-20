@@ -3,6 +3,16 @@ import type { FileSystem } from "./file-system";
 
 export type StoreProblem = "unreadable" | "corrupt";
 
+export class StoreConflictError extends Error {
+  readonly path: string;
+
+  constructor(path: string) {
+    super(`${path} changed in another runtime`);
+    this.name = "StoreConflictError";
+    this.path = path;
+  }
+}
+
 export class StoreUnavailableError extends Error {
   readonly problem: StoreProblem;
   readonly path: string;
