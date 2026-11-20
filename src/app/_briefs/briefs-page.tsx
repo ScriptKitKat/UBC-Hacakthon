@@ -202,6 +202,12 @@ export function BriefsPage() {
   );
 }
 
+function sectionHeading(group: ReturnType<typeof librarySectionGroups>[number]): string | undefined {
+  if (group.id === "cases") return "Case for YES / NO";
+  if (group.id === "upcoming") return "Coming up before it resolves";
+  return group.sections[0]?.title;
+}
+
 function BriefDetail(props: {
   readonly item: BriefLibraryItem;
   readonly refreshing: boolean;
@@ -213,7 +219,6 @@ function BriefDetail(props: {
   const warning = staleCopy(item);
   const groups = librarySectionGroups(item.brief);
   const leftover = leftoverBriefSections(item.brief);
-  const cases = groups.find((group) => group.id === "cases");
 
   return (
     <article className={styles.detail}>
@@ -252,29 +257,26 @@ function BriefDetail(props: {
 
       <MetricTiles item={item} evidence={evidence} />
 
-      {groups.filter((group) => group.id !== "cases").map((group) => (
+      {groups.map((group, index) => (
         <section key={group.id} className={styles.section}>
           <h3 className={styles.sectionTitle}>
-            <span className={styles.sectionNum}>{group.number}</span>
-            {group.id === "upcoming" ? "Coming up before it resolves" : group.sections[0]?.title}
+            <span className={styles.sectionNum}>{index + 1}</span>
+            {sectionHeading(group)}
           </h3>
-          <SectionBody groupId={group.id} evidence={evidence} fallback={group.sections.map((section) => section.body).join("\n\n")} />
+          {group.id === "cases" ? (
+            <div className={styles.cases}>
+              {group.sections.map((section) => (
+                <div key={section.title} className={styles.case}>
+                  <p className={styles.caseTitle}>{section.title}</p>
+                  <p className={styles.prose}>{section.body}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <SectionBody groupId={group.id} evidence={evidence} fallback={group.sections.map((section) => section.body).join("\n\n")} />
+          )}
         </section>
       ))}
-
-      {cases !== undefined ? (
-        <section className={styles.section}>
-          <h3 className={styles.sectionTitle}><span className={styles.sectionNum}>4</span>Case for YES / NO</h3>
-          <div className={styles.cases}>
-            {cases.sections.map((section) => (
-              <div key={section.title} className={styles.case}>
-                <p className={styles.caseTitle}>{section.title}</p>
-                <p className={styles.prose}>{section.body}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
 
       {leftover.map((section) => (
         <section key={section.title} className={styles.section}>
