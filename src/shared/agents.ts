@@ -101,6 +101,7 @@ export const agentCycleReportSchema = z.object({
     agentId: z.string(),
     fired: z.array(triggerIdSchema),
     skipped: z.array(z.object({ id: triggerIdSchema, reason: z.string() })),
+    marketUnavailable: z.literal(true).optional(),
     message: z.string().nullable(),
     messageSource: messageSourceSchema.nullable(),
     action: z.enum(["none", "notify", "suggest", "autonomous", "brief", "hold"]),

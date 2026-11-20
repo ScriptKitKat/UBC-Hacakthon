@@ -31,6 +31,7 @@ export interface AgentTickResult {
   readonly agentId: string;
   readonly fired: readonly TriggerId[];
   readonly skipped: TriggerResult["skipped"];
+  readonly marketUnavailable?: true;
   readonly message: string | null;
   readonly messageSource: AgentRecord["lastMessageSource"];
   readonly action: "none" | "notify" | "suggest" | "autonomous" | "brief" | "hold";
@@ -121,7 +122,7 @@ export async function runAgentTick(deps: AgentRunnerDeps, agent: AgentRecord, de
   const snapshot = await loadMarketSnapshot(deps, agent, now);
   if (snapshot === undefined) {
     await deps.store.recordRun(agent.id, {});
-    return { agentId: agent.id, fired: [], skipped: [], message: null, messageSource: null, action: "none" };
+    return { agentId: agent.id, fired: [], skipped: [], marketUnavailable: true, message: null, messageSource: null, action: "none" };
   }
   const result = evaluateTriggers(agent, snapshot, now);
   const watchFired = result.fired.filter(isWatchTrigger);

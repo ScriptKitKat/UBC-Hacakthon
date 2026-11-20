@@ -8,6 +8,7 @@ import { MarketCard } from "../_market-card/market-card";
 import { watchlistCardModel } from "../_market-card/model";
 import { useViewMode } from "../_research/use-view-mode";
 import { deleteAgent, loadAgents, runAgent, saveAgent } from "../_shell/api";
+import { agentRunResultText } from "./agent-run-result";
 import styles from "./agents.module.css";
 
 const MODELS: readonly { value: AgentRecordView["model"]; label: string }[] = [
@@ -186,13 +187,8 @@ function AgentEditor({
       const tick = report?.ticks.find((item) => item.agentId === agent.id);
       if (tick === undefined) {
         setRunResult("The agent run could not be completed.");
-      } else if (tick.fired.length > 0) {
-        setRunResult(`Fired: ${tick.fired.map((trigger) => TRIGGER_LABELS[trigger]).join(", ")}`);
       } else {
-        const reasons = [...new Set(tick.skipped.map((item) => item.reason))];
-        setRunResult(reasons.length > 0
-          ? `Nothing fired — ${reasons.join("; ")}`
-          : "No watched condition is true right now");
+        setRunResult(agentRunResultText(tick, tick.fired.map((trigger) => TRIGGER_LABELS[trigger])));
       }
     } catch {
       setRunResult("The agent run could not be completed.");

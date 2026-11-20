@@ -4,7 +4,7 @@ import { createMemoryHistory } from "@/features/history";
 import { fail, ok } from "@/features/markets";
 import type { GeminiMarketsClient, MarketContract, MarketEvent } from "@/features/markets";
 import { createMemoryFileSystem } from "@/features/storage";
-import { instrumentSymbol } from "@/shared";
+import { agentCycleReportSchema, instrumentSymbol } from "@/shared";
 import type { DecisionLogEntry, DeepDiveResult } from "@/shared";
 import type { DeskBudget } from "./budget";
 import { runAgentCycle, runAgentTick } from "./runner";
@@ -84,6 +84,16 @@ describe("runAgentTick", () => {
     expect(tick.message).toContain("20 points");
     expect(proposeTrade).not.toHaveBeenCalled();
     expect((await store.get("agent-1"))?.activity.map((item) => item.kind)).toEqual(["message"]);
+  });
+
+  it("reports when market data could not be loaded", async () => {
+    const { agent, deps } = await setup({ yesNow: 60, yesBefore: 40 });
+    vi.spyOn(deps.markets, "getEvent").mockResolvedValue(fail({ kind: "network" }));
+
+    const tick = await runAgentTick(deps, agent, DESK, NOW);
+
+    expect(tick).toMatchObject({ fired: [], skipped: [], marketUnavailable: true, action: "none" });
+    expect(agentCycleReportSchema.parse({ ran: 1, ticks: [tick] }).ticks[0]?.marketUnavailable).toBe(true);
   });
 
   it("suggests the side the price moved toward and always asks for approval", async () => {
@@ -166,7 +176,7 @@ describe("runAgentCycle", () => {
     });
     const serializedDeps: AgentRunnerDeps = { ...deps, now: () => NOW };
     const trade = deferred<DecisionLogEntry>();
-    const tradeStarted = deferred<void>();
+    const tradeStarted = deferred<undefined>();
     proposeTrade.mockImplementation(() => {
       tradeStarted.resolve(undefined);
       return trade.promise;
