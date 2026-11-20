@@ -32,6 +32,10 @@ function formatDollars(cents: number): string {
   return `$${(Math.floor(cents) / 100).toFixed(2)}`;
 }
 
+function gainText(cents: number): string {
+  return cents < 0 ? `−${formatDollars(-cents)}` : `+${formatDollars(cents)}`;
+}
+
 function problemText(payout: PayoutResult | undefined, side: Side): string | null {
   if (payout === undefined || payout.kind === "quote") return null;
   if (payout.kind === "no-price") return `Gemini has no live ${side === "yes" ? "Yes" : "No"} price right now`;
@@ -120,11 +124,11 @@ export function TradeCard({ view }: { readonly view: ResearchView }) {
         <dl className={styles.results} aria-live="polite">
           <div className={styles.result} data-tone="win">
             <dt>If {sideLabel} happens</dt>
-            <dd>You get {formatDollars(payout.payoutCents)} <span>(+{formatDollars(payout.profitCents)})</span></dd>
+            <dd>You get {formatDollars(payout.payoutCents)} <span>({gainText(payout.payoutCents - payout.stakeCents)})</span></dd>
           </div>
           <div className={styles.result} data-tone="lose">
             <dt>If it doesn&apos;t</dt>
-            <dd>You lose {formatDollars(payout.costCents)}</dd>
+            <dd>You lose {formatDollars(payout.stakeCents)}</dd>
           </div>
         </dl>
       ) : null}
@@ -134,7 +138,7 @@ export function TradeCard({ view }: { readonly view: ResearchView }) {
       {reviewing && payout?.kind === "quote" ? (
         <div className={styles.review}>
           <p className={styles.reviewText}>
-            You&apos;re putting {formatDollars(payout.costCents)} on {sideLabel} at {String(Math.round(payout.priceCents))}¢ a share. You need {sideLabel} to be more likely than {String(Math.round(payout.breakEvenPercent))}% for this to pay off over time.
+            You&apos;re putting {formatDollars(payout.stakeCents)} on {sideLabel} at {String(Math.round(payout.priceCents))}¢ a share. You need {sideLabel} to be more likely than {String(Math.round((payout.stakeCents / payout.payoutCents) * 100))}% for this to pay off over time.
           </p>
           <div className={styles.reviewActions}>
             <button type="button" className={styles.back} disabled={busy} onClick={() => { setReviewing(false); }}>Back</button>
