@@ -247,6 +247,7 @@ export function AgentSetup(props: SetupProps) {
                     type="number"
                     min={0}
                     max={100}
+                    step="any"
                     value={draft.triggers.oddsCrossLevel ?? 50}
                     disabled={busy}
                     aria-label="Odds cross level"
