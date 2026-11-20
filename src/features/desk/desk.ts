@@ -328,11 +328,14 @@ export function createDesk(deps: DeskDeps): Desk {
     return market.event?.contracts.map((contract) => feedMarketView({ ...market, contract })) ?? [feedMarketView(market)];
   }
 
-  function record(entry: Omit<DecisionLogEntry, "entryId" | "at">): DecisionLogEntry {
-    const complete = { ...entry, entryId: idGen(), at: now().toISOString() };
+  function appendRecord(complete: DecisionLogEntry): DecisionLogEntry {
     log = [complete, ...log].slice(0, LOG_LIMIT);
     saveLog(log).catch(() => undefined);
     return complete;
+  }
+
+  function record(entry: Omit<DecisionLogEntry, "entryId" | "at">): DecisionLogEntry {
+    return appendRecord({ ...entry, entryId: idGen(), at: now().toISOString() });
   }
 
   function tradeFields(intent: TradeIntent) {
@@ -798,23 +801,31 @@ export function createDesk(deps: DeskDeps): Desk {
 
   async function rejectPending(intentId: string, approverId: string): Promise<ConfirmResult> {
     if (!policy.senderAllowlist.has(approverId)) return { ok: false, error: "unauthorized-approver" };
+    const active = confirming.get(intentId);
+    if (active) return active;
     const feed = feedOrders.findIntent(intentId);
     if (feed) {
       if (feed.entry.kind !== "needs-approval") return { ok: true, entry: existingFeedResult(feed) };
-      return {
-        ok: true,
-        entry: await saveFeedResult(feed, record({
-          intentId: feed.entry.intentId,
-          symbol: feed.entry.symbol,
-          outcome: feed.entry.outcome,
-          notionalCents: feed.entry.notionalCents,
-          senderId: feed.entry.senderId,
-          source: feed.entry.source,
-          kind: "refuse",
-          code: "rejected",
-          spokenReason: "You rejected this trade.",
-        })),
+      const rejected: typeof feed.entry = {
+        intentId: feed.entry.intentId,
+        symbol: feed.entry.symbol,
+        outcome: feed.entry.outcome,
+        notionalCents: feed.entry.notionalCents,
+        senderId: feed.entry.senderId,
+        source: feed.entry.source,
+        kind: "refuse",
+        code: "rejected",
+        spokenReason: "You rejected this trade.",
+        entryId: idGen(),
+        at: now().toISOString(),
       };
+      if (!await feedOrders.update(feed, { ...feed, entry: rejected })) {
+        const latest = feedOrders.findIntent(intentId);
+        return latest === undefined
+          ? { ok: false, error: "unknown-intent" }
+          : { ok: true, entry: existingFeedResult(latest) };
+      }
+      return { ok: true, entry: appendRecord(rejected) };
     }
     const waiting = pending.get(intentId);
     if (!waiting) return { ok: false, error: "unknown-intent" };

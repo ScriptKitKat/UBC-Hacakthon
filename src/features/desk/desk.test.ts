@@ -11,7 +11,7 @@ import type { LedgerView } from "@/shared";
 import { createDesk } from "./desk";
 import type { DeskDeps } from "./desk";
 import type { StoredMatch } from "./match-store";
-import { openFeedOrders } from "./feed-orders";
+import { createFeedOrders, openFeedOrders } from "./feed-orders";
 import { startReconciliation } from "./reconciliation";
 import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
 import { createMemoryFileSystem } from "@/features/storage";
@@ -60,6 +60,12 @@ const receipt = (signature: string) => ({ signature, explorerUrl: `https://explo
 const configuredLedger: LedgerView = {
   configured: true, cluster: "localnet", authority: "Authority1", mint: "Mint1", recipient: "Recipient1",
 };
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
 
 function setup(options: { ledger?: UsdcLedger; ledgerView?: LedgerView; markets?: ReturnType<typeof fakeMarkets>; killSwitch?: boolean; extra?: Partial<DeskDeps> } = {}) {
   let counter = 0;
@@ -481,6 +487,56 @@ describe("desk feed", () => {
     });
     expect(await desk.feedOrder("reject-order")).toMatchObject({ kind: "refuse", code: "rejected" });
     expect((await desk.getSnapshot()).pending).toEqual([]);
+  });
+
+  it("lets an in-flight feed approval win over rejection", async () => {
+    const updateStarted = deferred<undefined>();
+    const allowUpdate = deferred<undefined>();
+    const paymentStarted = deferred<undefined>();
+    const allowPayment = deferred<Awaited<ReturnType<UsdcLedger["debit"]>>>();
+    let holdUpdate = false;
+    const feedOrders = createFeedOrders([], async () => {
+      if (holdUpdate) {
+        holdUpdate = false;
+        updateStarted.resolve(undefined);
+        await allowUpdate.promise;
+      }
+    });
+    const debit = vi.fn<UsdcLedger["debit"]>(() => {
+      paymentStarted.resolve(undefined);
+      return allowPayment.promise;
+    });
+    const ledger: UsdcLedger = {
+      debit,
+      signPayment: vi.fn<UsdcLedger["signPayment"]>(),
+      checkSignature: vi.fn<UsdcLedger["checkSignature"]>(),
+      balance: vi.fn<UsdcLedger["balance"]>(),
+    };
+    const { desk } = setup({ ledger, extra: { feedOrders } });
+    await desk.matchPost(post);
+    const waiting = await desk.buyFromFeed({
+      clientOrderId: "in-flight-confirm",
+      instrumentSymbol: "GEMI-FED261211-MAINTAIN",
+      outcome: "yes",
+      notionalCents: 500,
+    });
+    holdUpdate = true;
+    const confirmation = desk.confirmPending(waiting.intentId, "priscilla");
+    await updateStarted.promise;
+    const rejection = desk.rejectPending(waiting.intentId, "priscilla");
+    expect((await desk.getSnapshot()).log.some((entry) => entry.intentId === waiting.intentId && entry.code === "rejected")).toBe(false);
+
+    allowUpdate.resolve(undefined);
+    await paymentStarted.promise;
+    expect((await desk.getSnapshot()).log.some((entry) => entry.intentId === waiting.intentId && entry.code === "rejected")).toBe(false);
+
+    allowPayment.resolve({ ok: true, value: receipt("confirm-wins") });
+    const confirmed = await confirmation;
+    expect(confirmed).toMatchObject({ ok: true, entry: { kind: "approve", signature: "confirm-wins" } });
+    if (!confirmed.ok) throw new Error("Expected the feed approval to succeed.");
+    expect(await rejection).toEqual(confirmed);
+    expect(await desk.feedOrder("in-flight-confirm")).toEqual(confirmed.entry);
+    expect((await desk.getSnapshot()).log.some((entry) => entry.intentId === waiting.intentId && entry.code === "rejected")).toBe(false);
   });
 
   it("does not change a feed order that no longer needs approval", async () => {
