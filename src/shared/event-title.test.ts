@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetDisplayName, formatDeadline, marketSearchTerm, formatEndsOn, formatMarketWhen, friendlyEventTitle, relativePriceDay } from "./event-title";
+import { assetDisplayName, formatDeadline, marketSearchTerm, outcomeSides, formatEndsOn, formatMarketWhen, friendlyEventTitle, relativePriceDay } from "./event-title";
 
 const TZ = "America/Chicago";
 const now = new Date("2026-11-19T16:00:00.000Z");
@@ -62,5 +62,18 @@ describe("market search terms", () => {
     expect(marketSearchTerm("btc")).toBe("btc");
     expect(marketSearchTerm("near")).toBe("near");
     expect(marketSearchTerm("Fed rate cut")).toBe("Fed rate cut");
+  });
+});
+
+describe("outcome sides", () => {
+  it("names the winning team on each side of a matchup", () => {
+    expect(outcomeSides("Kansas vs Houston", "Houston")).toEqual({ yes: "Houston wins", no: "Kansas wins" });
+    expect(outcomeSides("Kansas vs Houston", "kansas")).toEqual({ yes: "Kansas wins", no: "Houston wins" });
+    expect(outcomeSides("Lakers @ Celtics", "Celtics")).toEqual({ yes: "Celtics wins", no: "Lakers wins" });
+  });
+
+  it("keeps Yes and No when the contract is not one of the teams", () => {
+    expect(outcomeSides("VCU vs Santa Clara: Total Points", "More than 159.5 points")).toEqual({ yes: "Yes", no: "No" });
+    expect(outcomeSides("Bitcoin price today at 12am EST?", "$61,400 or above")).toEqual({ yes: "Yes", no: "No" });
   });
 });

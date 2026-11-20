@@ -106,7 +106,8 @@ export type {
 } from "./catalog";
 
 
-export { friendlyEventTitle, formatDeadline, formatEndsOn, formatMarketWhen, assetDisplayName, marketSearchTerm, relativePriceDay } from "./event-title";
+export { friendlyEventTitle, formatDeadline, formatEndsOn, formatMarketWhen, assetDisplayName, marketSearchTerm, outcomeSides, relativePriceDay } from "./event-title";
+export type { OutcomeSides } from "./event-title";
 export { buildSparkline, MIN_SPARKLINE_POINTS } from "./sparkline";
 export type { Sparkline, Trend } from "./sparkline";
 export { changeTrend, contrastInk, formatBudgetCents, formatChangePercent, formatPayoutFromAsk, formatPercent, formatResetLabel, formatSignedPercent, formatVolumeUsd, isXUrl, nextUtcMidnight, pointDelta, sparklinePointDelta } from "./card-format";
