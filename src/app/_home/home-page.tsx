@@ -192,12 +192,12 @@ export function HomePage({ initialView }: { readonly initialView?: HomeView } = 
         {error === null && view === undefined ? (
           <>
             <p className={styles.empty}>Loading live markets…</p>
-            <MarketCardSkeletonGrid count={6} />
+            <MarketCardSkeletonGrid count={6} layout="six" />
           </>
         ) : null}
         {error === null && view !== undefined && markets.length === 0 ? <p className={styles.empty}>No live markets right now.</p> : null}
         {markets.length > 0 ? (
-          <MarketCardGrid>
+          <MarketCardGrid layout="six">
             {markets.map((card) => (
               <MarketCard
                 key={card.instrumentSymbol}
