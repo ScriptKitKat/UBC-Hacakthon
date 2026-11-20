@@ -1,23 +1,18 @@
 .page { display: flex; flex-direction: column; min-width: 0; }
-.header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 24px 32px 0; }
-.title { margin: 0 8px 0 0; font-size: 24px; font-weight: 600; letter-spacing: -0.03em; }
-.search { flex: 0 1 380px; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border: 1px solid #262626; border-radius: 20px; background: #111111; }
-.search svg { flex: 0 0 auto; color: #8a8a93; }
-.search input { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; color: #ededed; font: inherit; }
+.search { flex: 0 1 340px; min-width: 240px; display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 20px; border-radius: 999px; background: #ffffff; color: #1d293d; box-shadow: 0 10px 24px rgba(10, 60, 120, 0.22); }
+.search svg { flex: 0 0 auto; color: #62748e; }
+.search input { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; color: #1d293d; font: inherit; }
 .hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.tabsRow { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 32px 0; border-bottom: 1px solid #1f1f1f; }
-.tabs { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; }
-.tab { height: 40px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: #a1a1aa; font-size: 14px; }
-.tab[aria-selected="true"] { color: #ededed; font-weight: 500; border-bottom-color: #ededed; }
-.tabLive { color: #ff8a8a; }
-.tabLive[aria-selected="true"] { color: #ff8a8a; border-bottom-color: #ff8a8a; }
-.liveDot { display: inline-block; width: 7px; height: 7px; border-radius: 4px; background: #ff6b6b; margin-right: 6px; vertical-align: 1px; }
-.sort { height: 36px; margin-bottom: 8px; display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; border: 1px solid #262626; border-radius: 18px; background: #111111; color: #d4d4d8; font-size: 13px; }
+.tabsRow { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 20px 4px 0; }
+.tabs { flex: 1; display: flex; flex-wrap: wrap; gap: 6px; }
+.tab { height: 34px; padding: 0 14px; border: 0; border-radius: 999px; background: #ffffff; color: #314158; font-size: 13px; font-weight: 600; box-shadow: 0 1px 2px rgba(29, 41, 61, 0.06); }
+.tab[aria-selected="true"] { background: #1d293d; color: #ffffff; }
+.liveDot { display: inline-block; width: 7px; height: 7px; border-radius: 4px; background: #d9363a; margin-right: 6px; vertical-align: 1px; }
+.sort { height: 34px; display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; border-radius: 999px; background: #ffffff; color: #314158; font-size: 13px; font-weight: 600; box-shadow: 0 1px 2px rgba(29, 41, 61, 0.06); }
 .sort select { border: 0; background: transparent; color: inherit; font: inherit; }
-.body { padding: 20px 32px 48px; display: flex; flex-direction: column; gap: 16px; }
-.explainer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #262626; border-radius: 12px; background: #111111; font-size: 13px; color: #a1a1aa; }
-.explainerPct { font-family: var(--mono); color: #ededed; border: 1px solid #3a3a3a; border-radius: 14px; padding: 2px 10px; }
-.status { color: #a1a1aa; text-align: center; padding: 24px 8px; }
-.moreBtn { height: 44px; padding: 0 20px; border: 1px solid #2a2a2a; border-radius: 10px; background: #111111; color: #ededed; font-size: 14px; font-weight: 500; align-self: center; }
+.body { padding: 16px 0 0; display: flex; flex-direction: column; gap: 16px; }
+.explainer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 20px; background: #ffffff; font-size: 14px; color: #314158; box-shadow: 0 4px 14px rgba(29, 41, 61, 0.05); }
+.explainerPct { color: #1d293d; font-weight: 700; background: var(--lime); border-radius: 999px; padding: 3px 11px; }
+.status { color: #62748e; text-align: center; padding: 24px 8px; }
+.moreBtn { height: 44px; padding: 0 22px; border: 0; border-radius: 999px; background: #ffffff; color: #314158; font-size: 14px; font-weight: 700; box-shadow: 0 1px 2px rgba(29, 41, 61, 0.06); }
 .moreWrap { display: flex; justify-content: center; padding-top: 8px; }
-

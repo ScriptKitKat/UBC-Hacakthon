@@ -25,6 +25,7 @@ import { formatAxisTime } from "./format";
 import { DEFAULT_BOX, buildChartGeometry } from "./chart-geometry";
 import { loadResearchBriefs, purchaseDeepDive } from "./api";
 import type { StoredBrief } from "./api";
+import { EstimateCard } from "./estimate-card";
 import { TradeCard } from "./trade-card";
 import styles from "./beginner.module.css";
 
@@ -89,10 +90,12 @@ export function BeginnerView({
       {banners.map((message) => (
         <p key={message} className={styles.warning} role="status">{message}</p>
       ))}
+      <BeginnerGuide yesCents={view.market.prices.buyYesCents} />
       <div className={styles.summary}>
         {sentence !== null ? <p className={styles.sentence}>{sentence}</p> : <span />}
         <div className={styles.odds}>
           <div className={styles.yes}>{formatPercent(view.market.prices.buyYesCents)}</div>
+          <div className={styles.oddsLabel}>chance of Yes</div>
           {change !== null ? (
             <div className={styles.change} data-trend={change > 0 ? "up" : change < 0 ? "down" : "flat"}>
               {signedPoints(change)} today
@@ -114,8 +117,9 @@ export function BeginnerView({
             }}
           />
           {moves.length > 0 ? (
-            <section className={styles.section} aria-label="Why it moved">
-              <h2 className={styles.heading}>Why it moved</h2>
+            <section className={styles.section} aria-label="What happened around these moves">
+              <h2 className={styles.heading}>What happened around these moves</h2>
+              <p className={styles.hint}>These posts appeared near each jump. They may not be the cause.</p>
               <ul className={styles.moves}>
                 {[...moves].reverse().map((move, reversed) => {
                   const number = moves.length - reversed;
@@ -142,41 +146,85 @@ export function BeginnerView({
             </section>
           ) : null}
           <ResolutionCard resolution={resolution} rulesText={view.market.rulesText} />
-          {drivers !== null ? (
-            <div className={styles.drivers}>
-              <section className={styles.section} aria-label="What could push it up">
-                <h2 className={styles.heading}>What could push it up</h2>
+          {drivers !== null && (drivers.up.length > 0 || drivers.down.length > 0) ? (
+            <section className={styles.section} aria-label="Form your own view">
+              <h2 className={styles.heading}>Form your own view</h2>
+              <div className={styles.drivers}>
                 {drivers.up.length > 0 ? (
-                  <ul className={styles.driverList}>{drivers.up.map((item) => <li key={item}>{item}</li>)}</ul>
-                ) : <p className={styles.empty}>No upward factors could be read from the official rules.</p>}
-              </section>
-              <section className={styles.section} aria-label="What could pull it down">
-                <h2 className={styles.heading}>What could pull it down</h2>
+                  <div className={styles.driver} data-side="yes">
+                    <h3 className={styles.driverTitle}>The case for Yes</h3>
+                    <ul className={styles.driverList}>{drivers.up.map((item) => <li key={item}>{item}</li>)}</ul>
+                  </div>
+                ) : null}
                 {drivers.down.length > 0 ? (
-                  <ul className={styles.driverList}>{drivers.down.map((item) => <li key={item}>{item}</li>)}</ul>
-                ) : <p className={styles.empty}>No downward factors could be read from the official rules.</p>}
-              </section>
-            </div>
+                  <div className={styles.driver} data-side="no">
+                    <h3 className={styles.driverTitle}>The case for No</h3>
+                    <ul className={styles.driverList}>{drivers.down.map((item) => <li key={item}>{item}</li>)}</ul>
+                  </div>
+                ) : null}
+              </div>
+            </section>
           ) : null}
           <Chatter posts={view.matchedPosts} nowMs={Number.isFinite(nowMs) ? nowMs : Date.now()} />
           <Related markets={view.related} />
         </div>
-        <aside className={styles.rail} aria-label="Trade and research">
-          <TradeCard view={view} />
+        <aside className={styles.rail} aria-label="Research and prediction">
           {trust.length > 0 ? (
-            <section className={styles.card} aria-label="Can you trust these odds">
-              <h2 className={styles.heading}>Can you trust these odds?</h2>
+            <section className={styles.card} aria-label="Before you predict">
+              <h2 className={styles.heading}>Before you predict</h2>
               <div className={styles.trustList}>
                 {trust.map((line) => (
                   <p key={line.kind} className={styles.trustLine} data-tone={line.tone}>{line.text}</p>
                 ))}
               </div>
+              <p className={styles.hint}>Only bet what you can afford to lose. Any bet can go to zero.</p>
             </section>
           ) : null}
+          <EstimateCard yesCents={view.market.prices.buyYesCents} noCents={view.market.prices.buyNoCents} />
+          <TradeCard view={view} />
           <BriefCard symbol={view.symbol} yesCents={view.market.prices.buyYesCents} />
         </aside>
       </div>
     </div>
+  );
+}
+
+function BeginnerGuide({ yesCents }: { readonly yesCents: number | null }) {
+  const price = yesCents === null ? null : Math.round(yesCents);
+  return (
+    <details className={styles.guide} open>
+      <summary className={styles.guideHead}>
+        <span className={styles.guideTitle}>New here?</span>
+        <span className={styles.guideTag}>30-second guide</span>
+        <span className={styles.guideToggle} aria-hidden="true" />
+      </summary>
+      <ol className={styles.steps}>
+        <li className={styles.step}>
+          <strong>Shares pay $1 or $0</strong>
+          Buy Yes or No. Each share pays $1 if you&apos;re right and $0 if you&apos;re wrong.
+        </li>
+        <li className={styles.step}>
+          <strong>The price is the chance</strong>
+          {price === null
+            ? "A Yes price of 62¢ means the crowd thinks it's about 62% likely."
+            : `Yes costs ${String(price)}¢ here because the crowd thinks it's about ${String(price)}% likely.`}
+        </li>
+        <li className={styles.step}>
+          <strong>You win when the crowd is wrong</strong>
+          A bet is only good if you think the real chance is higher than the price you pay.
+        </li>
+      </ol>
+      <div className={styles.examples}>
+        <p className={styles.example} data-tone="good">
+          <span><strong>Good bet: priced too low</strong>You pay 55¢, the real chance is 70%.</span>
+          <em>+15¢ a share</em>
+        </p>
+        <p className={styles.example} data-tone="bad">
+          <span><strong>Bad bet: priced too high</strong>You pay 90¢, the real chance is 85%.</span>
+          <em>−5¢ a share</em>
+        </p>
+      </div>
+    </details>
   );
 }
 
@@ -269,8 +317,9 @@ function ResolutionCard({ resolution, rulesText }: { readonly resolution: Return
   const [open, setOpen] = useState(false);
   return (
     <section className={styles.section} aria-label="How this market resolves">
-      <h2 className={styles.heading}>How this resolves</h2>
-      <div className={styles.card}>
+      <h2 className={styles.heading}>What you&apos;re actually betting on</h2>
+      <p className={styles.hint}>The rules decide who gets paid, not the headline.</p>
+      <div className={styles.rules}>
         {resolution.yesIf !== null ? (
           <div>
             <p className={styles.factLabel}>YES if</p>
@@ -309,6 +358,7 @@ function Chatter({ posts, nowMs }: { readonly posts: ResearchView["matchedPosts"
       <div className={styles.chatterHead}>
         <h2 className={styles.heading}>Chatter on X</h2>
       </div>
+      <p className={styles.hint}>Posts are opinions. They can move the price before anything real happens.</p>
       {posts.length === 0 ? (
         <p className={styles.empty}>No matched posts from the X feed yet for this market.</p>
       ) : (
@@ -395,7 +445,7 @@ function BriefCard({ symbol, yesCents }: { readonly symbol: string; readonly yes
         {stale?.needsRefresh === true ? <span className={styles.badgeNote}>Needs refresh</span> : null}
       </div>
       {current === null ? (
-        <p className={styles.briefSummary}>No brief purchased for this market yet. The desk's agent can buy one for $0.05 over x402.</p>
+        <p className={styles.briefSummary}>A brief is a research report on this market: what could push it up or down, and what to watch. It costs $0.05.</p>
       ) : (
         <>
           {stale !== null ? <p className={styles.briefSummary}>{stale.summary}</p> : null}

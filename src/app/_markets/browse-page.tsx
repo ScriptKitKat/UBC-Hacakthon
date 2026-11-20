@@ -6,6 +6,7 @@ import { uniqueByKey } from "@/shared";
 import { useViewMode } from "../_research/use-view-mode";
 import { usePolling } from "../_desk/use-polling";
 import { loadBrowse, loadSpots } from "../_shell/api";
+import { PageHero } from "../_shell/page-hero";
 import { MarketCard, MarketCardGrid, MarketCardSkeletonGrid } from "../_market-card/market-card";
 import { browseCardModel } from "../_market-card/model";
 import { useWatchlist } from "../_watchlist/use-watchlist";
@@ -136,14 +137,13 @@ export function BrowsePage({ initialPage, initialSearch = "" }: { readonly initi
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <h1 className={styles.title}>Markets</h1>
+      <PageHero title="Markets" lead="Pick one to research. You don't have to bet.">
         <form className={styles.search} onSubmit={(event) => { event.preventDefault(); resetList({ search: search.trim() }); }}>
           <label htmlFor="msearch" className={styles.hidden}>Search markets</label>
           <SearchIcon />
           <input id="msearch" value={search} placeholder="Search markets" onChange={(event) => { setSearch(event.target.value); }} />
         </form>
-      </header>
+      </PageHero>
 
       <div className={styles.tabsRow}>
         <div className={styles.tabs} role="tablist" aria-label="Categories">
@@ -152,7 +152,7 @@ export function BrowsePage({ initialPage, initialSearch = "" }: { readonly initi
               key={tab.id}
               type="button"
               role="tab"
-              className={tab.live ? [styles.tab, styles.tabLive].join(" ") : (styles.tab ?? "")}
+              className={styles.tab}
               aria-selected={category === tab.id}
               onClick={() => { resetList({ category: tab.id }); }}
             >
@@ -176,7 +176,7 @@ export function BrowsePage({ initialPage, initialSearch = "" }: { readonly initi
         {beginner ? (
           <div className={styles.explainer}>
             <span className={styles.explainerPct}>62%</span>
-            <span>means the crowd thinks it&apos;s 62% likely. Each share costs 62¢ and pays $1 if it happens. Tap a market to research and trade.</span>
+            <span>means the crowd thinks it&apos;s 62% likely. Each share costs 62¢ and pays $1 if it happens. Tap a market to research it.</span>
           </div>
         ) : null}
         {error ? <p className={styles.status} role="alert">{error}</p> : null}

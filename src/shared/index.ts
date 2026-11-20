@@ -16,6 +16,8 @@ export type {
 export type { XBotStatusView, XMessageRole, XMessageView, XOutcomeView, XThreadView } from "./xbot";
 export type { FeedMarketView, FeedMatch, FeedMatchedBy, FeedQuote, PricePoint } from "./feed";
 export { payoutFor } from "./payout";
+export { edgeFor } from "./edge";
+export type { EdgeResult, EdgeSide } from "./edge";
 export { parseDollarsToCents } from "./money";
 export { MAX_FEED_BUY_CENTS } from "./feed";
 export type { PayoutQuote, PayoutResult } from "./payout";

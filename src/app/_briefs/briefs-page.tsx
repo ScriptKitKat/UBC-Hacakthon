@@ -16,6 +16,7 @@ import { purchaseDeepDive } from "../_research/api";
 import { formatDollarsFromCents } from "../_research/format";
 import { loadBriefLibrary } from "./api";
 import type { BriefLibraryResult } from "./api";
+import { PageHero } from "../_shell/page-hero";
 import styles from "./briefs.module.css";
 
 const POLL_MS = 15_000;
@@ -117,13 +118,10 @@ export function BriefsPage() {
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <div className={styles.heading}>
-          <h1 className={styles.title}>Briefs</h1>
-          <p className={styles.stats}>
-            {result?.kind === "ready" ? statsLine(result.view.stats) : "Purchased deep-dive reports"}
-          </p>
-        </div>
+      <PageHero
+        title="Briefs"
+        lead={result?.kind === "ready" ? statsLine(result.view.stats) : "Research reports you can read before deciding on a market"}
+      >
         <input
           className={styles.search}
           type="search"
@@ -132,7 +130,7 @@ export function BriefsPage() {
           aria-label="Search your briefs"
           onChange={(event) => { setQuery(event.target.value); }}
         />
-      </header>
+      </PageHero>
 
       <div className={styles.filters} role="toolbar" aria-label="Filter briefs">
         {FILTERS.map((entry) => (
@@ -155,7 +153,8 @@ export function BriefsPage() {
       {result?.kind === "ready" && items.length === 0 ? (
         <div className={styles.emptyCard}>
           <h2>No briefs yet</h2>
-          <p>Buy a $0.05 deep-dive on a market page. Purchased briefs and their Solana receipts will show up here.</p>
+          <p>A brief is a research report on one market: what could push it up or down, and what to watch. Each one costs $0.05 from a market page, and is saved here with its Solana receipt.</p>
+          <Link className={styles.emptyLink} href="/markets">Find a market to research</Link>
         </div>
       ) : null}
 

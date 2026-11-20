@@ -5,7 +5,8 @@ import { loadSnapshot, postAction } from "../_desk/api";
 import type { ActionResult, SnapshotResult } from "../_desk/api";
 import { GuardrailPanel } from "../_desk/guardrail-panel";
 import { usePolling } from "../_desk/use-polling";
-import styles from "../_home/home.module.css";
+import { PageHero } from "../_shell/page-hero";
+import styles from "./settings.module.css";
 
 const POLL_MS = 8000;
 
@@ -34,20 +35,18 @@ export function SettingsPage() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.pageTitle}>Settings</h1>
-      <p className={styles.pageLead}>Guardrails, daily spend limit, and the trading kill switch from the live desk policy.</p>
+      <PageHero title="Settings" lead="Spending limits and the switch that stops all trading." />
       {actionError ? <p className={styles.error} role="alert">{actionError}</p> : null}
       {result === null ? <p className={styles.empty}>Loading policy…</p> : null}
       {result?.kind === "not-configured" ? (
-        <div className={styles.settingsBody}>
-          <p className={styles.error}>The desk is not configured.</p>
+        <div className={styles.notice}>
+          <p className={styles.noticeTitle}>The desk is not set up yet.</p>
           <ul>{result.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
         </div>
       ) : null}
       {result?.kind === "error" ? <p className={styles.error} role="alert">{result.message}</p> : null}
       {result?.kind === "ready" ? (
-        <div className={styles.settingsBody}>
-          <GuardrailPanel
+        <GuardrailPanel
             policy={result.snapshot.policy}
             ledger={result.snapshot.ledger}
             busy={busy}
@@ -55,7 +54,6 @@ export function SettingsPage() {
               run(() => postAction("kill-switch", { on }));
             }}
           />
-        </div>
       ) : null}
     </div>
   );

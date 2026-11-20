@@ -124,23 +124,23 @@ export function CandleChart({
         <>
           <svg className={styles.chart} role="img" aria-label="Candlestick chart of YES price" viewBox={`0 0 ${String(WIDTH)} ${String(HEIGHT)}`} preserveAspectRatio="none">
             {bbPath !== "" ? <path d={bbPath} fill="rgba(161,161,170,0.12)" stroke="none" /> : null}
-            {showBands ? <path d={line(chart.bands.map((band) => band.upper), priceY)} fill="none" stroke="#8a8a93" strokeWidth="1" opacity="0.6" /> : null}
-            {showBands ? <path d={line(chart.bands.map((band) => band.lower), priceY)} fill="none" stroke="#8a8a93" strokeWidth="1" opacity="0.6" /> : null}
-            {showMa20 ? <path d={line(chart.bands.map((band) => band.ma20), priceY)} fill="none" stroke="#f5a524" strokeWidth="1.2" /> : null}
-            {showMa7 ? <path d={line(chart.bands.map((band) => band.ma7), priceY)} fill="none" stroke="#a1a1aa" strokeWidth="1.2" /> : null}
-            {holdLine.length > 1 ? <path d={holdLine.join(" ")} fill="none" stroke="#6b6b74" strokeWidth="1.2" /> : null}
-            <path d={wicks.join(" ")} stroke="#a1a1aa" strokeWidth="1" />
-            <path d={upBodies.join(" ")} fill="#3ddc97" />
-            <path d={downBodies.join(" ")} fill="#ff9a7a" />
-            <path d={upVol.join(" ")} fill="#3ddc97" opacity="0.45" />
-            <path d={downVol.join(" ")} fill="#ff9a7a" opacity="0.45" />
-            {showRsi ? <path d={line(chart.bands.map((band) => band.rsi), rsiY)} fill="none" stroke="#a1a1aa" strokeWidth="1.2" /> : null}
-            {showRsi ? <line x1="0" x2={String(WIDTH)} y1={String(rsiY(70))} y2={String(rsiY(70))} stroke="#262626" strokeWidth="1" /> : null}
-            {showRsi ? <line x1="0" x2={String(WIDTH)} y1={String(rsiY(30))} y2={String(rsiY(30))} stroke="#262626" strokeWidth="1" /> : null}
+            {showBands ? <path d={line(chart.bands.map((band) => band.upper), priceY)} fill="none" stroke="#62748e" strokeWidth="1" opacity="0.6" /> : null}
+            {showBands ? <path d={line(chart.bands.map((band) => band.lower), priceY)} fill="none" stroke="#62748e" strokeWidth="1" opacity="0.6" /> : null}
+            {showMa20 ? <path d={line(chart.bands.map((band) => band.ma20), priceY)} fill="none" stroke="#b77400" strokeWidth="1.2" /> : null}
+            {showMa7 ? <path d={line(chart.bands.map((band) => band.ma7), priceY)} fill="none" stroke="#62748e" strokeWidth="1.2" /> : null}
+            {holdLine.length > 1 ? <path d={holdLine.join(" ")} fill="none" stroke="#62748e" strokeWidth="1.2" /> : null}
+            <path d={wicks.join(" ")} stroke="#62748e" strokeWidth="1" />
+            <path d={upBodies.join(" ")} fill="#1e8a4c" />
+            <path d={downBodies.join(" ")} fill="#d9363a" />
+            <path d={upVol.join(" ")} fill="#1e8a4c" opacity="0.45" />
+            <path d={downVol.join(" ")} fill="#d9363a" opacity="0.45" />
+            {showRsi ? <path d={line(chart.bands.map((band) => band.rsi), rsiY)} fill="none" stroke="#62748e" strokeWidth="1.2" /> : null}
+            {showRsi ? <line x1="0" x2={String(WIDTH)} y1={String(rsiY(70))} y2={String(rsiY(70))} stroke="#e2e8f0" strokeWidth="1" /> : null}
+            {showRsi ? <line x1="0" x2={String(WIDTH)} y1={String(rsiY(30))} y2={String(rsiY(30))} stroke="#e2e8f0" strokeWidth="1" /> : null}
             {last !== null && lastY !== null ? (
               <>
-                <line x1="0" x2={String(WIDTH)} y1={String(lastY)} y2={String(lastY)} stroke="#262626" strokeDasharray="3 3" />
-                <text x={String(WIDTH - 4)} y={String(lastY - 6)} textAnchor="end" fill="#ededed" fontSize="11">{formatCents(last)}</text>
+                <line x1="0" x2={String(WIDTH)} y1={String(lastY)} y2={String(lastY)} stroke="#e2e8f0" strokeDasharray="3 3" />
+                <text x={String(WIDTH - 4)} y={String(lastY - 6)} textAnchor="end" fill="#1d293d" fontSize="11">{formatCents(last)}</text>
               </>
             ) : null}
           </svg>

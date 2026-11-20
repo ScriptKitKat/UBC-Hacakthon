@@ -7,6 +7,7 @@ import { usePolling } from "../_desk/use-polling";
 import { formatDollarsFromCents, formatPercent, formatPriceCents } from "../_research/format";
 import { downloadActivityCsv, loadPortfolio } from "./api";
 import type { PortfolioResult } from "./api";
+import { PageHero } from "../_shell/page-hero";
 import styles from "./positions.module.css";
 
 const POLL_INTERVAL_MS = 15_000;
@@ -76,15 +77,15 @@ function PnlChart({ view }: { readonly view: PortfolioView }) {
   const yTicks = [hi, 0, lo].filter((value, index, list) => list.indexOf(value) === index);
   return (
     <svg className={styles.chart} viewBox={`0 0 ${String(width)} ${String(height)}`} role="img" aria-label="Profit and loss over the selected range">
-      <line x1={String(left)} x2={String(width - right)} y1={String(yOf(0, lo, hi, top, height - bottom))} y2={String(yOf(0, lo, hi, top, height - bottom))} stroke="#262626" />
+      <line x1={String(left)} x2={String(width - right)} y1={String(yOf(0, lo, hi, top, height - bottom))} y2={String(yOf(0, lo, hi, top, height - bottom))} stroke="#e2e8f0" />
       {yTicks.map((value) => (
         <text key={value} className={styles.chartLabel} x={String(width - 4)} y={String(yOf(value, lo, hi, top, height - bottom) - 4)} textAnchor="end">
           {`${value >= 0 ? "+" : "−"}$${(Math.abs(value) / 100).toFixed(0)}`}
         </text>
       ))}
-      <path d={area} fill="rgba(237,237,237,0.06)" />
-      <path d={line("totalPnlCents")} fill="none" stroke="#ededed" strokeWidth="1.6" />
-      <path d={line("researchSpendCents")} fill="none" stroke="#f5a524" strokeWidth="1.4" strokeDasharray="4 3" />
+      <path d={area} fill="rgba(85,182,246,0.18)" />
+      <path d={line("totalPnlCents")} fill="none" stroke="#0789e0" strokeWidth="3" strokeLinecap="round" />
+      <path d={line("researchSpendCents")} fill="none" stroke="#b77400" strokeWidth="1.4" strokeDasharray="4 3" />
       {ticks.map((index) => {
         const point = series[index];
         return point === undefined ? null : (
@@ -113,7 +114,7 @@ function SpendChart({ view }: { readonly view: PortfolioView }) {
   const ticks = [0, Math.floor((days.length - 1) / 2), days.length - 1].filter((index, position, list) => days[index] !== undefined && list.indexOf(index) === position);
   return (
     <svg className={styles.chart} viewBox={`0 0 ${String(width)} ${String(height)}`} role="img" aria-label="Daily spend versus the desk cap">
-      <line x1={String(left)} x2={String(width - right)} y1={String(capY)} y2={String(capY)} stroke="#f5a524" strokeDasharray="4 3" />
+      <line x1={String(left)} x2={String(width - right)} y1={String(capY)} y2={String(capY)} stroke="#b77400" strokeDasharray="4 3" />
       {days.map((day, index) => {
         const x = left + slot * index + (slot - bar) / 2;
         const total = day.betsCents + day.briefsCents;
@@ -121,8 +122,8 @@ function SpendChart({ view }: { readonly view: PortfolioView }) {
         const briefsH = (day.briefsCents / peak) * (height - bottom - top);
         return (
           <g key={day.day}>
-            <rect x={x} y={height - bottom - betsH - briefsH} width={bar} height={Math.max(0, briefsH)} fill="#f5a524" />
-            <rect x={x} y={height - bottom - betsH} width={bar} height={Math.max(0, betsH)} fill="#3f3f46" />
+            <rect x={x} y={height - bottom - betsH - briefsH} width={bar} height={Math.max(0, briefsH)} fill="#b77400" />
+            <rect x={x} y={height - bottom - betsH} width={bar} height={Math.max(0, betsH)} fill="#55b6f6" />
             <title>{`${day.label}: bets ${formatDollarsFromCents(day.betsCents)}, briefs ${formatDollarsFromCents(day.briefsCents)}, total ${formatDollarsFromCents(total)}`}</title>
           </g>
         );
@@ -201,13 +202,10 @@ export function PositionsPage() {
   const activity = (view?.activity ?? []).filter((row) => filter === "all" || (filter === "briefs" ? row.type === "brief" : row.type !== "brief"));
   return (
     <div className={styles.page}>
-      <header className={styles.head}>
-        <div className={styles.titleBlock}>
-          <h1 className={styles.title}>Portfolio</h1>
-          <p className={styles.subtitle}>
-            {view === null ? "Paid in USDC on Solana" : `Since ${formatSince(view.rangeStart)} · paid in USDC on Solana`}
-          </p>
-        </div>
+      <PageHero
+        title="Portfolio"
+        lead={view === null ? "Paid in USDC on Solana" : `Since ${formatSince(view.rangeStart)} · paid in USDC on Solana`}
+      >
         <div className={styles.controls}>
           <div className={styles.ranges} role="group" aria-label="Range">
             {RANGES.map((item) => (
@@ -236,7 +234,7 @@ export function PositionsPage() {
             Export CSV
           </button>
         </div>
-      </header>
+      </PageHero>
       {exportError !== null ? <p className={styles.warning} role="alert">{exportError}</p> : null}
       {result === null ? <p className={styles.muted}>Loading portfolio…</p> : null}
       {result?.kind === "not-configured" ? <p className={styles.warning}>The desk is not configured, so there is no portfolio to show.</p> : null}

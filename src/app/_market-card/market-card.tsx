@@ -79,7 +79,7 @@ export function MarketCard({
       ) : null}
       <div className={styles.outcomes}>
         {model.outcomes.map((outcome) => (
-          <div key={outcome.key} className={styles.outcome}>
+          <div key={outcome.key} className={styles.outcome} data-side={outcome.key === "no" ? "no" : "yes"}>
             <span className={styles.outcomeLabel}>{outcome.label}</span>
             {outcome.payout !== null ? <span className={styles.payout}>{outcome.payout}</span> : null}
             <span className={styles.pill} aria-label={`${formatPercent(outcome.percent)} chance`}>{formatPercent(outcome.percent)}</span>
