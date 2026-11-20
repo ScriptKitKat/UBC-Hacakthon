@@ -28,7 +28,7 @@ const confirmFromFeed = vi.fn<Desk["confirmFromFeed"]>();
 const isCardFor = vi.fn<Desk["isCardFor"]>();
 const feedOrder = vi.fn<Desk["feedOrder"]>();
 const getFeedPositions = vi.fn<Desk["getFeedPositions"]>();
-const stubDesk = { getFeedPositions, matchPost, isCardFor, feedOrder, quote: deskQuote, buyFromFeed, confirmFromFeed } as unknown as Desk;
+const stubDesk = { getFeedPositions, matchPost, isCardFor, feedOrder, quote: deskQuote, buyFromFeed, confirmFromFeed, flush: vi.fn<Desk["flush"]>(() => Promise.resolve()) } as unknown as Desk;
 
 const API_TOKEN = "api-token";
 const CLIENT_ORDER_ID = "8f14e45f-ceea-467f-a0e6-1d0b6f1c6a2e";

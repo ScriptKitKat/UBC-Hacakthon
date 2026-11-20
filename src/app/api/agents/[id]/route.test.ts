@@ -5,11 +5,11 @@ import type { HomeServices } from "@/features/desk";
 import type { Desk } from "@/features/desk";
 import { PATCH } from "./route";
 
-const getHomeServices = vi.hoisted(() => vi.fn<() => Promise<HomeServices>>());
+const getHomeServicesForRequest = vi.hoisted(() => vi.fn<() => Promise<HomeServices>>());
 
 vi.mock("@/features/desk", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/features/desk")>()),
-  getHomeServices,
+  getHomeServicesForRequest,
 }));
 
 const store = openAgentStore({
@@ -31,10 +31,11 @@ beforeEach(async () => {
   await store.remove("agent-1");
   const agent = await store.create({ eventTicker: "BTC", instrumentSymbol: "GEMI-BTC-YES", name: "Scout" });
   await store.recordRun(agent.id, { lastTriggerAt: { oddsMove: "2026-11-19T18:00:00.000Z" } });
-  getHomeServices.mockReset().mockResolvedValue({
+  getHomeServicesForRequest.mockReset().mockResolvedValue({
     ok: true,
     catalog: { agents: { store, run: vi.fn() } },
     desk: {
+      flush: vi.fn(),
       getSnapshot: vi.fn<Desk["getSnapshot"]>(() => Promise.resolve({
         policy: { dailyCapCents: 1000, remainingCents: 1000, perTradeMaxCents: 200, autoApproveMaxCents: 200 },
       } as Awaited<ReturnType<Desk["getSnapshot"]>>)),

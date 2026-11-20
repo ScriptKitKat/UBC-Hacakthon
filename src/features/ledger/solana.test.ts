@@ -4,9 +4,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { usdCents } from "@/shared";
 import { createSolanaLedger, explorerUrl, inspectTokenDestination } from "./index";
 import type { BeforeBroadcast } from "./index";
-import { loadKeypair } from "./keypair";
+import { loadKeypair, loadKeypairFromJson } from "./keypair";
 
-vi.mock("./keypair", () => ({ loadKeypair: vi.fn() }));
+vi.mock("./keypair", () => ({ loadKeypair: vi.fn(), loadKeypairFromJson: vi.fn() }));
 
 const devnetGenesis = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 const mainnetGenesis = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
@@ -60,11 +60,23 @@ function fakeRpc(hash: string, mint: PublicKey = config.mint) {
 
 beforeEach(() => {
   vi.mocked(loadKeypair).mockResolvedValue(authority);
+  vi.mocked(loadKeypairFromJson).mockReturnValue(authority);
   vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("Unexpected RPC request"))));
 });
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it("prefers the JSON keypair when both keypair sources are configured", async () => {
+  vi.mocked(loadKeypair).mockClear();
+  vi.mocked(loadKeypairFromJson).mockClear().mockReturnValue(authority);
+  const keypairJson = JSON.stringify(Array(64).fill(0));
+
+  await createSolanaLedger({ ...config, keypairJson });
+
+  expect(loadKeypairFromJson).toHaveBeenCalledWith(keypairJson);
+  expect(loadKeypair).not.toHaveBeenCalled();
 });
 
 it.each([devnet, localnet])("rejects mainnet behind a $cluster endpoint before preparing a transaction", async (network) => {

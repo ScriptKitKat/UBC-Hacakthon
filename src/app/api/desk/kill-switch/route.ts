@@ -7,8 +7,8 @@ export const dynamic = "force-dynamic";
 const body = z.object({ on: z.boolean() });
 
 export function POST(request: Request): Promise<Response> {
-  return withDashboardBody(request, body, ({ on }, desk) => {
-    desk.setKillSwitch(on);
-    return Promise.resolve(Response.json({ killSwitch: on }));
+  return withDashboardBody(request, body, async ({ on }, desk) => {
+    await desk.setKillSwitch(on);
+    return Response.json({ killSwitch: on });
   });
 }

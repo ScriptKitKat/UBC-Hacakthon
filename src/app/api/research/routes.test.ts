@@ -56,7 +56,7 @@ const call = (symbol: string, query = "", headers: Record<string, string> = { "s
 beforeEach(() => {
   view.mockReset().mockResolvedValue({ kind: "ok", view: sampleView });
   getPositions.mockReset().mockResolvedValue(emptyPositions);
-  getDesk.mockReset().mockResolvedValue({ ok: true, desk: { getPositions } as unknown as Desk, research: { view, brief: vi.fn() }, deepDive: undefined, marketPro: { shell: vi.fn(), live: vi.fn() }, chatter: { load: chatterLoad, peek: vi.fn() } });
+  getDesk.mockReset().mockResolvedValue({ ok: true, desk: { getPositions, flush: vi.fn<Desk["flush"]>(() => Promise.resolve()) } as unknown as Desk, research: { view, brief: vi.fn() }, deepDive: undefined, marketPro: { shell: vi.fn(), live: vi.fn() }, chatter: { load: chatterLoad, peek: vi.fn() } });
   chatterLoad.mockReset().mockResolvedValue([]);
 });
 

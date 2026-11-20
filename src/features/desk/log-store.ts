@@ -16,6 +16,7 @@ export const entrySchema = z.object({
   symbol: z.string(),
   outcome: outcome.nullable(),
   notionalCents: z.number(),
+  seenPriceCents: z.exactOptional(z.number()),
   senderId: z.string(),
   source: z.enum(["voice", "x", "desk", "feed", "research"]),
   signature: z.exactOptional(z.string()),
@@ -31,6 +32,7 @@ const fileSchema = z.object({ version: z.literal(1), entries: z.array(entrySchem
 export interface DecisionLogPersistence {
   readonly initialLog: readonly DecisionLogEntry[];
   readonly saveLog: (log: readonly DecisionLogEntry[]) => Promise<void>;
+  readonly flush: () => Promise<void>;
 }
 
 export async function openDecisionLog(options: { readonly fs: FileSystem; readonly path: string }): Promise<DecisionLogPersistence> {
@@ -39,6 +41,7 @@ export async function openDecisionLog(options: { readonly fs: FileSystem; readon
   return {
     initialLog: loaded.entries,
     saveLog: (log) => file.save({ version: 1, entries: [...log] }),
+    flush: file.flush,
   };
 }
 

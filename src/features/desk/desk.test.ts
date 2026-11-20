@@ -14,7 +14,7 @@ import type { StoredMatch } from "./match-store";
 import { createFeedOrders, openFeedOrders } from "./feed-orders";
 import { startReconciliation } from "./reconciliation";
 import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
-import { createMemoryFileSystem } from "@/features/storage";
+import { createMemoryFileSystem, StoreConflictError } from "@/features/storage";
 
 const symbol = instrumentSymbol("GEMI-FED261211-MAINTAIN");
 const otherSymbol = instrumentSymbol("GEMI-FED261211-CUT25");
@@ -98,6 +98,42 @@ async function readyDesk(options: Parameters<typeof setup>[0] = {}) {
 }
 
 describe("desk", () => {
+  it("restores an unresolved approval and allows it to be confirmed", async () => {
+    const pending = await setup().desk.proposeTrade(propose("yes", 500));
+    if (pending.kind !== "needs-approval") throw new Error("Expected a pending approval");
+    const { desk, debit } = setup({ extra: { initialLog: [pending] } });
+
+    expect((await desk.getSnapshot()).pending).toEqual([{
+      intentId: pending.intentId,
+      symbol,
+      outcome: "yes",
+      notionalCents: 500,
+      senderId: "priscilla",
+      createdAt: pending.at,
+    }]);
+    expect(await desk.confirmPending(pending.intentId, "priscilla")).toMatchObject({
+      ok: true,
+      entry: { kind: "approve", intentId: pending.intentId, outcome: "yes" },
+    });
+    expect(debit).toHaveBeenCalledOnce();
+  });
+
+  it("does not restore an approval with a newer resolving log entry", async () => {
+    const pending = await setup().desk.proposeTrade(propose("yes", 500));
+    if (pending.kind !== "needs-approval") throw new Error("Expected a pending approval");
+    const resolved = {
+      ...pending,
+      entryId: "resolved-entry",
+      kind: "refuse" as const,
+      code: "rejected",
+      spokenReason: "You rejected this trade.",
+      at: "2026-11-17T12:01:00.000Z",
+    };
+    const { desk } = setup({ extra: { initialLog: [resolved, pending] } });
+
+    expect((await desk.getSnapshot()).pending).toEqual([]);
+  });
+
   it("stores matched news with live odds in the snapshot", async () => {
     const { desk } = await readyDesk();
     const snapshot = await desk.getSnapshot();
@@ -279,12 +315,12 @@ describe("desk", () => {
   it("kill switch blocks proposals and confirmations", async () => {
     const { desk, debit } = await readyDesk();
     const waiting = await desk.proposeTrade(propose("yes", 500));
-    desk.setKillSwitch(true);
+    await desk.setKillSwitch(true);
     expect((await desk.getSnapshot()).policy.killSwitch).toBe(true);
     expect(await desk.proposeTrade(propose("yes", 100))).toMatchObject({ kind: "refuse", code: "kill-switch" });
     expect(await desk.confirmPending(waiting.intentId, "priscilla")).toMatchObject({ ok: true, entry: { kind: "refuse", code: "kill-switch" } });
     expect(debit).not.toHaveBeenCalled();
-    desk.setKillSwitch(false);
+    await desk.setKillSwitch(false);
     expect(await desk.proposeTrade(propose("yes", 100))).toMatchObject({ kind: "approve" });
   });
 
@@ -564,6 +600,35 @@ describe("desk feed", () => {
 });
 
 describe("desk persistence, positions and research context", () => {
+  it("flush waits for the decision log write before the response can finish", async () => {
+    const memory = createMemoryFileSystem();
+    const writeGate = deferred<undefined>();
+    const fs = {
+      ...memory,
+      writeTextAtomic: async (path: string, contents: string) => {
+        await writeGate.promise;
+        await memory.writeTextAtomic(path, contents);
+      },
+    };
+    const decisionLog = await openDecisionLog({ fs, path: "/d/log.json" });
+    const { desk } = await readyDesk({
+      extra: {
+        initialLog: decisionLog.initialLog,
+        saveLog: decisionLog.saveLog,
+        flush: decisionLog.flush,
+      },
+    });
+    const proposal = await desk.proposeTrade(propose("yes", 500));
+    expect(proposal.kind).toBe("needs-approval");
+    let finished = false;
+    const flushing = desk.flush().then(() => { finished = true; });
+    expect(finished).toBe(false);
+    writeGate.resolve(undefined);
+    await flushing;
+    expect(finished).toBe(true);
+    expect((await openDecisionLog({ fs, path: "/d/log.json" })).initialLog).toHaveLength(1);
+  });
+
   it("restores the decision log, positions and the day's spend after a restart", async () => {
     const fs = createMemoryFileSystem();
     const first = await openDecisionLog({ fs, path: "/d/log.json" });
@@ -692,9 +757,9 @@ describe("desk persistence, positions and research context", () => {
     expect(journal.entries()).toMatchObject([{ status: "settled", signature: "sig-9" }]);
   });
 
-  it("refuses to trade, and never debits, when the reservation cannot be written", async () => {
+  it("refuses to trade, and never debits, when a reservation conflicts with another runtime", async () => {
     const memory = createMemoryFileSystem();
-    const fs = { ...memory, writeTextAtomic: () => Promise.reject(new Error("ENOSPC")) };
+    const fs = { ...memory, writeTextAtomic: (path: string) => Promise.reject(new StoreConflictError(path)) };
     const journal = await openSpendJournal({ fs, path: "/d/journal.json", nowIso: () => "2026-11-17T12:00:00.000Z" });
     const { desk, debit } = await readyDesk({ extra: { journal } });
     expect(await desk.proposeTrade(propose("yes", 200))).toMatchObject({

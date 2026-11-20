@@ -23,6 +23,7 @@ export type { ResearchBrief };
 export interface PurchasePersistence {
   readonly initialPurchases: readonly StoredPurchase[];
   readonly savePurchases: (purchases: readonly StoredPurchase[]) => Promise<void>;
+  readonly flush: () => Promise<void>;
 }
 
 export async function openPurchaseStore(options: { readonly fs: FileSystem; readonly path: string }): Promise<PurchasePersistence> {
@@ -31,5 +32,6 @@ export async function openPurchaseStore(options: { readonly fs: FileSystem; read
   return {
     initialPurchases: loaded.purchases,
     savePurchases: (purchases) => file.save({ version: 1, purchases: [...purchases] }),
+    flush: file.flush,
   };
 }

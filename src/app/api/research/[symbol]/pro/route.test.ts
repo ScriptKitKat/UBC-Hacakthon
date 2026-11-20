@@ -5,11 +5,11 @@ import { proShellSchema } from "@/shared";
 import type { ProShell } from "@/shared";
 import { GET } from "./route";
 
-const getHomeServices = vi.hoisted(() => vi.fn<() => Promise<HomeServices>>());
+const getHomeServicesForRequest = vi.hoisted(() => vi.fn<() => Promise<HomeServices>>());
 
 vi.mock("@/features/desk", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/features/desk")>()),
-  getHomeServices,
+  getHomeServicesForRequest,
 }));
 
 const SYMBOL = "GEMI-SOL261231-C200";
@@ -98,9 +98,9 @@ beforeEach(() => {
     budget: sample.budget,
     watched: false,
   } });
-  getHomeServices.mockReset().mockResolvedValue({
+  getHomeServicesForRequest.mockReset().mockResolvedValue({
     ok: true,
-    desk: {} as Desk,
+    desk: { flush: vi.fn<Desk["flush"]>(() => Promise.resolve()) } as unknown as Desk,
     research: { view: vi.fn(), brief: vi.fn() },
     catalog: {} as Extract<HomeServices, { ok: true }>["catalog"],
     marketPro: { shell, live },

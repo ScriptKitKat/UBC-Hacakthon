@@ -59,6 +59,28 @@ describe("createJsonStore with a memory file system", () => {
     expect(await store.load()).toEqual({ items: [3] });
   });
 
+  it("flush waits for a delayed atomic write", async () => {
+    const memory = createMemoryFileSystem();
+    let releaseWrite!: () => void;
+    const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    const fs = {
+      ...memory,
+      writeTextAtomic: async (path: string, contents: string) => {
+        await writeGate;
+        await memory.writeTextAtomic(path, contents);
+      },
+    };
+    const store = createJsonStore({ fs, path: "/d/a.json", schema, empty });
+    const save = store.save({ items: [1] });
+    let finished = false;
+    const flush = store.flush().then(() => { finished = true; });
+    expect(finished).toBe(false);
+    releaseWrite();
+    await Promise.all([save, flush]);
+    expect(finished).toBe(true);
+    expect(await store.load()).toEqual({ items: [1] });
+  });
+
   it("writes strictly in order across batches", async () => {
     const order: string[] = [];
     const memory = createMemoryFileSystem();
@@ -92,6 +114,25 @@ describe("createJsonStore with a memory file system", () => {
     failing = false;
     await store.save({ items: [2] });
     expect(await store.load()).toEqual({ items: [2] });
+  });
+
+  it("reports a failed write once and lets later read-only flushes through", async () => {
+    const memory = createMemoryFileSystem();
+    let failing = true;
+    const fs = {
+      ...memory,
+      writeTextAtomic: (path: string, contents: string) =>
+        failing ? Promise.reject(new Error("ENOSPC")) : memory.writeTextAtomic(path, contents),
+    };
+    const store = createJsonStore({ fs, path: "/d/a.json", schema, empty });
+    const save = store.save({ items: [1] });
+    const saveResult = expect(save).rejects.toThrow("ENOSPC");
+    await expect(store.flush()).rejects.toThrow("ENOSPC");
+    await saveResult;
+
+    failing = false;
+    await expect(store.flush()).resolves.toBeUndefined();
+    await expect(store.flush()).resolves.toBeUndefined();
   });
 });
 

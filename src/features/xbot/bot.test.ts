@@ -119,7 +119,7 @@ function fakeDesk(script: DeskScript = {}) {
     Promise.resolve({ news: null, match: matched, policy, pending, log: [], ledger: { configured: false, missing: [] } } satisfies DeskSnapshot),
   );
   const desk: Desk = {
-    submitNews, proposeTrade, confirmPending, rejectPending, getSnapshot, setKillSwitch: vi.fn(),
+    submitNews, proposeTrade, confirmPending, rejectPending, getSnapshot, setKillSwitch: vi.fn(), flush: vi.fn<Desk["flush"]>(() => Promise.resolve()),
     matchPost: vi.fn(), isCardFor: vi.fn(), feedOrder: vi.fn(), quote: vi.fn(), postContextFor: vi.fn(), matchedPostsFor: vi.fn(), peekResearchBriefs: vi.fn(), listBriefLibrary: vi.fn(), getPositions: vi.fn(), getPortfolio: vi.fn(), getFeedPositions: vi.fn<Desk["getFeedPositions"]>(), buyDeepDive: vi.fn(), reconcile: vi.fn(), buyFromFeed: vi.fn(), confirmFromFeed: vi.fn(),
   };
   return { desk, proposeTrade, confirmPending, rejectPending, submitNews };

@@ -1,11 +1,46 @@
-import { getDesk, getHomeServices } from "@/features/desk";
+import { getDesk, getHomeServicesForRequest, releaseRuntimeAccess } from "@/features/desk";
 import type { Desk, DeskAccess, HomeServices } from "@/features/desk";
+import { StoreConflictError } from "@/features/storage";
 import type { z } from "zod";
+
+function storeConflict(): Response {
+  return Response.json({ error: "store-conflict" }, { status: 503 });
+}
+
+export async function responseAfterFlush(handler: () => Promise<Response>, flush: () => Promise<void>): Promise<Response> {
+  let response: Response;
+  try {
+    response = await handler();
+  } catch (error) {
+    try {
+      await flush();
+    } catch (flushError) {
+      if (flushError instanceof StoreConflictError) return storeConflict();
+      throw flushError;
+    }
+    if (error instanceof StoreConflictError) return storeConflict();
+    throw error;
+  }
+  try {
+    await flush();
+  } catch (error) {
+    if (error instanceof StoreConflictError) return storeConflict();
+    throw error;
+  }
+  return response;
+}
 
 export async function withDesk(handler: (desk: Desk) => Promise<Response>): Promise<Response> {
   const access = await getDesk();
-  if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
-  return handler(access.desk);
+  try {
+    if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
+    return await responseAfterFlush(() => handler(access.desk), () => access.desk.flush());
+  } catch (error) {
+    if (error instanceof StoreConflictError) return Response.json({ error: "store-conflict" }, { status: 503 });
+    throw error;
+  } finally {
+    releaseRuntimeAccess(access);
+  }
 }
 
 function isDashboardRequest(request: Request): boolean {
@@ -57,8 +92,15 @@ export function withDashboardGet(request: Request, handler: (services: DeskServi
 export async function withDashboardServices(request: Request, handler: (services: DeskServices) => Promise<Response>): Promise<Response> {
   if (!isDashboardRequest(request)) return forbidden();
   const access = await getDesk();
-  if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
-  return handler(access);
+  try {
+    if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
+    return await responseAfterFlush(() => handler(access), () => access.desk.flush());
+  } catch (error) {
+    if (error instanceof StoreConflictError) return Response.json({ error: "store-conflict" }, { status: 503 });
+    throw error;
+  } finally {
+    releaseRuntimeAccess(access);
+  }
 }
 
 export function withDashboardPost(request: Request, handler: (desk: Desk) => Promise<Response>): Promise<Response> {
@@ -71,9 +113,16 @@ export async function withHomeGet(
   handler: (services: Extract<HomeServices, { ok: true }>) => Promise<Response>,
 ): Promise<Response> {
   if (!isDashboardRequest(request)) return forbidden();
-  const access = await getHomeServices();
-  if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
-  return handler(access);
+  const access = await getHomeServicesForRequest();
+  try {
+    if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
+    return await responseAfterFlush(() => handler(access), () => access.desk.flush());
+  } catch (error) {
+    if (error instanceof StoreConflictError) return Response.json({ error: "store-conflict" }, { status: 503 });
+    throw error;
+  } finally {
+    releaseRuntimeAccess(access);
+  }
 }
 
 export async function withHomeBody<S extends z.ZodType>(
@@ -93,7 +142,14 @@ export async function withHomeBody<S extends z.ZodType>(
     const issues = parsed.error.issues.map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`);
     return Response.json({ error: "invalid-request", issues }, { status: 400 });
   }
-  const access = await getHomeServices();
-  if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
-  return handler(parsed.data, access);
+  const access = await getHomeServicesForRequest();
+  try {
+    if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
+    return await responseAfterFlush(() => handler(parsed.data, access), () => access.desk.flush());
+  } catch (error) {
+    if (error instanceof StoreConflictError) return Response.json({ error: "store-conflict" }, { status: 503 });
+    throw error;
+  } finally {
+    releaseRuntimeAccess(access);
+  }
 }

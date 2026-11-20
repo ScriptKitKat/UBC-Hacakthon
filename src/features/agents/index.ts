@@ -1,6 +1,7 @@
 export { assignedBudgetCents, clampDailyBudget, evaluateBudget } from "./budget";
 export type { AgentBudget, DeskBudget } from "./budget";
 export { agentCycle, AGENT_LOOP_INTERVAL_MS, startAgentLoop } from "./loop";
+export type { AgentCycleGuard } from "./loop";
 export { composeMessage, templateMessage } from "./message";
 export { clampDecision, ruleDecision } from "./decide";
 export type { AgentDecision } from "./decide";

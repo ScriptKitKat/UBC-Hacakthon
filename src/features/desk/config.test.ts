@@ -35,7 +35,7 @@ describe("loadDeskConfig", () => {
     const result = loadDeskConfig({ ...base, SOLANA_CLUSTER: "localnet", SOLANA_RPC_URL: "http://127.0.0.1:8899" });
     expect(result).toMatchObject({
       ok: true,
-      value: { ledger: { configured: false, missing: ["SOLANA_KEYPAIR_PATH", "VAULT_RECIPIENT", "USDC_MINT"] } },
+      value: { ledger: { configured: false, missing: ["SOLANA_KEYPAIR_PATH or SOLANA_KEYPAIR_JSON", "VAULT_RECIPIENT", "USDC_MINT"] } },
     });
   });
 
@@ -49,6 +49,25 @@ describe("loadDeskConfig", () => {
       ...base, SOLANA_CLUSTER: cluster, SOLANA_RPC_URL: "http://127.0.0.1:8899", SOLANA_KEYPAIR_PATH: "/k.json", VAULT_RECIPIENT: key, USDC_MINT: key,
     });
     expect(result).toMatchObject({ ok: true, value: { ledger: { configured: true, cluster } } });
+  });
+
+  it("accepts JSON keypairs and prefers them when both sources are set", () => {
+    const key = "11111111111111111111111111111111";
+    const keypairJson = JSON.stringify(Array(64).fill(0));
+    const settings = {
+      ...base,
+      SOLANA_CLUSTER: "localnet",
+      SOLANA_RPC_URL: "http://127.0.0.1:8899",
+      VAULT_RECIPIENT: key,
+      USDC_MINT: key,
+      SOLANA_KEYPAIR_JSON: keypairJson,
+    };
+    const jsonOnly = loadDeskConfig(settings);
+    const both = loadDeskConfig({ ...settings, SOLANA_KEYPAIR_PATH: "/k.json" });
+    if (!jsonOnly.ok || !both.ok) throw new Error("expected ok");
+    expect(jsonOnly.value.ledger).toMatchObject({ configured: true, keypairJson });
+    expect(both.value.ledger).toMatchObject({ configured: true, keypairJson });
+    expect(both.value.ledger).not.toHaveProperty("keypairPath");
   });
 
   it("requires the cluster to be named", () => {

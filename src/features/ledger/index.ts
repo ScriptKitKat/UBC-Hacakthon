@@ -7,7 +7,7 @@ import {
 import { Connection, PublicKey, Transaction, TransactionInstruction } from "@solana/web3.js";
 import bs58 from "bs58";
 import type { UsdCents } from "@/shared";
-import { loadKeypair } from "./keypair";
+import { loadKeypair, loadKeypairFromJson } from "./keypair";
 
 const memoProgram = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 const usdcDecimals = 6;
@@ -138,6 +138,7 @@ interface LedgerConfig {
   readonly testMint?: PublicKey;
   readonly recipient: PublicKey;
   readonly keypairPath?: string;
+  readonly keypairJson?: string;
 }
 
 function localhostOrigin(rpcUrl: string): string | undefined {
@@ -194,9 +195,12 @@ export async function createSolanaLedger(config: LedgerConfig): Promise<Configur
   if (!mint.equals(circleDevnetMint) && !(testMint && mint.equals(testMint))) {
     throw new Error("Ledger mint is not approved for testing");
   }
+  const keypairJson = config.keypairJson ?? process.env.SOLANA_KEYPAIR_JSON;
   const keypairPath = config.keypairPath ?? process.env.SOLANA_KEYPAIR_PATH;
-  if (!keypairPath) throw new Error("SOLANA_KEYPAIR_PATH is required");
-  const authority = await loadKeypair(keypairPath);
+  let authority: Awaited<ReturnType<typeof loadKeypair>>;
+  if (keypairJson) authority = loadKeypairFromJson(keypairJson);
+  else if (keypairPath) authority = await loadKeypair(keypairPath);
+  else throw new Error("SOLANA_KEYPAIR_PATH or SOLANA_KEYPAIR_JSON is required");
   const connection = new Connection(network.rpcUrl ?? "https://api.devnet.solana.com", {
     commitment,
     fetch: (url, init) => fetch(url, { ...init, redirect: "error" }),

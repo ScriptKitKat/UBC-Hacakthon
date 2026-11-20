@@ -49,6 +49,7 @@ export interface SpendJournal {
   readonly find: (operationId: string) => SpendEntry | undefined;
   readonly entries: () => readonly SpendEntry[];
   readonly adoptSettled: (entries: readonly SpendEntry[]) => Promise<JournalWrite>;
+  readonly flush: () => Promise<void>;
 }
 
 export interface OpenJournalOptions {
@@ -71,7 +72,7 @@ function retained(entry: SpendEntry, nowIso: string): boolean {
   return !(Date.parse(entry.reservedAt) < cutoff && Date.parse(entry.resolvedAt ?? entry.reservedAt) < cutoff);
 }
 
-function createJournal(initial: readonly SpendEntry[], store: Pick<JsonStore<JournalFile>, "save">, nowIso: () => string): SpendJournal {
+function createJournal(initial: readonly SpendEntry[], store: Pick<JsonStore<JournalFile>, "save" | "flush">, nowIso: () => string): SpendJournal {
   let byId = new Map(initial.map((entry) => [entry.operationId, entry]));
   const openingEntries = new Map<string, SpendEntry>();
   const queue = createSerialQueue();
@@ -132,6 +133,10 @@ function createJournal(initial: readonly SpendEntry[], store: Pick<JsonStore<Jou
       }
       return changed ? persist(next) : OK;
     }),
+    async flush() {
+      await queue.flush();
+      await store.flush();
+    },
   };
 }
 
@@ -146,7 +151,7 @@ export async function openSpendJournal(options: OpenJournalOptions): Promise<Spe
 }
 
 export function createMemoryJournal(nowIso: () => string): SpendJournal {
-  return createJournal([], { save: () => Promise.resolve() }, nowIso);
+  return createJournal([], { save: () => Promise.resolve(), flush: () => Promise.resolve() }, nowIso);
 }
 
 export type SignatureOutcome = "landed" | "failed" | "pending";
