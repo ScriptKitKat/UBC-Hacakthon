@@ -218,7 +218,6 @@ function toCard(event: MarketEvent, now: Date, spots: Map<string, number>, deps:
     imageUrl: event.imageUrl ?? null,
     volume: event.volume24h ?? event.volume,
     volumeLabel: event.volume24h !== null || event.volume !== null ? formatVolumeUsd(event.volume24h ?? event.volume ?? 0) : null,
-    moreCount: Math.max(0, event.contracts.length - selected.length),
     rows: selected.map(rowFor),
     changePercent: changeFor(deps, lead.instrumentSymbol, now.getTime()),
     createdAt: event.createdAt ?? null,

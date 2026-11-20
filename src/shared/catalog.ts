@@ -77,7 +77,6 @@ export const browseCardSchema = z.object({
   imageUrl: z.string().nullable(),
   volume: z.number().nullable(),
   volumeLabel: z.string().nullable(),
-  moreCount: z.number().int().nonnegative(),
   rows: z.array(browseRowSchema),
   changePercent: z.number().nullable(),
   createdAt: z.string().nullable(),

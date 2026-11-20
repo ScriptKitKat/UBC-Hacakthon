@@ -202,7 +202,6 @@ export function BrowsePage({ initialPage, initialSearch = "" }: { readonly initi
                       void watchlist.toggle({ eventTicker: card.eventTicker, instrumentSymbol: card.instrumentSymbol, yesCents: lead?.yesCents ?? null });
                     },
                   }}
-                  footStart={card.moreCount > 0 ? <span>+{String(card.moreCount)} more</span> : undefined}
                 />
               );
             })}

@@ -53,7 +53,6 @@ function browse(overrides: Partial<BrowseCard> = {}): BrowseCard {
     imageUrl: IMAGE,
     volume: 484.43,
     volumeLabel: "$484.43",
-    moreCount: 0,
     rows: [
       { instrumentSymbol: "GEMI-NBA-NYK", label: "New York", yesCents: 66, payoutBeginner: "$1 → $1.52", payoutPro: "1.5x", href: "/markets/GEMI-NBA-NYK?contract=GEMI-NBA-NYK" },
       { instrumentSymbol: "GEMI-NBA-POR", label: "Portland", yesCents: 39, payoutBeginner: "$1 → $2.56", payoutPro: "2.6x", href: "/markets/GEMI-NBA-POR?contract=GEMI-NBA-POR" },

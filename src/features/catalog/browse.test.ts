@@ -106,7 +106,6 @@ describe("listBrowse", () => {
     expect(crypto?.rows.map((row) => row.label)).toEqual(["$62,800 or above", "$63,000 or above"]);
     expect(crypto?.rows[0]?.payoutBeginner).toBe("$1 → $2.08");
     expect(crypto?.rows[0]?.href).toBe("/markets/GEMI-BTC2611192200-HI62800");
-    expect(crypto?.moreCount).toBe(2);
     const game = result.page.markets[1];
     expect(game?.kind).toBe("sports");
     expect(game?.categoryLabel).toBe("College Basketball");
