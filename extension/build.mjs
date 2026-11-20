@@ -25,17 +25,31 @@ function chunk(type, data) {
   return Buffer.concat([length, body, checksum]);
 }
 
+const LIME = [200, 243, 29, 255];
+const LIME_DEEP = [155, 196, 10, 255];
+const INK = [29, 41, 61, 255];
+const STROKE = 4 / 64;
+
+function distanceToSegment(u, v, ax, ay, bx, by) {
+  const t = Math.max(0, Math.min(1, ((u - ax) * (bx - ax) + (v - ay) * (by - ay)) / ((bx - ax) ** 2 + (by - ay) ** 2)));
+  return Math.hypot(u - (ax + t * (bx - ax)), v - (ay + t * (by - ay)));
+}
+
+function onLetter(u, v) {
+  const stem = distanceToSegment(u, v, 24 / 64, 18 / 64, 24 / 64, 46 / 64);
+  const top = distanceToSegment(u, v, 24 / 64, 18 / 64, 33 / 64, 18 / 64);
+  const bottom = distanceToSegment(u, v, 24 / 64, 38 / 64, 33 / 64, 38 / 64);
+  const bowl = u >= 33 / 64 ? Math.abs(Math.hypot(u - 33 / 64, v - 28 / 64) - 10 / 64) : Infinity;
+  return Math.min(stem, top, bottom, bowl) <= STROKE;
+}
+
 function iconPixel(x, y, size) {
   const u = (x + 0.5) / size;
   const v = (y + 0.5) / size;
-  const radius = 0.22;
-  const dx = Math.max(Math.abs(u - 0.5) - (0.5 - radius), 0);
-  const dy = Math.max(Math.abs(v - 0.5) - (0.5 - radius), 0);
-  if (Math.hypot(dx, dy) > radius) return [0, 0, 0, 0];
-  const mix = (u + v) / 2;
-  const base = [Math.round(0 + 26 * mix), Math.round(220 - 113 * mix), Math.round(250 + 5 * mix), 255];
-  const gem = Math.abs(u - 0.5) * 1.5 + Math.abs(v - 0.5) < 0.3;
-  return gem ? [255, 255, 255, 245] : base;
+  const radius = 28 / 64;
+  if (Math.hypot(u - 0.5, v - 31 / 64) <= radius) return onLetter(u, v) ? INK : LIME;
+  if (Math.hypot(u - 0.5, v - 34 / 64) <= radius) return LIME_DEEP;
+  return [0, 0, 0, 0];
 }
 
 function iconPng(size) {

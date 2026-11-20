@@ -17,6 +17,14 @@ import styles from "./home.module.css";
 
 const POLL_MS = 30_000;
 
+const HERO_LOGOS: readonly { readonly src: string; readonly size: number; readonly rotate: number; readonly position: { readonly left?: string; readonly right?: string; readonly top: string } }[] = [
+  { src: "/hero/btc.avif", size: 110, rotate: -14, position: { left: "4%", top: "24%" } },
+  { src: "/hero/sol.avif", size: 78, rotate: 10, position: { left: "13%", top: "60%" } },
+  { src: "/hero/xrp.avif", size: 56, rotate: 18, position: { right: "14%", top: "6%" } },
+  { src: "/hero/basketball.avif", size: 96, rotate: 12, position: { right: "3%", top: "22%" } },
+  { src: "/hero/eth.avif", size: 70, rotate: -8, position: { right: "10%", top: "62%" } },
+];
+
 function applySparklines(view: HomeView, updates: Readonly<Record<string, { readonly sparkline: readonly number[]; readonly changePercent: number | null }>>): HomeView {
   const markets = view.markets.map((card) => {
     const update = updates[card.instrumentSymbol];
@@ -141,7 +149,17 @@ export function HomePage({ initialView }: { readonly initialView?: HomeView } = 
   return (
     <div className={styles.page}>
       <section className={styles.ask} aria-label="Ask">
-        <p className={styles.kicker}>Research first, then predict</p>
+        <div className={styles.logos} aria-hidden="true">
+          {HERO_LOGOS.map((logo) => (
+            <img
+              key={logo.src}
+              className={styles.logo}
+              src={logo.src}
+              alt=""
+              style={{ width: logo.size, height: logo.size, transform: `rotate(${String(logo.rotate)}deg)`, ...logo.position }}
+            />
+          ))}
+        </div>
         <h1 className={styles.title}>What do you want to <span className={styles.script}>predict?</span></h1>
         <form className={styles.box} onSubmit={(event) => { event.preventDefault(); onSearch(); }}>
           <label htmlFor="ask" className={styles.hidden}>Ask about a market</label>
