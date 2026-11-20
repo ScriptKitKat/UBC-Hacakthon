@@ -11,6 +11,7 @@ export const catalogCardSchema = z.object({
   endsIn: z.string().nullable(),
   imageUrl: z.string().nullable(),
   yesCents: z.number().nullable(),
+  yesAskCents: z.number().nullable(),
   noCents: z.number().nullable(),
   changePercent: z.number().nullable(),
   sparkline: z.array(z.number()),

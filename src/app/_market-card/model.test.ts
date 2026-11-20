@@ -16,6 +16,7 @@ function card(overrides: Partial<CatalogCard> = {}): CatalogCard {
     endsIn: "ends in 2d",
     imageUrl: IMAGE,
     yesCents: 63,
+    yesAskCents: 63,
     noCents: 38,
     changePercent: 22.2,
     sparkline: [40, 45, 52],
@@ -86,6 +87,8 @@ describe("market card model", () => {
     ]);
     expect(model.outcomes.every((outcome) => outcome.href === "/markets/GEMI-BTC261119-YES")).toBe(true);
     expect(catalogCardModel(card(), false).outcomes[0]?.payout).toBe("1.6x");
+    const lastTradeOnly = catalogCardModel(card({ yesAskCents: null }), true);
+    expect(lastTradeOnly.outcomes.map((outcome) => [outcome.percent, outcome.payout])).toEqual([[63, null], [38, "$1 → $2.63"]]);
   });
 
   it("uses the Gemini event image only from a trusted https host and falls back to a monogram", () => {
@@ -102,12 +105,15 @@ describe("market card model", () => {
     expect(settled.closes).toBe("Settled");
     expect(settled.change).toBeNull();
     expect(settled.outcomes.map((outcome) => outcome.payout)).toEqual([null, null]);
-    expect(watchlistCardModel(watched({ status: "ended" }), true).closes).toBe("Ended");
+    const ended = watchlistCardModel(watched({ status: "ended" }), true);
+    expect(ended.closes).toBe("Ended");
+    expect(ended.outcomes.map((outcome) => [outcome.percent, outcome.payout])).toEqual([[63, null], [38, null]]);
   });
 
   it("maps browse rows to outcomes in the selected payout style", () => {
     const model = browseCardModel(browse(), true);
     expect(model.live).toBe(true);
+    expect(model.change).toBeNull();
     expect(model.category).toBe("Pro Basketball");
     expect(model.outcomes.map((outcome) => [outcome.label, outcome.percent, outcome.payout])).toEqual([
       ["New York", 66, "$1 → $1.52"],

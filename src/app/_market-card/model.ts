@@ -47,10 +47,10 @@ export function monogramFor(title: string): string {
   return title.replace(/[^A-Za-z0-9]/gu, "").slice(0, 1).toUpperCase() || "M";
 }
 
-function yesNoOutcomes(card: CatalogCard, href: string, beginner: boolean): MarketCardOutcome[] {
+function yesNoOutcomes(card: CatalogCard, href: string, beginner: boolean, buyable: boolean): MarketCardOutcome[] {
   return [
-    { key: "yes", label: "Yes", percent: card.yesCents, payout: formatPayoutFromAsk(card.yesCents, beginner), href },
-    { key: "no", label: "No", percent: card.noCents, payout: formatPayoutFromAsk(card.noCents, beginner), href },
+    { key: "yes", label: "Yes", percent: card.yesCents, payout: buyable ? formatPayoutFromAsk(card.yesAskCents, beginner) : null, href },
+    { key: "no", label: "No", percent: card.noCents, payout: buyable ? formatPayoutFromAsk(card.noCents, beginner) : null, href },
   ];
 }
 
@@ -67,7 +67,7 @@ export function catalogCardModel(card: CatalogCard, beginner: boolean): MarketCa
     closes: formatDeadline(card.expiryDate) ?? card.endsIn,
     live: false,
     change: changeLabel(card.changePercent),
-    outcomes: yesNoOutcomes(card, href, beginner),
+    outcomes: yesNoOutcomes(card, href, beginner, true),
   };
 }
 
@@ -83,7 +83,7 @@ export function watchlistCardModel(card: WatchlistCard, beginner: boolean): Mark
     closes: card.status === "settled" ? "Settled" : card.status === "ended" ? "Ended" : formatDeadline(card.expiryDate),
     live: false,
     change: card.status === "live" ? changeLabel(card.changePercent) : null,
-    outcomes: yesNoOutcomes(card, card.href, beginner),
+    outcomes: yesNoOutcomes(card, card.href, beginner, card.status === "live"),
   };
 }
 
@@ -97,7 +97,7 @@ export function browseCardModel(card: BrowseCard, beginner: boolean): MarketCard
     detail: card.spotLabel === null ? null : `Current: ${card.spotLabel}`,
     closes: formatDeadline(card.expiryDate),
     live: card.isLive,
-    change: changeLabel(card.changePercent),
+    change: null,
     outcomes: card.rows.map((row) => ({
       key: row.instrumentSymbol,
       label: row.label,

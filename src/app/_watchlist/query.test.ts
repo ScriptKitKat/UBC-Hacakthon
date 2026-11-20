@@ -24,6 +24,7 @@ function card(overrides: Partial<WatchlistCard> = {}): WatchlistCard {
     endsIn: "ends in 42d",
     imageUrl: null,
     yesCents: 62,
+    yesAskCents: 62,
     noCents: 38,
     changePercent: 16.9,
     sparkline: [48, 50, 62],
