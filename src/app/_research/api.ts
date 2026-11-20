@@ -78,7 +78,7 @@ const decisionEntrySchema = z.object({
   outcome: z.enum(["yes", "no"]).nullable(),
   notionalCents: z.number(),
   senderId: z.string(),
-  source: z.enum(["voice", "x", "desk", "feed", "research"]),
+  source: z.enum(["x", "desk", "feed", "research"]),
   at: z.string(),
 });
 

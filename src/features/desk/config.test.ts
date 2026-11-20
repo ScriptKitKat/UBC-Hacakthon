@@ -93,8 +93,7 @@ describe("market policy and feed settings", () => {
   });
 
   it.each([
-    ["FEED_OPERATOR_ID first", { FEED_OPERATOR_ID: "feed", VOICE_OPERATOR_ID: "voice" }, "feed"],
-    ["then VOICE_OPERATOR_ID", { VOICE_OPERATOR_ID: "voice" }, "voice"],
+    ["FEED_OPERATOR_ID first", { FEED_OPERATOR_ID: "feed" }, "feed"],
     ["then the first sender", {}, "priscilla"],
   ])("picks the feed operator: %s", (_name, extra, expected) => {
     const result = loadDeskConfig({ ...base, SENDER_ALLOWLIST: "priscilla,other", ...extra });
