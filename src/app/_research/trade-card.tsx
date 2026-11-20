@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import {
   formatPercent,
@@ -159,7 +160,12 @@ export function TradeCard({ view }: { readonly view: ResearchView }) {
         </button>
       )}
       {result !== undefined && "error" in result ? <p className={styles.note} data-tone="warn" role="alert">{result.error}</p> : null}
-      {result !== undefined && "kind" in result ? <p className={styles.note} data-kind={result.kind} role="status">{result.spokenReason}</p> : null}
+      {result !== undefined && "kind" in result ? (
+        <div className={styles.resultMessage}>
+          <p className={styles.note} data-kind={result.kind} role="status">{result.spokenReason}</p>
+          {result.kind === "needs-approval" ? <Link className={styles.approvalLink} href="/positions#approvals">Approve it in Portfolio</Link> : null}
+        </div>
+      ) : null}
     </section>
   );
 }
