@@ -99,7 +99,7 @@ export function BeginnerView({
   const selected = moves[activeMove - 1] ?? moves.at(-1);
   return (
     <div className={styles.page}>
-      <div className={styles.main}>
+      <div className={styles.hero}>
         <div className={styles.top}>
           <nav className={styles.crumb} aria-label="Breadcrumb">
             <Link href="/markets">Markets</Link>
@@ -111,7 +111,6 @@ export function BeginnerView({
               <button type="button" className={styles.modeButton} aria-pressed>Beginner</button>
               <button type="button" className={styles.modeButton} aria-pressed={false} onClick={() => { setMode("pro"); }}>Pro</button>
             </div>
-            <WatchButton eventTicker={view.market.eventTicker} symbol={view.symbol} yesCents={view.market.prices.buyYesCents} />
           </div>
         </div>
         {banners.map((message) => (
@@ -129,89 +128,96 @@ export function BeginnerView({
               </p>
             </div>
           </div>
-          <div className={styles.odds}>
-            <div className={styles.yes}>{formatPercent(view.market.prices.buyYesCents)}</div>
-            {change !== null ? (
-              <div className={styles.change} data-trend={change > 0 ? "up" : change < 0 ? "down" : "flat"}>
-                {signedPoints(change)} today
-              </div>
-            ) : null}
+          <div className={styles.headEnd}>
+            <div className={styles.odds}>
+              <div className={styles.yes}>{formatPercent(view.market.prices.buyYesCents)}</div>
+              {change !== null ? (
+                <div className={styles.change} data-trend={change > 0 ? "up" : change < 0 ? "down" : "flat"}>
+                  {signedPoints(change)} today
+                </div>
+              ) : null}
+            </div>
+            <WatchButton eventTicker={view.market.eventTicker} symbol={view.symbol} yesCents={view.market.prices.buyYesCents} />
           </div>
         </header>
         {sentence !== null ? <p className={styles.sentence}>{sentence}</p> : null}
-        <CrowdChart
-          view={view}
-          timeframe={timeframe}
-          onTimeframe={onTimeframe}
-          moves={moves}
-          active={selected?.index}
-          onPick={(index) => {
-            const order = moves.findIndex((move) => move.index === index);
-            if (order >= 0) setActiveMove(order + 1);
-          }}
-        />
-        {moves.length > 0 ? (
-          <section className={styles.section} aria-label="Why it moved">
-            <h2 className={styles.heading}>Why it moved</h2>
-            <ul className={styles.moves}>
-              {[...moves].reverse().map((move, reversed) => {
-                const number = moves.length - reversed;
-                const active = selected === move;
-                return (
-                  <li key={`${String(move.t)}:${move.title}`}>
-                    <button
-                      type="button"
-                      className={styles.move}
-                      data-active={active}
-                      onClick={() => { setActiveMove(number); }}
-                    >
-                      <span className={styles.badge}>{String(number)}</span>
-                      <span className={styles.moveBody}>
-                        <span className={styles.moveTitle}>{move.title}</span>
-                        <span className={styles.moveSrc}>{move.source}</span>
-                      </span>
-                      <span className={styles.moveDelta} data-up={move.deltaCents >= 0}>{signedPoints(move.deltaCents)}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ) : null}
-        <ResolutionCard resolution={resolution} rulesText={view.market.rulesText} />
-        {drivers !== null ? (
-          <div className={styles.drivers}>
-            <section className={styles.section} aria-label="What could push it up">
-              <h2 className={styles.heading}>What could push it up</h2>
-              {drivers.up.length > 0 ? (
-                <ul className={styles.driverList}>{drivers.up.map((item) => <li key={item}>{item}</li>)}</ul>
-              ) : <p className={styles.empty}>No upward factors could be read from the official rules.</p>}
-            </section>
-            <section className={styles.section} aria-label="What could pull it down">
-              <h2 className={styles.heading}>What could pull it down</h2>
-              {drivers.down.length > 0 ? (
-                <ul className={styles.driverList}>{drivers.down.map((item) => <li key={item}>{item}</li>)}</ul>
-              ) : <p className={styles.empty}>No downward factors could be read from the official rules.</p>}
-            </section>
-          </div>
-        ) : null}
-        <Chatter posts={view.matchedPosts} nowMs={Number.isFinite(nowMs) ? nowMs : Date.now()} />
-        <Related markets={view.related} />
       </div>
-      <aside className={styles.rail} aria-label="Trade and research">
-        <TradeCard view={view} />
-        {trust.length > 0 ? (
-          <section className={styles.card} aria-label="Can you trust these odds">
-            <h2 className={styles.heading}>Can you trust these odds?</h2>
-            <div className={styles.trustList}>
-              {trust.map((line) => (
-                <p key={line.kind} className={styles.trustLine} data-tone={line.tone}>{line.text}</p>
-              ))}
+      <div className={styles.layout}>
+        <div className={styles.main}>
+          <CrowdChart
+            view={view}
+            timeframe={timeframe}
+            onTimeframe={onTimeframe}
+            moves={moves}
+            active={selected?.index}
+            onPick={(index) => {
+              const order = moves.findIndex((move) => move.index === index);
+              if (order >= 0) setActiveMove(order + 1);
+            }}
+          />
+          {moves.length > 0 ? (
+            <section className={styles.section} aria-label="Why it moved">
+              <h2 className={styles.heading}>Why it moved</h2>
+              <ul className={styles.moves}>
+                {[...moves].reverse().map((move, reversed) => {
+                  const number = moves.length - reversed;
+                  const active = selected === move;
+                  return (
+                    <li key={`${String(move.t)}:${move.title}`}>
+                      <button
+                        type="button"
+                        className={styles.move}
+                        data-active={active}
+                        onClick={() => { setActiveMove(number); }}
+                      >
+                        <span className={styles.badge}>{String(number)}</span>
+                        <span className={styles.moveBody}>
+                          <span className={styles.moveTitle}>{move.title}</span>
+                          <span className={styles.moveSrc}>{move.source}</span>
+                        </span>
+                        <span className={styles.moveDelta} data-up={move.deltaCents >= 0}>{signedPoints(move.deltaCents)}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : null}
+          <ResolutionCard resolution={resolution} rulesText={view.market.rulesText} />
+          {drivers !== null ? (
+            <div className={styles.drivers}>
+              <section className={styles.section} aria-label="What could push it up">
+                <h2 className={styles.heading}>What could push it up</h2>
+                {drivers.up.length > 0 ? (
+                  <ul className={styles.driverList}>{drivers.up.map((item) => <li key={item}>{item}</li>)}</ul>
+                ) : <p className={styles.empty}>No upward factors could be read from the official rules.</p>}
+              </section>
+              <section className={styles.section} aria-label="What could pull it down">
+                <h2 className={styles.heading}>What could pull it down</h2>
+                {drivers.down.length > 0 ? (
+                  <ul className={styles.driverList}>{drivers.down.map((item) => <li key={item}>{item}</li>)}</ul>
+                ) : <p className={styles.empty}>No downward factors could be read from the official rules.</p>}
+              </section>
             </div>
-          </section>
-        ) : null}
-        <BriefCard symbol={view.symbol} yesCents={view.market.prices.buyYesCents} />
-      </aside>
+          ) : null}
+          <Chatter posts={view.matchedPosts} nowMs={Number.isFinite(nowMs) ? nowMs : Date.now()} />
+          <Related markets={view.related} />
+        </div>
+        <aside className={styles.rail} aria-label="Trade and research">
+          <TradeCard view={view} />
+          {trust.length > 0 ? (
+            <section className={styles.card} aria-label="Can you trust these odds">
+              <h2 className={styles.heading}>Can you trust these odds?</h2>
+              <div className={styles.trustList}>
+                {trust.map((line) => (
+                  <p key={line.kind} className={styles.trustLine} data-tone={line.tone}>{line.text}</p>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          <BriefCard symbol={view.symbol} yesCents={view.market.prices.buyYesCents} />
+        </aside>
+      </div>
     </div>
   );
 }

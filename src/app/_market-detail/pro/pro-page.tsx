@@ -415,69 +415,73 @@ export function ProPage({ symbol, initial }: { readonly symbol: string; readonly
 
   return (
     <div className={styles.page}>
-      <div className={styles.main}>
-        {market !== undefined ? (
-          <Header
-            market={market}
-            watched={watched}
-            onToggle={() => {
-              void watchlist.toggle({ eventTicker: market.eventTicker, instrumentSymbol: market.symbol, yesCents: market.yesAskCents });
-            }}
-          />
-        ) : null}
-        {problem !== null ? <p className={styles.banner} role="alert">{problemMessage(problem, errorMessage)}</p> : null}
-        {shell === undefined && problem === null ? <p className={styles.status}>Loading live market…</p> : null}
-        {shell !== undefined ? (
-          <>
-            <div className={styles.stats}>
-              <StatCell label="Last" stat={shell.stats.last} />
-              <StatCell label="24h change" stat={shell.stats.change24h} />
-              <StatCell label="Bid / ask" stat={shell.stats.bidAsk} />
-              <StatCell label="24h high / low" stat={shell.stats.highLow24h} />
-              <StatCell label="24h volume" stat={shell.stats.volume24h} />
-              <StatCell label="Total volume" stat={shell.stats.volumeTotal} />
-              <StatCell label="Open interest" stat={shell.stats.openInterest} />
-              <StatCell label="Traders" stat={shell.stats.traders} />
-              <StatCell label="Resolves in" stat={shell.stats.resolvesIn} />
-              <StatCell label="Max payout" stat={shell.stats.maxPayout} />
-            </div>
-            <div className={styles.body}>
-              {chart !== undefined ? (
-                <CandleChart chart={timeframe === undefined || chart.timeframe === timeframe ? chart : { ...chart, timeframe }} timeframe={timeframe ?? chart.timeframe} onTimeframe={chooseTimeframe} spotLabel={spotLabel} />
-              ) : null}
-              {spot !== null && spot !== undefined ? <SpotPanel spot={spot} /> : null}
-              <LadderPanel ladder={shell.ladder} />
-              {live === undefined ? (
-                <section className={styles.panel} aria-label="Loading indicators">
-                  <Skeleton rows={5} />
-                </section>
-              ) : (
-                <IndicatorsPanel rows={live.indicators} />
-              )}
-              {live === undefined ? (
-                <section className={styles.panel} aria-label="Loading flow">
-                  <Skeleton />
-                </section>
-              ) : (
-                <FlowPanel live={live} />
-              )}
-              {live === undefined ? (
-                <section className={styles.panel} aria-label="Loading event feed">
-                  <Skeleton />
-                </section>
-              ) : (
-                <EventFeed live={live} nowMs={nowMs} />
-              )}
-            </div>
-          </>
-        ) : null}
+      {market !== undefined ? (
+        <Header
+          market={market}
+          watched={watched}
+          onToggle={() => {
+            void watchlist.toggle({ eventTicker: market.eventTicker, instrumentSymbol: market.symbol, yesCents: market.yesAskCents });
+          }}
+        />
+      ) : null}
+      {problem !== null ? <p className={styles.banner} role="alert">{problemMessage(problem, errorMessage)}</p> : null}
+      {shell === undefined && problem === null ? <p className={styles.status}>Loading live market…</p> : null}
+      {shell !== undefined ? (
+        <div className={styles.stats}>
+          <StatCell label="Last" stat={shell.stats.last} />
+          <StatCell label="24h change" stat={shell.stats.change24h} />
+          <StatCell label="Bid / ask" stat={shell.stats.bidAsk} />
+          <StatCell label="24h high / low" stat={shell.stats.highLow24h} />
+          <StatCell label="24h volume" stat={shell.stats.volume24h} />
+          <StatCell label="Total volume" stat={shell.stats.volumeTotal} />
+          <StatCell label="Open interest" stat={shell.stats.openInterest} />
+          <StatCell label="Traders" stat={shell.stats.traders} />
+          <StatCell label="Resolves in" stat={shell.stats.resolvesIn} />
+          <StatCell label="Max payout" stat={shell.stats.maxPayout} />
+        </div>
+      ) : null}
+      <div className={styles.layout}>
+        <div className={styles.main}>
+          {shell !== undefined ? (
+            <>
+              <div className={styles.body}>
+                {chart !== undefined ? (
+                  <CandleChart chart={timeframe === undefined || chart.timeframe === timeframe ? chart : { ...chart, timeframe }} timeframe={timeframe ?? chart.timeframe} onTimeframe={chooseTimeframe} spotLabel={spotLabel} />
+                ) : null}
+                {spot !== null && spot !== undefined ? <SpotPanel spot={spot} /> : null}
+                <LadderPanel ladder={shell.ladder} />
+                {live === undefined ? (
+                  <section className={styles.panel} aria-label="Loading indicators">
+                    <Skeleton rows={5} />
+                  </section>
+                ) : (
+                  <IndicatorsPanel rows={live.indicators} />
+                )}
+                {live === undefined ? (
+                  <section className={styles.panel} aria-label="Loading flow">
+                    <Skeleton />
+                  </section>
+                ) : (
+                  <FlowPanel live={live} />
+                )}
+                {live === undefined ? (
+                  <section className={styles.panel} aria-label="Loading event feed">
+                    <Skeleton />
+                  </section>
+                ) : (
+                  <EventFeed live={live} nowMs={nowMs} />
+                )}
+              </div>
+            </>
+          ) : null}
+        </div>
+        <aside className={styles.rail}>
+          {market !== undefined && budget !== undefined ? <OrderTicket market={market} budget={budget} /> : <div className={styles.ticket}><Skeleton rows={8} /></div>}
+          {position !== undefined && position !== null ? <PositionCard position={position} /> : null}
+          {live === undefined ? <div className={styles.book}><Skeleton rows={6} /></div> : <OrderBookCard live={live} />}
+          {live === undefined ? <div className={styles.tape}><Skeleton rows={6} /></div> : <TradesCard live={live} />}
+        </aside>
       </div>
-      <aside className={styles.rail}>
-        {market !== undefined && budget !== undefined ? <OrderTicket market={market} budget={budget} /> : <div className={styles.ticket}><Skeleton rows={8} /></div>}
-        {position !== undefined && position !== null ? <PositionCard position={position} /> : null}
-        {live === undefined ? <div className={styles.book}><Skeleton rows={6} /></div> : <OrderBookCard live={live} />}
-        {live === undefined ? <div className={styles.tape}><Skeleton rows={6} /></div> : <TradesCard live={live} />}
-      </aside>
     </div>
   );
 }
