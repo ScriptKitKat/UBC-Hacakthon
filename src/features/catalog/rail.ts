@@ -10,7 +10,6 @@ export function railFromSnapshot(snapshot: DeskSnapshot, now = new Date(), timeZ
     perTradeMaxCents: snapshot.policy.perTradeMaxCents,
     autoApproveMaxCents: snapshot.policy.autoApproveMaxCents,
     killSwitch: snapshot.policy.killSwitch,
-    pendingCount: snapshot.pending.length,
     senderAllowlist: [...snapshot.policy.senderAllowlist],
     ledgerConfigured: snapshot.ledger.configured,
     resetAt,
