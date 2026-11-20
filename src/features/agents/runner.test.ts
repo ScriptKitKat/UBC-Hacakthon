@@ -4,13 +4,14 @@ import { createMemoryHistory } from "@/features/history";
 import { fail, ok } from "@/features/markets";
 import type { GeminiMarketsClient, MarketContract, MarketEvent } from "@/features/markets";
 import { createMemoryFileSystem } from "@/features/storage";
-import { instrumentSymbol } from "@/shared";
+import { agentCycleReportSchema, instrumentSymbol } from "@/shared";
 import type { DecisionLogEntry, DeepDiveResult } from "@/shared";
 import type { DeskBudget } from "./budget";
-import { runAgentTick } from "./runner";
+import { runAgentCycle, runAgentTick } from "./runner";
 import type { AgentRunnerDeps } from "./runner";
 import { openAgentStore } from "./store";
 import type { AgentDraft } from "./store";
+import { AGENT_LOOP_INTERVAL_MS, agentCycle, startAgentLoop } from "./loop";
 
 const NOW = new Date("2026-11-19T18:00:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -40,8 +41,15 @@ function entry(kind: DecisionLogEntry["kind"], outcome: "yes" | "no"): DecisionL
 
 const DELIVERED: DeepDiveResult = { status: "delivered", alreadyPurchased: false, trace: [], failureReason: null, brief: null, purchase: null };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
+
 async function setup(options: { readonly yesNow: number; readonly yesBefore: number; readonly volume24h?: number; readonly draft?: Partial<AgentDraft>; readonly allowAutonomous?: boolean }) {
-  const store = openAgentStore({ fs: createMemoryFileSystem(), path: "agents.json", now: () => NOW, id: () => "agent-1" });
+  let idCount = 0;
+  const store = openAgentStore({ fs: createMemoryFileSystem(), path: "agents.json", now: () => NOW, id: () => `agent-${String(++idCount)}` });
   const agent = await store.create({ eventTicker: "BTC", instrumentSymbol: SYMBOL, name: "Scout", ...options.draft });
   const history = createMemoryHistory();
   history.watch(SYMBOL);
@@ -53,7 +61,13 @@ async function setup(options: { readonly yesNow: number; readonly yesBefore: num
     store,
     markets: { getEvent, candles: () => Promise.resolve(fail({ kind: "network" })) },
     history,
-    desk: { proposeTrade, buyDeepDive, getSnapshot: vi.fn<Desk["getSnapshot"]>() },
+    desk: {
+      proposeTrade,
+      buyDeepDive,
+      getSnapshot: vi.fn<Desk["getSnapshot"]>(() => Promise.resolve({
+        policy: { dailyCapCents: DESK.dailyCapCents, remainingCents: DESK.remainingCents, perTradeMaxCents: DESK.perTradeMaxCents, autoApproveMaxCents: DESK.autoApproveMaxCents },
+      } as Awaited<ReturnType<Desk["getSnapshot"]>>)),
+    },
     grok: { apiKey: undefined, model: "unused" },
     claude: { apiKey: undefined, model: "unused" },
     fetch: vi.fn<typeof fetch>(),
@@ -71,6 +85,16 @@ describe("runAgentTick", () => {
     expect(tick.message).toContain("20 points");
     expect(proposeTrade).not.toHaveBeenCalled();
     expect((await store.get("agent-1"))?.activity.map((item) => item.kind)).toEqual(["message"]);
+  });
+
+  it("reports when market data could not be loaded", async () => {
+    const { agent, deps } = await setup({ yesNow: 60, yesBefore: 40 });
+    vi.spyOn(deps.markets, "getEvent").mockResolvedValue(fail({ kind: "network" }));
+
+    const tick = await runAgentTick(deps, agent, DESK, NOW);
+
+    expect(tick).toMatchObject({ fired: [], skipped: [], marketUnavailable: true, action: "none" });
+    expect(agentCycleReportSchema.parse({ ran: 1, ticks: [tick] }).ticks[0]?.marketUnavailable).toBe(true);
   });
 
   it("suggests the side the price moved toward and always asks for approval", async () => {
@@ -119,5 +143,66 @@ describe("runAgentTick", () => {
     const saved = await store.get("agent-1");
     expect(saved?.spentTodayCents).toBe(200);
     expect(saved?.activity.map((item) => item.kind)).toEqual(["message", "bet", "refused"]);
+  });
+});
+
+describe("runAgentCycle", () => {
+  it("runs only the selected agent", async () => {
+    const { agent, deps, store } = await setup({ yesNow: 55, yesBefore: 50, draft: { permission: "watch" } });
+    const other = await store.create({ eventTicker: "ETH", instrumentSymbol: "GEMI-ETH-YES", name: "Other", permission: "watch" });
+    const report = await runAgentCycle(deps, other.id);
+    expect(report).toMatchObject({ ran: 1, ticks: [{ agentId: other.id }] });
+    expect(await store.get(agent.id)).toMatchObject({ lastRunAt: null });
+    expect(await store.get(other.id)).toMatchObject({ lastRunAt: NOW.toISOString() });
+  });
+
+  it("coalesces overlapping untargeted runs", async () => {
+    const { deps } = await setup({ yesNow: 55, yesBefore: 50, draft: { permission: "watch" } });
+    const serializedDeps: AgentRunnerDeps = { ...deps, now: () => NOW };
+    const getEvent = vi.spyOn(serializedDeps.markets, "getEvent");
+    const run = agentCycle(serializedDeps);
+    const first = run();
+    const second = run();
+
+    expect(second).toBe(first);
+    await Promise.all([first, second]);
+    expect(getEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues a targeted run behind the in-flight loop cycle", async () => {
+    const { agent, deps, proposeTrade } = await setup({
+      yesNow: 60,
+      yesBefore: 40,
+      draft: { permission: "autonomous", maxPerBetCents: 200 },
+    });
+    const serializedDeps: AgentRunnerDeps = { ...deps, now: () => NOW };
+    const trade = deferred<DecisionLogEntry>();
+    const tradeStarted = deferred<undefined>();
+    proposeTrade.mockImplementation(() => {
+      tradeStarted.resolve(undefined);
+      return trade.promise;
+    });
+    const getEvent = vi.spyOn(serializedDeps.markets, "getEvent");
+    vi.useFakeTimers();
+    const timer = startAgentLoop(serializedDeps);
+
+    try {
+      await vi.advanceTimersByTimeAsync(AGENT_LOOP_INTERVAL_MS);
+      await tradeStarted.promise;
+      const targeted = agentCycle(serializedDeps)(agent.id);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getEvent).toHaveBeenCalledTimes(1);
+      expect(proposeTrade).toHaveBeenCalledTimes(1);
+
+      trade.resolve(entry("approve", "yes"));
+      const report = await targeted;
+
+      expect(getEvent).toHaveBeenCalledTimes(2);
+      expect(proposeTrade).toHaveBeenCalledTimes(1);
+      expect(report.ticks[0]?.skipped).toEqual([{ id: "oddsMove", reason: "already reported this move" }]);
+    } finally {
+      clearInterval(timer);
+      vi.useRealTimers();
+    }
   });
 });

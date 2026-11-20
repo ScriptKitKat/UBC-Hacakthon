@@ -1,7 +1,10 @@
+import { createSerialQueue } from "@/features/storage";
 import type { AgentCycleReport, AgentRunnerDeps } from "./runner";
 import { runAgentCycle } from "./runner";
 
 export const AGENT_LOOP_INTERVAL_MS = 60_000;
+
+const queues = new WeakMap<AgentRunnerDeps, ReturnType<typeof createSerialQueue>>();
 
 function singleFlight<T>(run: () => Promise<T>): () => Promise<T> {
   let running: Promise<T> | undefined;
@@ -11,13 +14,24 @@ function singleFlight<T>(run: () => Promise<T>): () => Promise<T> {
   };
 }
 
+function queueFor(deps: AgentRunnerDeps): ReturnType<typeof createSerialQueue> {
+  const existing = queues.get(deps);
+  if (existing !== undefined) return existing;
+  const queue = createSerialQueue();
+  queues.set(deps, queue);
+  return queue;
+}
+
 export function startAgentLoop(deps: AgentRunnerDeps): ReturnType<typeof setInterval> {
-  const tick = singleFlight(() => runAgentCycle(deps));
+  const queue = queueFor(deps);
+  const tick = singleFlight(() => queue.run(() => runAgentCycle(deps)));
   const timer = setInterval(() => { void tick().catch(() => undefined); }, AGENT_LOOP_INTERVAL_MS);
   timer.unref();
   return timer;
 }
 
-export function agentCycle(deps: AgentRunnerDeps): () => Promise<AgentCycleReport> {
-  return singleFlight(() => runAgentCycle(deps));
+export function agentCycle(deps: AgentRunnerDeps): (agentId?: string) => Promise<AgentCycleReport> {
+  const queue = queueFor(deps);
+  const tick = singleFlight(() => queue.run(() => runAgentCycle(deps)));
+  return (agentId) => agentId === undefined ? tick() : queue.run(() => runAgentCycle(deps, agentId));
 }

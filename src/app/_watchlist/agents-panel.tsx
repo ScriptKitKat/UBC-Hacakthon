@@ -1,12 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import type { AgentRecordView, AgentsView, WatchlistCard } from "@/shared";
 import { formatBudgetCents, friendlyEventTitle } from "@/shared";
 import { MarketCard } from "../_market-card/market-card";
 import { watchlistCardModel } from "../_market-card/model";
 import { useViewMode } from "../_research/use-view-mode";
-import { deleteAgent, saveAgent } from "../_shell/api";
+import { deleteAgent, loadAgents, runAgent, saveAgent } from "../_shell/api";
+import { agentRunResultText } from "./agent-run-result";
 import styles from "./agents.module.css";
 
 const MODELS: readonly { value: AgentRecordView["model"]; label: string }[] = [
@@ -44,6 +46,30 @@ const PERMISSIONS: readonly { value: AgentRecordView["permission"]; label: strin
 ];
 
 const BETS: readonly AgentRecordView["maxPerBetCents"][] = [100, 200, 500];
+
+type ActivityTrigger = NonNullable<AgentRecordView["activity"][number]["trigger"]>;
+
+const TRIGGER_LABELS: Readonly<Record<ActivityTrigger, string>> = {
+  oddsMove: "Odds move 5+ points in a day",
+  volumeSpike: "Volume spikes 2x or more",
+  xMentions: "X mentions surge",
+  breakingNews: "Breaking news on the topic",
+  oddsCross: "Odds cross a level I set",
+  endingSoon: "48 hours before it ends",
+  briefOddsMove10: "Brief after 10+ point odds move",
+  briefMonday: "Monday brief",
+  briefEndingSoon: "Brief 48 hours before it ends",
+};
+
+function relativeTime(at: string): string {
+  const elapsedMs = Date.now() - Date.parse(at);
+  if (!Number.isFinite(elapsedMs)) return "Unknown time";
+  if (elapsedMs < 45_000) return "just now";
+  if (elapsedMs < 60 * 60_000) return `${String(Math.floor(elapsedMs / 60_000))}m ago`;
+  if (elapsedMs < 24 * 60 * 60_000) return `${String(Math.floor(elapsedMs / (60 * 60_000)))}h ago`;
+  if (elapsedMs < 7 * 24 * 60 * 60_000) return `${String(Math.floor(elapsedMs / (24 * 60 * 60_000)))}d ago`;
+  return new Date(at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 function agentFor(agents: readonly AgentRecordView[], ticker: string): AgentRecordView | undefined {
   return agents.find((agent) => agent.eventTicker === ticker);
@@ -136,9 +162,10 @@ function AgentEditor({
   const [instructions, setInstructions] = useState(agent?.instructions ?? "");
   const [customOpen, setCustomOpen] = useState((agent?.instructions ?? "").trim() !== "");
   const [busy, setBusy] = useState(false);
+  const [runResult, setRunResult] = useState<string | null>(null);
+  const [showAllActivity, setShowAllActivity] = useState(false);
   const models = view?.models;
   const currentId = agent?.id;
-
 
   async function persist(input: Record<string, unknown>, id = currentId): Promise<void> {
     setBusy(true);
@@ -147,6 +174,27 @@ function AgentEditor({
       : await saveAgent(input, id);
     if (result !== undefined) onView(result);
     setBusy(false);
+  }
+
+  async function runNow(): Promise<void> {
+    if (agent === undefined || agent.status === "paused" || busy) return;
+    setBusy(true);
+    setRunResult(null);
+    try {
+      const report = await runAgent(agent.id);
+      const refreshed = await loadAgents();
+      if (refreshed !== undefined) onView(refreshed);
+      const tick = report?.ticks.find((item) => item.agentId === agent.id);
+      if (tick === undefined) {
+        setRunResult("The agent run could not be completed.");
+      } else {
+        setRunResult(agentRunResultText(tick, tick.fired.map((trigger) => TRIGGER_LABELS[trigger])));
+      }
+    } catch {
+      setRunResult("The agent run could not be completed.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   const draft: AgentRecordView["triggers"] = agent?.triggers ?? {
@@ -160,6 +208,8 @@ function AgentEditor({
   };
   const briefs = agent?.briefTriggers ?? { oddsMove10: true, everyMonday: false, endingSoon: true };
   const budget = agent?.dailyBudgetCents ?? Math.min(300, maxBudget);
+  const activities = [...(agent?.activity ?? [])].sort((left, right) => Date.parse(right.at) - Date.parse(left.at));
+  const visibleActivities = activities.slice(0, showAllActivity ? 50 : 5);
 
   return (
     <div className={styles.editor}>
@@ -169,17 +219,28 @@ function AgentEditor({
           <h2 className={styles.forTitle}>{title}</h2>
         </div>
         {agent === undefined ? null : (
-          <button
-            type="button"
-            className={styles.badge}
-            data-status={agent.status}
-            disabled={busy}
-            onClick={() => { void persist({ status: agent.status === "watching" ? "paused" : "watching" }); }}
-          >
-            {agent.status === "watching" ? "Watching" : "Paused"}
-          </button>
+          <div className={styles.headerActions}>
+            <button
+              type="button"
+              className={styles.badge}
+              data-status={agent.status}
+              disabled={busy}
+              onClick={() => { void persist({ status: agent.status === "watching" ? "paused" : "watching" }); }}
+            >
+              {agent.status === "watching" ? "Watching" : "Paused"}
+            </button>
+            <button
+              type="button"
+              className={styles.runNow}
+              disabled={busy || agent.status === "paused"}
+              onClick={() => { void runNow(); }}
+            >
+              Run now
+            </button>
+          </div>
         )}
       </div>
+      {runResult === null ? null : <p className={styles.runResult} role="status">{runResult}</p>}
 
       {agent === undefined ? (
         <button type="button" className={styles.seg} disabled={busy} onClick={() => { void persist({ name }); }}>
@@ -269,6 +330,40 @@ function AgentEditor({
         ) : (
           <p className={styles.preview}>No message yet. The agent writes one when something it watches happens.</p>
         )}
+        <div className={styles.activity}>
+          <div className={styles.activityHead}>
+            <span className={styles.label}>Activity</span>
+            {activities.length > 5 ? (
+              <button
+                type="button"
+                className={styles.activityToggle}
+                onClick={() => { setShowAllActivity((showing) => !showing); }}
+              >
+                {showAllActivity ? "Show less" : "Show all"}
+              </button>
+            ) : null}
+          </div>
+          {visibleActivities.length === 0 ? (
+            <p className={styles.activityEmpty}>No activity yet.</p>
+          ) : (
+            <ol className={styles.activityList}>
+              {visibleActivities.map((item) => (
+                <li key={item.id} className={styles.activityRow}>
+                  <div className={styles.activityMeta}>
+                    <span className={styles.activityKind} data-kind={item.kind}>{item.kind}</span>
+                    <time className={styles.activityTime} dateTime={item.at}>{relativeTime(item.at)}</time>
+                  </div>
+                  <p className={styles.activityText}>
+                    {item.text}
+                    {item.kind === "suggestion" ? (
+                      <>{" "}<Link className={styles.activityLink} href="/positions#approvals">Approve in Portfolio</Link></>
+                    ) : null}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
       </div>
 
       <div className={styles.field}>
