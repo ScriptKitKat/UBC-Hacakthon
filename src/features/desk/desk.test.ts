@@ -126,6 +126,21 @@ describe("desk", () => {
     expect((await desk.getSnapshot()).log.map((entry) => entry.kind)).toEqual(["refuse", "refuse"]);
   });
 
+  it("trades a listed contract that no news was matched to", async () => {
+    const { desk, debit, markets } = setup();
+    const entry = await desk.proposeTrade(propose());
+    expect(entry).toMatchObject({ kind: "approve", symbol });
+    expect(markets.getEvent).toHaveBeenCalledWith("FED261211", { refresh: true });
+    expect(debit).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a contract its event does not list", async () => {
+    const { desk, debit } = setup();
+    const entry = await desk.proposeTrade({ ...propose(), instrumentSymbol: "GEMI-FED261211-DELISTED" });
+    expect(entry).toMatchObject({ kind: "refuse", code: "market-closed" });
+    expect(debit).not.toHaveBeenCalled();
+  });
+
   it("refuses a contract that was never seen without calling the ledger", async () => {
     const { desk, debit } = await readyDesk();
     const entry = await desk.proposeTrade({ ...propose(), instrumentSymbol: "GEMI-UNKNOWN" });

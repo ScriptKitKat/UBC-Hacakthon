@@ -333,7 +333,7 @@ export function createDesk(deps: DeskDeps): Desk {
   }
 
   async function resolveMarket(symbol: InstrumentSymbol, refresh = false): Promise<LiveMarket | undefined> {
-    const eventTicker = tickers.get(symbol);
+    const eventTicker = tickers.get(symbol) ?? parseInstrumentSymbol(symbol)?.eventTicker;
     if (!eventTicker) return undefined;
     const result = await markets.getEvent(eventTicker, { refresh });
     if (!result.ok) return undefined;
