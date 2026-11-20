@@ -23,6 +23,15 @@ export function WatchlistIcon() {
   );
 }
 
+export function AgentsIcon() {
+  return (
+    <svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3 20v-1a6 6 0 0 1 12 0v1zM17 8h4M19 6v4M17 15a4 4 0 0 1 4 4v1h-3" />
+    </svg>
+  );
+}
+
 export function BriefsIcon() {
   return (
     <svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

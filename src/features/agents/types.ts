@@ -98,11 +98,4 @@ export const DEFAULT_BRIEF_TRIGGERS: BriefTriggers = {
   endingSoon: true,
 };
 
-export function utcDay(now: Date): string {
-  return now.toISOString().slice(0, 10);
-}
-
-export function rolledSpend(agent: Pick<AgentRecord, "spentTodayCents" | "spendDay">, now: Date): { readonly spentTodayCents: number; readonly spendDay: string } {
-  const day = utcDay(now);
-  return day === agent.spendDay ? { spentTodayCents: agent.spentTodayCents, spendDay: day } : { spentTodayCents: 0, spendDay: day };
-}
+export { rolledSpend, utcDay } from "@/shared";

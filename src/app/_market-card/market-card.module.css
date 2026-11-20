@@ -30,6 +30,7 @@
 }
 .card:hover { transform: translateY(-2px); box-shadow: 0 2px 4px rgba(29, 41, 61, 0.06), 0 16px 36px rgba(29, 41, 61, 0.1); }
 .card[data-selected="true"] { outline: 2px solid var(--mc-text); }
+.card[data-selectable="true"] { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .card { transition: none; } .card:hover { transform: none; } }
 
 .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 20px; }
@@ -85,6 +86,7 @@
 }
 .title::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
 .title:focus-visible { outline: none; }
+.titleButton { padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
 .card:has(.title:focus-visible) { outline: 2px solid var(--mc-focus); outline-offset: 2px; }
 .card button, .card a:not(.title), .card input, .card select { position: relative; z-index: 1; }
 
