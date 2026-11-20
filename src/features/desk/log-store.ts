@@ -16,6 +16,7 @@ export const entrySchema = z.object({
   symbol: z.string(),
   outcome: outcome.nullable(),
   notionalCents: z.number(),
+  seenPriceCents: z.exactOptional(z.number()),
   senderId: z.string(),
   source: z.enum(["voice", "x", "desk", "feed", "research"]),
   signature: z.exactOptional(z.string()),

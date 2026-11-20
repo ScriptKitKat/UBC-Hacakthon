@@ -251,7 +251,7 @@ describe("sampler", () => {
 
   it("starts and stops its schedule once", async () => {
     const stop = vi.fn();
-    const schedule = vi.fn<(task: () => void, intervalMs: number) => () => void>(() => stop);
+    const schedule = vi.fn<(task: () => Promise<void>, intervalMs: number) => () => void>(() => stop);
     const history = await openHistoryStore({ fs: createMemoryFileSystem(), path: PATH });
     const sampler = createSampler({ history, markets: { getEvent: vi.fn() }, nowMs: () => 0, schedule, intervalMs: 30_000 });
     sampler.start();

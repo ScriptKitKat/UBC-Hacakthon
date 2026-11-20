@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { Connection } from "@solana/web3.js";
 import { selectLlm } from "@/features/llm";
 import { createSampler, openHistoryStore } from "@/features/history";
+import type { Sampler } from "@/features/history";
 import { createSolanaLedger, createUnconfiguredLedger, isExpectedGenesis } from "@/features/ledger";
 import type { UsdcLedger } from "@/features/ledger";
 import { openAgentStore, startAgentLoop, agentCycle } from "@/features/agents";
@@ -18,7 +19,8 @@ import type { MarketPro } from "@/features/market-pro";
 import { createResearch } from "@/features/research";
 import type { Research } from "@/features/research";
 import { createXFeed, loadXFeedSettings } from "@/features/xfeed";
-import { StoreUnavailableError, nodeFileSystem, resolveDataDirectory } from "@/features/storage";
+import { createSerialQueue, resolveDataDirectory, resolveFileSystem, StoreUnavailableError } from "@/features/storage";
+import type { FileSystem } from "@/features/storage";
 import { createNonceCodec, createX402Server, openUsedPayments, priceToBaseUnits, x402NetworkFor } from "@/features/x402";
 import type { LedgerView } from "@/shared";
 import { loadDeskConfig } from "./config";
@@ -31,11 +33,14 @@ import { startReconciliation } from "./reconciliation";
 import { openDecisionLog, openMigratedSpendJournal } from "./log-store";
 import { openMatchStore } from "./match-store";
 import { UNDELIVERED_RECOVERY_MS, openPurchaseStore } from "./purchase-store";
+import { isStale } from "./runtime-revision";
 
-const browseCache = createBrowseCache(20_000);
-const listCache = createListCache(20_000);
+let browseCache = createBrowseCache(20_000);
+let listCache = createListCache(20_000);
 const PAYMENT_TIMEOUT_SECONDS = 120;
 let homeCatalog: HomeCatalog | undefined;
+const runtimeQueue = createSerialQueue();
+const accessLeases = new WeakMap<object, () => void>();
 const NONCE_BYTES = 16;
 const SECRET_BYTES = 32;
 
@@ -46,6 +51,12 @@ export type DeskAccess =
 export interface AgentRuntime {
   readonly store: AgentStore;
   readonly run: (agentId?: string, options?: AgentCycleOptions) => Promise<AgentCycleReport>;
+}
+
+export interface CronTickSummary {
+  readonly reconciled: true;
+  readonly sampled: true;
+  readonly agents: AgentCycleReport;
 }
 
 export interface HomeCatalog {
@@ -72,7 +83,7 @@ async function openOrExplain<T>(open: () => Promise<T>): Promise<{ readonly ok: 
   }
 }
 
-async function buildDesk(env: Readonly<Record<string, string | undefined>>): Promise<DeskAccess> {
+async function buildDesk(env: Readonly<Record<string, string | undefined>>, fs: FileSystem, runtime: DeskRuntime): Promise<DeskAccess> {
   const config = loadDeskConfig(env);
   if (!config.ok) return config;
   const settings = config.value.ledger;
@@ -85,7 +96,8 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
         mint: settings.mint,
         ...(settings.testMint ? { testMint: settings.testMint } : {}),
         recipient: settings.recipient,
-        keypairPath: settings.keypairPath,
+        ...(settings.keypairPath === undefined ? {} : { keypairPath: settings.keypairPath }),
+        ...(settings.keypairJson === undefined ? {} : { keypairJson: settings.keypairJson }),
       });
       ledger = configured;
       ledgerView = {
@@ -105,29 +117,29 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   }
   const markets = createGeminiMarketsClient({ baseUrl: config.value.geminiBaseUrl, fetch, maxInFlight: 4, minRequestIntervalMs: 100 });
   const dataDirectory = resolveDataDirectory(env, process.cwd());
-  const history = await openHistoryStore({ fs: nodeFileSystem, path: join(dataDirectory, "price-history.json") });
+  const history = await openHistoryStore({ fs, path: join(dataDirectory, "price-history.json") });
   const connection = settings.configured && researchRecipient
     ? new Connection(settings.rpcUrl, { commitment: "confirmed", fetch: (url, init) => fetch(url, { ...init, redirect: "error" }) })
     : undefined;
   const stores = await openOrExplain(async () => {
-    const decisionLog = await openDecisionLog({ fs: nodeFileSystem, path: join(dataDirectory, "decision-log.json") });
+    const decisionLog = await openDecisionLog({ fs, path: join(dataDirectory, "decision-log.json") });
     const journal = await openMigratedSpendJournal({
-      fs: nodeFileSystem,
+      fs,
       path: join(dataDirectory, "spend-journal.json"),
       nowIso: () => new Date().toISOString(),
     }, decisionLog.initialLog);
     return {
       decisionLog,
       journal,
-      purchaseStore: await openPurchaseStore({ fs: nodeFileSystem, path: join(dataDirectory, "research-purchases.json") }),
-      matchStore: await openMatchStore({ fs: nodeFileSystem, path: join(dataDirectory, "matched-posts.json") }),
-      chatterStore: await openChatterStore({ fs: nodeFileSystem, path: join(dataDirectory, "x-chatter.json") }),
+      purchaseStore: await openPurchaseStore({ fs, path: join(dataDirectory, "research-purchases.json") }),
+      matchStore: await openMatchStore({ fs, path: join(dataDirectory, "matched-posts.json") }),
+      chatterStore: await openChatterStore({ fs, path: join(dataDirectory, "x-chatter.json") }),
       feedOrders: await openFeedOrders({
-        fs: nodeFileSystem,
+        fs,
         path: join(dataDirectory, "feed-orders.json"),
       }),
       usedPayments: await openUsedPayments({
-        fs: nodeFileSystem,
+        fs,
         path: join(dataDirectory, "x402-payments.json"),
         protectedSignatures() {
           const cutoff = Date.now() - UNDELIVERED_RECOVERY_MS;
@@ -230,12 +242,24 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   const reconcile = async () => {
     await Promise.allSettled([desk.reconcile(), payments?.reconcile()]);
   };
-  await reconcile();
-  const runtime = holder[deskKey];
-  if (runtime) runtime.reconciliationTimer ??= startReconciliation(reconcile);
-  createSampler({ history, markets, nowMs: () => Date.now() }).start();
+  const cronMode = Boolean(env.VERCEL) || env.DESK_BACKGROUND === "cron";
+  if (!cronMode) await reconcile();
+  runtime.sampler ??= createSampler({
+    history,
+    markets,
+    nowMs: () => Date.now(),
+    schedule(task, intervalMs) {
+      const timer = setInterval(() => { void runRuntimeOperation(runtime, task).catch(() => undefined); }, intervalMs);
+      timer.unref();
+      return () => { clearInterval(timer); };
+    },
+  });
+  if (!cronMode) {
+    runtime.reconciliationTimer ??= startReconciliation(() => runRuntimeOperation(runtime, reconcile));
+    runtime.sampler.start();
+  }
   const catalogDeps = { markets, history, now: () => new Date(), policy: config.value.policy };
-  const agentStore = openAgentStore({ fs: nodeFileSystem, path: join(dataDirectory, "agents.json") });
+  const agentStore = openAgentStore({ fs, path: join(dataDirectory, "agents.json") });
   const agentDeps = {
     store: agentStore,
     markets,
@@ -247,6 +271,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     operatorId: config.value.feed.operatorId,
     ...(xFeed === undefined ? {} : { xFeed }),
   };
+  const runAgentCycle = agentCycle(agentDeps);
   homeCatalog = {
     list: async (query = {}) => {
       const cached = listCache.get(query);
@@ -271,11 +296,16 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     spots: (assets) => loadSpotPrices({ markets }, assets),
     cardsFor: (symbols) => cardsForSymbols(catalogDeps, symbols),
     cardsForSaved: (items) => cardsForSaved(catalogDeps, items),
-    watchlist: openWatchlist({ fs: nodeFileSystem, path: join(dataDirectory, "watchlist.json") }),
-    agents: { store: agentStore, run: agentCycle(agentDeps) },
+    watchlist: openWatchlist({ fs, path: join(dataDirectory, "watchlist.json") }),
+    agents: { store: agentStore, run: runAgentCycle },
   };
   const watchlist = homeCatalog.watchlist;
-  if (runtime) runtime.agentTimer ??= startAgentLoop(agentDeps);
+  if (!cronMode) runtime.agentTimer ??= startAgentLoop(agentDeps, (cycle) => runRuntimeOperation(runtime, cycle));
+  runtime.cron = async () => {
+    await reconcile();
+    await runtime.sampler?.sampleOnce();
+    return { reconciled: true, sampled: true, agents: await runAgentCycle() };
+  };
   const marketPro = createMarketPro({
     markets,
     nowMs: () => Date.now(),
@@ -283,32 +313,162 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     isWatched: async (symbol) => (await watchlist.list()).includes(symbol),
     ...(chatter ? { chatterFor: chatter.peek } : {}),
   });
-  if (runtime) runtime.catalog = homeCatalog;
+  runtime.catalog = homeCatalog;
   return { ok: true, desk, research, deepDive, marketPro, chatter };
 }
 
 const deskKey: unique symbol = Symbol.for("news-to-trade-desk.desk");
 interface DeskRuntime {
-  readonly access: Promise<DeskAccess>;
+  access: Promise<DeskAccess>;
+  readonly revision: ReturnType<typeof resolveFileSystem>["revision"];
+  loadedRev: number;
+  activeLeases: number;
+  stopping: boolean;
+  idle: Promise<void>;
+  resolveIdle: (() => void) | undefined;
   catalog?: HomeCatalog;
   reconciliationTimer?: ReturnType<typeof startReconciliation>;
   agentTimer?: ReturnType<typeof startAgentLoop>;
+  sampler?: Sampler;
+  cron?: () => Promise<CronTickSummary>;
 }
 
 const holder = globalThis as typeof globalThis & { [deskKey]?: DeskRuntime };
+type RuntimeLease = { readonly runtime: DeskRuntime; readonly release: () => void };
 
-export async function getHomeServices(): Promise<HomeServices> {
-  const access = await getDesk();
-  if (!access.ok) return access;
-  const catalog = holder[deskKey]?.catalog ?? homeCatalog;
+function releaseLease(runtime: DeskRuntime): () => void {
+  if (runtime.activeLeases === 0) {
+    runtime.idle = new Promise<void>((resolve) => { runtime.resolveIdle = resolve; });
+  }
+  runtime.activeLeases += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    runtime.activeLeases -= 1;
+    if (runtime.activeLeases === 0) {
+      runtime.resolveIdle?.();
+      runtime.resolveIdle = undefined;
+    }
+  };
+}
+
+function runRuntimeOperation<T>(runtime: DeskRuntime, operation: () => Promise<T>): Promise<T> {
+  if (runtime.stopping) return Promise.reject(new Error("Desk runtime is stopping"));
+  const release = releaseLease(runtime);
+  return Promise.resolve().then(operation).finally(release);
+}
+
+function stopRuntimeTimers(runtime: DeskRuntime): void {
+  runtime.stopping = true;
+  if (runtime.reconciliationTimer !== undefined) clearInterval(runtime.reconciliationTimer);
+  if (runtime.agentTimer !== undefined) clearInterval(runtime.agentTimer);
+  runtime.sampler?.stop();
+}
+
+function disposeRuntime(runtime: DeskRuntime): void {
+  stopRuntimeTimers(runtime);
+}
+
+function resetCatalogCaches(): void {
+  browseCache = createBrowseCache(20_000);
+  listCache = createListCache(20_000);
+  homeCatalog = undefined;
+}
+
+function createRuntime(): DeskRuntime {
+  const resolved = resolveFileSystem(process.env);
+  const runtime: DeskRuntime = {
+    access: Promise.resolve().then(async (): Promise<DeskAccess> => {
+      runtime.loadedRev = await resolved.revision?.current() ?? 0;
+      return buildDesk(process.env, resolved.fs, runtime);
+    }),
+    revision: resolved.revision,
+    loadedRev: 0,
+    activeLeases: 0,
+    stopping: false,
+    idle: Promise.resolve(),
+    resolveIdle: undefined,
+  } satisfies DeskRuntime;
+  holder[deskKey] = runtime;
+  return runtime;
+}
+
+async function acquireRuntime(): Promise<RuntimeLease> {
+  for (;;) {
+    const result = await runtimeQueue.run(async () => {
+      let runtime = holder[deskKey];
+      if (runtime?.revision !== undefined) {
+        const currentRev = await runtime.revision.current();
+        if (isStale(runtime.loadedRev, runtime.revision.ownWrites(), currentRev)) {
+          if (runtime.activeLeases > 0) {
+            stopRuntimeTimers(runtime);
+            return { wait: runtime.idle };
+          }
+          disposeRuntime(runtime);
+          if (holder[deskKey] === runtime) Reflect.deleteProperty(holder, deskKey);
+          resetCatalogCaches();
+          runtime = undefined;
+        }
+      }
+      const current = runtime ?? createRuntime();
+      return { lease: { runtime: current, release: releaseLease(current) } };
+    });
+    if ("wait" in result) {
+      await result.wait;
+      continue;
+    }
+    return result.lease;
+  }
+}
+
+function attachLease<T extends object>(value: T, release: () => void): T {
+  accessLeases.set(value, release);
+  return value;
+}
+
+export function releaseRuntimeAccess(value: object): void {
+  const release = accessLeases.get(value);
+  if (release === undefined) return;
+  accessLeases.delete(value);
+  release();
+}
+
+function homeServicesFor(access: DeskAccess, runtime: DeskRuntime): HomeServices {
+  if (!access.ok) return { ...access };
+  const catalog = runtime.catalog ?? homeCatalog;
   if (catalog === undefined) return { ok: false, issues: ["catalog: unavailable"] };
   return { ok: true, desk: access.desk, research: access.research, catalog, marketPro: access.marketPro };
 }
 
-export function getDesk(): Promise<DeskAccess> {
-  const existing = holder[deskKey];
-  if (existing) return existing.access;
-  const created = buildDesk(process.env);
-  holder[deskKey] = { access: created };
-  return created;
+export async function getHomeServices(): Promise<HomeServices> {
+  const lease = await acquireRuntime();
+  try {
+    const services = homeServicesFor(await lease.runtime.access, lease.runtime);
+    return attachLease(services, lease.release);
+  } catch (error) {
+    lease.release();
+    throw error;
+  }
+}
+
+export async function getDesk(): Promise<DeskAccess> {
+  const lease = await acquireRuntime();
+  try {
+    return attachLease({ ...await lease.runtime.access }, lease.release);
+  } catch (error) {
+    lease.release();
+    throw error;
+  }
+}
+
+export async function runCronTick(): Promise<CronTickSummary | null> {
+  const lease = await acquireRuntime();
+  try {
+    const access = await lease.runtime.access;
+    if (!access.ok || lease.runtime.cron === undefined) return null;
+    return await lease.runtime.cron();
+  } finally {
+    lease.release();
+  }
 }

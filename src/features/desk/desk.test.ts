@@ -98,6 +98,42 @@ async function readyDesk(options: Parameters<typeof setup>[0] = {}) {
 }
 
 describe("desk", () => {
+  it("restores an unresolved approval and allows it to be confirmed", async () => {
+    const pending = await setup().desk.proposeTrade(propose("yes", 500));
+    if (pending.kind !== "needs-approval") throw new Error("Expected a pending approval");
+    const { desk, debit } = setup({ extra: { initialLog: [pending] } });
+
+    expect((await desk.getSnapshot()).pending).toEqual([{
+      intentId: pending.intentId,
+      symbol,
+      outcome: "yes",
+      notionalCents: 500,
+      senderId: "priscilla",
+      createdAt: pending.at,
+    }]);
+    expect(await desk.confirmPending(pending.intentId, "priscilla")).toMatchObject({
+      ok: true,
+      entry: { kind: "approve", intentId: pending.intentId, outcome: "yes" },
+    });
+    expect(debit).toHaveBeenCalledOnce();
+  });
+
+  it("does not restore an approval with a newer resolving log entry", async () => {
+    const pending = await setup().desk.proposeTrade(propose("yes", 500));
+    if (pending.kind !== "needs-approval") throw new Error("Expected a pending approval");
+    const resolved = {
+      ...pending,
+      entryId: "resolved-entry",
+      kind: "refuse" as const,
+      code: "rejected",
+      spokenReason: "You rejected this trade.",
+      at: "2026-11-17T12:01:00.000Z",
+    };
+    const { desk } = setup({ extra: { initialLog: [resolved, pending] } });
+
+    expect((await desk.getSnapshot()).pending).toEqual([]);
+  });
+
   it("stores matched news with live odds in the snapshot", async () => {
     const { desk } = await readyDesk();
     const snapshot = await desk.getSnapshot();

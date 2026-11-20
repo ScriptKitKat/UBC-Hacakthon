@@ -15,11 +15,11 @@ export interface SamplerOptions {
   readonly markets: Pick<GeminiMarketsClient, "getEvent">;
   readonly nowMs: () => number;
   readonly intervalMs?: number;
-  readonly schedule?: (task: () => void, intervalMs: number) => () => void;
+  readonly schedule?: (task: () => Promise<void>, intervalMs: number) => () => void;
 }
 
-function defaultSchedule(task: () => void, intervalMs: number): () => void {
-  const timer = setInterval(task, intervalMs);
+function defaultSchedule(task: () => Promise<void>, intervalMs: number): () => void {
+  const timer = setInterval(() => { void task(); }, intervalMs);
   timer.unref();
   return () => {
     clearInterval(timer);
@@ -63,7 +63,7 @@ export function createSampler(options: SamplerOptions): Sampler {
   return {
     sampleOnce,
     start() {
-      cancel ??= schedule(() => void sampleOnce(), options.intervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS);
+      cancel ??= schedule(sampleOnce, options.intervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS);
     },
     stop() {
       cancel?.();

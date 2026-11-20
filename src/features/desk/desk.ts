@@ -280,6 +280,27 @@ export function createDesk(deps: DeskDeps): Desk {
   const listedContracts = new Map<string, ReadonlySet<string>>();
   const matchCache = new Map<string, { readonly at: number; readonly post: PostInput; readonly match: Promise<FeedMatch> }>();
   const feedOrders = deps.feedOrders ?? createFeedOrders();
+  const latestEntries = new Map<string, DecisionLogEntry>();
+  for (const entry of initialLog) {
+    if (!latestEntries.has(entry.intentId)) latestEntries.set(entry.intentId, entry);
+  }
+  const feedIntentIds = new Set(feedOrders.all().map(({ entry }) => entry.intentId));
+  for (const entry of latestEntries.values()) {
+    const createdAt = Date.parse(entry.at);
+    if (entry.kind !== "needs-approval" || entry.outcome === null || feedIntentIds.has(entry.intentId) || !Number.isFinite(createdAt)) continue;
+    const intent = {
+      intentId: entry.intentId,
+      instrumentSymbol: instrumentSymbol(entry.symbol),
+      outcome: entry.outcome,
+      notional: usdCents(entry.notionalCents),
+      source: entry.source === "voice" || entry.source === "research" ? "desk" : entry.source,
+      senderId: entry.senderId,
+      createdAt: new Date(createdAt),
+      ...(entry.seenPriceCents === undefined ? {} : { seenPriceCents: entry.seenPriceCents }),
+    };
+    const decision = restorePendingApproval(intent);
+    pending.set(entry.intentId, { decision, intent });
+  }
   const buying = new Map<string, Promise<DecisionLogEntry>>();
   const confirming = new Map<string, Promise<ConfirmResult>>();
 
@@ -345,6 +366,7 @@ export function createDesk(deps: DeskDeps): Desk {
       symbol: intent.instrumentSymbol,
       outcome: intent.outcome,
       notionalCents: intent.notional,
+      ...(intent.seenPriceCents === undefined ? {} : { seenPriceCents: intent.seenPriceCents }),
       senderId: intent.senderId,
       source: intent.source,
     };

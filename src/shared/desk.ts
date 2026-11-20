@@ -24,6 +24,7 @@ export interface DecisionLogEntry {
   readonly symbol: string;
   readonly outcome: Outcome | null;
   readonly notionalCents: number;
+  readonly seenPriceCents?: number;
   readonly senderId: string;
   readonly source: DecisionSource;
   readonly signature?: string;

@@ -41,6 +41,7 @@ const envSchema = z.object({
   SOLANA_CLUSTER: z.enum(["devnet", "localnet"]).optional(),
   SOLANA_RPC_URL: z.url().optional(),
   SOLANA_KEYPAIR_PATH: z.string().min(1).optional(),
+  SOLANA_KEYPAIR_JSON: z.string().trim().min(1).optional(),
   VAULT_RECIPIENT: publicKey.optional(),
   USDC_MINT: publicKey.optional(),
   RESEARCH_RECIPIENT: publicKey.optional(),
@@ -55,7 +56,8 @@ export type LedgerSettings =
       readonly configured: true;
       readonly cluster: "localnet" | "devnet";
       readonly rpcUrl: string;
-      readonly keypairPath: string;
+      readonly keypairPath?: string;
+      readonly keypairJson?: string;
       readonly recipient: PublicKey;
       readonly mint: PublicKey;
       readonly testMint?: PublicKey;
@@ -88,17 +90,27 @@ export type DeskConfigResult =
   | { readonly ok: false; readonly issues: readonly string[] };
 
 function ledgerSettings(env: z.output<typeof envSchema>): LedgerSettings {
-  const { SOLANA_CLUSTER: cluster, SOLANA_RPC_URL: rpcUrl, SOLANA_KEYPAIR_PATH: keypairPath, VAULT_RECIPIENT: recipient, USDC_MINT: mint } = env;
+  const {
+    SOLANA_CLUSTER: cluster,
+    SOLANA_RPC_URL: rpcUrl,
+    SOLANA_KEYPAIR_PATH: keypairPath,
+    SOLANA_KEYPAIR_JSON: keypairJson,
+    VAULT_RECIPIENT: recipient,
+    USDC_MINT: mint,
+  } = env;
+  const keypair = keypairJson === undefined
+    ? keypairPath === undefined ? undefined : { keypairPath }
+    : { keypairJson };
   const missing = [
-    ["SOLANA_CLUSTER", cluster],
-    ["SOLANA_RPC_URL", rpcUrl],
-    ["SOLANA_KEYPAIR_PATH", keypairPath],
-    ["VAULT_RECIPIENT", recipient],
-    ["USDC_MINT", mint],
-  ].flatMap(([name, value]) => (value === undefined ? [String(name)] : []));
-  if (!cluster || !rpcUrl || !keypairPath || !recipient || !mint) return { configured: false, missing };
+    ...(cluster === undefined ? ["SOLANA_CLUSTER"] : []),
+    ...(rpcUrl === undefined ? ["SOLANA_RPC_URL"] : []),
+    ...(keypair === undefined ? ["SOLANA_KEYPAIR_PATH or SOLANA_KEYPAIR_JSON"] : []),
+    ...(recipient === undefined ? ["VAULT_RECIPIENT"] : []),
+    ...(mint === undefined ? ["USDC_MINT"] : []),
+  ];
+  if (!cluster || !rpcUrl || keypair === undefined || !recipient || !mint) return { configured: false, missing };
   const testMint = env.SOLANA_TEST_MINT ?? (cluster === "localnet" ? mint : undefined);
-  return { configured: true, cluster, rpcUrl, keypairPath, recipient, mint, ...(testMint ? { testMint } : {}) };
+  return { configured: true, cluster, rpcUrl, ...keypair, recipient, mint, ...(testMint ? { testMint } : {}) };
 }
 
 export function loadDeskConfig(env: Readonly<Record<string, string | undefined>>): DeskConfigResult {

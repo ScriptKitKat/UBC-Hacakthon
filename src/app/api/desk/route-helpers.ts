@@ -1,11 +1,15 @@
-import { getDesk, getHomeServices } from "@/features/desk";
+import { getDesk, getHomeServices, releaseRuntimeAccess } from "@/features/desk";
 import type { Desk, DeskAccess, HomeServices } from "@/features/desk";
 import type { z } from "zod";
 
 export async function withDesk(handler: (desk: Desk) => Promise<Response>): Promise<Response> {
   const access = await getDesk();
-  if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
-  return handler(access.desk);
+  try {
+    if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
+    return await handler(access.desk);
+  } finally {
+    releaseRuntimeAccess(access);
+  }
 }
 
 function isDashboardRequest(request: Request): boolean {
@@ -57,8 +61,12 @@ export function withDashboardGet(request: Request, handler: (services: DeskServi
 export async function withDashboardServices(request: Request, handler: (services: DeskServices) => Promise<Response>): Promise<Response> {
   if (!isDashboardRequest(request)) return forbidden();
   const access = await getDesk();
-  if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
-  return handler(access);
+  try {
+    if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
+    return await handler(access);
+  } finally {
+    releaseRuntimeAccess(access);
+  }
 }
 
 export function withDashboardPost(request: Request, handler: (desk: Desk) => Promise<Response>): Promise<Response> {
@@ -72,8 +80,12 @@ export async function withHomeGet(
 ): Promise<Response> {
   if (!isDashboardRequest(request)) return forbidden();
   const access = await getHomeServices();
-  if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
-  return handler(access);
+  try {
+    if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
+    return await handler(access);
+  } finally {
+    releaseRuntimeAccess(access);
+  }
 }
 
 export async function withHomeBody<S extends z.ZodType>(
@@ -94,6 +106,10 @@ export async function withHomeBody<S extends z.ZodType>(
     return Response.json({ error: "invalid-request", issues }, { status: 400 });
   }
   const access = await getHomeServices();
-  if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
-  return handler(parsed.data, access);
+  try {
+    if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });
+    return await handler(parsed.data, access);
+  } finally {
+    releaseRuntimeAccess(access);
+  }
 }

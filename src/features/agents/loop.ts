@@ -5,6 +5,7 @@ import { runAgentCycle } from "./runner";
 export const AGENT_LOOP_INTERVAL_MS = 60_000;
 
 const queues = new WeakMap<AgentRunnerDeps, ReturnType<typeof createSerialQueue>>();
+export type AgentCycleGuard = (cycle: () => Promise<AgentCycleReport>) => Promise<AgentCycleReport>;
 
 function singleFlight<T>(run: () => Promise<T>): () => Promise<T> {
   let running: Promise<T> | undefined;
@@ -22,9 +23,9 @@ function queueFor(deps: AgentRunnerDeps): ReturnType<typeof createSerialQueue> {
   return queue;
 }
 
-export function startAgentLoop(deps: AgentRunnerDeps): ReturnType<typeof setInterval> {
+export function startAgentLoop(deps: AgentRunnerDeps, guard: AgentCycleGuard = (cycle) => cycle()): ReturnType<typeof setInterval> {
   const queue = queueFor(deps);
-  const tick = singleFlight(() => queue.run(() => runAgentCycle(deps)));
+  const tick = singleFlight(() => queue.run(() => guard(() => runAgentCycle(deps))));
   const timer = setInterval(() => { void tick().catch(() => undefined); }, AGENT_LOOP_INTERVAL_MS);
   timer.unref();
   return timer;

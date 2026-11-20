@@ -14,6 +14,7 @@ const { getDesk, rejectPending } = vi.hoisted(() => ({
 vi.mock("@/features/desk", () => ({
   getDesk,
   getHomeServices: vi.fn(),
+  releaseRuntimeAccess: vi.fn(),
 }));
 
 const SAME_ORIGIN = { "sec-fetch-site": "same-origin" };
