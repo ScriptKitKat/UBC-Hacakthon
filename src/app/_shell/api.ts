@@ -1,5 +1,5 @@
-import { agentActivityViewSchema, agentCycleReportSchema, agentsViewSchema, browsePageSchema, homeRailSchema, homeViewSchema, watchlistViewSchema } from "@/shared";
-import type { AgentActivityView, AgentsView, BrowsePage, BrowseSort, CatalogPage, FeedMatch, HomeRail, HomeView, WatchlistView } from "@/shared";
+import { agentCycleReportSchema, agentsViewSchema, browsePageSchema, homeRailSchema, homeViewSchema, watchlistViewSchema } from "@/shared";
+import type { AgentsView, BrowsePage, BrowseSort, CatalogPage, FeedMatch, HomeRail, HomeView, WatchlistView } from "@/shared";
 
 export async function loadRail(): Promise<HomeRail | undefined> {
   const response = await fetch("/api/home/rail", { headers: { accept: "application/json" } });
@@ -166,13 +166,6 @@ export async function deleteAgent(id: string): Promise<AgentsView | undefined> {
   });
   if (!response.ok) return undefined;
   const parsed = agentsViewSchema.safeParse(await response.json());
-  return parsed.success ? parsed.data : undefined;
-}
-
-export async function loadAgentActivity(): Promise<AgentActivityView | undefined> {
-  const response = await fetch("/api/agents/activity", { headers: { accept: "application/json" } });
-  if (!response.ok) return undefined;
-  const parsed = agentActivityViewSchema.safeParse(await response.json());
   return parsed.success ? parsed.data : undefined;
 }
 

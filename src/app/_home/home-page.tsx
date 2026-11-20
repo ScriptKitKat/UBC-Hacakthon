@@ -6,7 +6,7 @@ import { isXUrl } from "@/shared";
 import type { HomeView } from "@/shared";
 import { usePolling } from "../_desk/use-polling";
 import { loadHome, loadSparklines, matchQuery } from "../_shell/api";
-import { ChevronIcon, MicIcon, RefreshIcon, SubmitIcon } from "../_shell/icons";
+import { ChevronIcon, RefreshIcon, SubmitIcon } from "../_shell/icons";
 import { CHIP_CATEGORIES, FILTERS, PREFETCH_CATEGORIES, categoryKey } from "./category";
 import { useWatchlist } from "../_watchlist/use-watchlist";
 import { MarketCard } from "./market-card";
@@ -101,7 +101,6 @@ export function HomePage({ initialView }: { readonly initialView?: HomeView } = 
     });
   }, POLL_MS + tick);
 
-  const pending = view?.rail.pendingCount ?? 0;
   const markets = view?.markets ?? [];
   const watchlist = useWatchlist();
 
@@ -151,19 +150,11 @@ export function HomePage({ initialView }: { readonly initialView?: HomeView } = 
   return (
     <div className={styles.page}>
       <section className={styles.ask} aria-label="Ask">
-        {pending > 0 ? (
-          <Link href="/activity#approvals" className={styles.pending}>
-            <span className={styles.dot} aria-hidden="true" />
-            <span><span className={styles.pendingCount}>{pending === 1 ? "1 bet" : `${String(pending)} bets`}</span> {pending === 1 ? "is" : "are"} waiting for your OK</span>
-            <ChevronIcon />
-          </Link>
-        ) : null}
         <h1 className={styles.title}>What do you want to predict?</h1>
         <form className={styles.box} onSubmit={(event) => { event.preventDefault(); onSearch(); }}>
           <label htmlFor="ask" className={styles.hidden}>Ask about a market</label>
           <input id="ask" className={styles.field} value={search} placeholder="Explore different markets, or paste an X link…" onChange={(event) => { setSearch(event.target.value); }} />
           <div className={styles.tools}>
-            <Link href="/activity#voice" className={styles.iconButton} aria-label="Ask by voice"><MicIcon /></Link>
             <button type="submit" className={styles.submit} aria-label="Search"><SubmitIcon /></button>
           </div>
         </form>
@@ -229,7 +220,6 @@ export function HomePage({ initialView }: { readonly initialView?: HomeView } = 
         ) : null}
         <div className={styles.footer}>
           <Link href="/markets" className={styles.browseAll}>Browse all markets</Link>
-          <Link href="/activity" className={styles.activityLink}>Desk activity, voice, and approvals</Link>
         </div>
       </section>
     </div>

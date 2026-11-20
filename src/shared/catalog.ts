@@ -31,7 +31,6 @@ export const homeRailSchema = z.object({
   perTradeMaxCents: z.number(),
   autoApproveMaxCents: z.number(),
   killSwitch: z.boolean(),
-  pendingCount: z.number().int().nonnegative(),
   senderAllowlist: z.array(z.string()),
   ledgerConfigured: z.boolean(),
   resetAt: z.string(),

@@ -168,10 +168,8 @@ export type {
 
 export {
   agentActivitySchema,
-  agentActivityViewSchema,
   agentCycleReportSchema,
-  agentFeedItemSchema,
   agentRecordSchema,
   agentsViewSchema,
 } from "./agents";
-export type { AgentActivityView, AgentFeedItem, AgentRecordView, AgentsView } from "./agents";
+export type { AgentRecordView, AgentsView } from "./agents";
