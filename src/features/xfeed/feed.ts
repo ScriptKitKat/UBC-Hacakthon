@@ -1,9 +1,11 @@
 import { z } from "zod";
-import type { XFeed, XSignals } from "./types";
+import type { XFeed, XPost, XSignals } from "./types";
 
 const COUNT_ENDPOINT = "https://api.x.com/2/tweets/counts/recent";
 const SEARCH_ENDPOINT = "https://api.x.com/2/tweets/search/recent";
 const HOUR_MS = 60 * 60 * 1000;
+const RECENT_POSTS_WINDOW_MS = 24 * HOUR_MS;
+const RECENT_POSTS_LIMIT = 5;
 const COUNT_BUCKET_SCHEMA = z.object({
   start: z.iso.datetime().optional(),
   end: z.iso.datetime().optional(),
@@ -63,6 +65,22 @@ function searchUrl(query: string, now: Date): URL {
   return url;
 }
 
+function recentPostsUrl(query: string, now: Date): URL {
+  const url = new URL(SEARCH_ENDPOINT);
+  url.searchParams.set("query", `(${query}) -is:retweet -is:reply lang:en`);
+  url.searchParams.set("start_time", new Date(now.getTime() - RECENT_POSTS_WINDOW_MS).toISOString());
+  url.searchParams.set("sort_order", "relevancy");
+  url.searchParams.set("max_results", "10");
+  url.searchParams.set("tweet.fields", "created_at,public_metrics,author_id");
+  url.searchParams.set("expansions", "author_id");
+  url.searchParams.set("user.fields", "username");
+  return url;
+}
+
+function postUrl(username: string, id: string): string {
+  return `https://x.com/${encodeURIComponent(username)}/status/${encodeURIComponent(id)}`;
+}
+
 async function responseJson(fetcher: typeof fetch, url: URL, bearerToken: string): Promise<unknown> {
   const response = await fetcher(url.toString(), {
     headers: { accept: "application/json", authorization: `Bearer ${bearerToken}` },
@@ -87,7 +105,7 @@ function breakingPost(raw: z.output<typeof SEARCH_RESPONSE_SCHEMA>): XSignals["b
     id: best.post.id,
     text: best.post.text,
     authorUsername: username,
-    url: `https://x.com/${encodeURIComponent(username)}/status/${encodeURIComponent(best.post.id)}`,
+    url: postUrl(username, best.post.id),
   };
 }
 
@@ -110,6 +128,41 @@ async function loadCounts(fetcher: typeof fetch, bearerToken: string, query: str
 async function loadBreakingPost(fetcher: typeof fetch, bearerToken: string, query: string, now: Date): Promise<XSignals["breakingPost"]> {
   const search = SEARCH_RESPONSE_SCHEMA.parse(await responseJson(fetcher, searchUrl(query, now), bearerToken));
   return breakingPost(search);
+}
+
+const SHORT_LINK = /\s*https:\/\/t\.co\/\S+/gu;
+const HTML_ENTITIES: Readonly<Record<string, string>> = { "&amp;": "&", "&lt;": "<", "&gt;": ">" };
+
+function displayText(text: string): string {
+  return text.replace(SHORT_LINK, "").replace(/&(?:amp|lt|gt);/gu, (entity) => HTML_ENTITIES[entity] ?? entity).trim();
+}
+
+function recentPosts(raw: z.output<typeof SEARCH_RESPONSE_SCHEMA>): readonly XPost[] {
+  const usernames = new Map((raw.includes?.users ?? []).map((user) => [user.id, user.username]));
+  const posts: XPost[] = [];
+  for (const post of raw.data ?? []) {
+    const username = usernames.get(post.author_id);
+    const text = displayText(post.text);
+    if (username === undefined || text === "") continue;
+    posts.push({
+      id: post.id,
+      text,
+      authorUsername: username,
+      url: postUrl(username, post.id),
+      createdAtMs: post.created_at === undefined ? null : Date.parse(post.created_at),
+    });
+  }
+  return posts.slice(0, RECENT_POSTS_LIMIT);
+}
+
+async function loadRecentPosts(fetcher: typeof fetch, bearerToken: string, query: string, now: Date): Promise<readonly XPost[]> {
+  return recentPosts(SEARCH_RESPONSE_SCHEMA.parse(await responseJson(fetcher, recentPostsUrl(query, now), bearerToken)));
+}
+
+function evictExpired<T>(cache: Map<string, CacheEntry<T>>, nowMs: number): void {
+  for (const [query, entry] of cache) {
+    if (entry.expiresAt <= nowMs) cache.delete(query);
+  }
 }
 
 interface CacheEntry<T> {
@@ -145,12 +198,8 @@ export function createXFeed(options: {
       if (query.trim() === "") return Promise.resolve(undefined);
       const requestedAt = options.now();
       const nowMs = requestedAt.getTime();
-      for (const [cachedQuery, entry] of countsCache) {
-        if (entry.expiresAt <= nowMs) countsCache.delete(cachedQuery);
-      }
-      for (const [cachedQuery, entry] of breakingCache) {
-        if (entry.expiresAt <= nowMs) breakingCache.delete(cachedQuery);
-      }
+      evictExpired(countsCache, nowMs);
+      evictExpired(breakingCache, nowMs);
       const counts = cached(countsCache, query, nowMs, cacheMs, () =>
         loadCounts(options.fetch, options.bearerToken, query).catch(() => undefined)
       );
@@ -161,6 +210,10 @@ export function createXFeed(options: {
         counts: countSignals,
         breakingPost: breakingPostSignal,
       }));
+    },
+    recentPosts(query) {
+      if (query.trim() === "") return Promise.resolve([]);
+      return loadRecentPosts(options.fetch, options.bearerToken, query, options.now()).catch(() => undefined);
     },
   };
 }

@@ -1,4 +1,4 @@
-import { formatDeadline, formatVolumeUsd, friendlyEventTitle } from "@/shared";
+import { formatDeadline, formatVolumeUsd, friendlyEventTitle, postSourceLabel } from "@/shared";
 import type { ResearchBrief, ResearchPostContext, ResearchSeriesPoint, ResearchTimeframe, ResearchView } from "@/shared";
 
 export const BEGINNER_TIMEFRAMES = ["1D", "1W", "1M", "All"] as const;
@@ -93,11 +93,10 @@ function formatShortDate(ms: number): string {
 
 function postSource(post: ResearchPostContext, t: number): string {
   const when = post.atMs !== null ? formatShortDate(post.atMs) : formatShortDate(t);
-  if (post.source === "x-feed") {
-    const who = post.author !== null && post.author !== "" ? `${post.author} ` : "";
-    return `Matched X post · ${who}${when}`.trim();
-  }
-  return `News · ${when}`;
+  const label = postSourceLabel(post.source);
+  if (post.source === "news") return `${label} · ${when}`;
+  const who = post.author !== null && post.author !== "" ? `${post.author} ` : "";
+  return `${label} · ${who}${when}`.trim();
 }
 
 function postTitle(post: ResearchPostContext): string {

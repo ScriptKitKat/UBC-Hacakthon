@@ -28,7 +28,7 @@ export type MarketProMarkets = Pick<GeminiMarketsClient, "getEvent" | "candles" 
 export interface MarketProDesk {
   readonly getSnapshot: () => Promise<DeskSnapshot>;
   readonly getPositions: () => Promise<PositionsView>;
-  readonly postContextFor: (symbol: string) => Promise<ResearchPostContext | undefined>;
+  readonly matchedPostsFor: (symbol: string) => Promise<readonly ResearchPostContext[]>;
 }
 
 export interface MarketProDeps {
@@ -36,6 +36,7 @@ export interface MarketProDeps {
   readonly nowMs: () => number;
   readonly desk: MarketProDesk;
   readonly isWatched: (symbol: string) => Promise<boolean>;
+  readonly chatterFor?: (symbol: string) => readonly ResearchPostContext[];
 }
 
 export type ProShellResult =
@@ -228,7 +229,7 @@ export function createMarketPro(deps: MarketProDeps): MarketPro {
     },
 
     async live(symbol) {
-      const [loaded, bookResult, tradeResult, hourly, snapshot, positions, watched, post] = await Promise.all([
+      const [loaded, bookResult, tradeResult, hourly, snapshot, positions, watched, matchedPosts] = await Promise.all([
         loadEvent(symbol),
         markets.orderBook(symbol),
         markets.recentTrades(symbol, TRADE_LIMIT),
@@ -236,7 +237,7 @@ export function createMarketPro(deps: MarketProDeps): MarketPro {
         deps.desk.getSnapshot(),
         deps.desk.getPositions(),
         deps.isWatched(symbol),
-        deps.desk.postContextFor(symbol),
+        deps.desk.matchedPostsFor(symbol),
       ]);
       if (loaded.kind !== "ok") return loaded;
       const now = nowMs();
@@ -257,7 +258,7 @@ export function createMarketPro(deps: MarketProDeps): MarketPro {
             depthPlusMinus5: book.depthPlusMinus5,
           })],
           flow: flowFromTrades(trades),
-          feed: [...buildFeed({ log, symbol, post: post ?? null, candles: hourlyValue, nowMs: now })],
+          feed: [...buildFeed({ log, symbol, posts: [...matchedPosts, ...(deps.chatterFor?.(symbol) ?? [])], candles: hourlyValue, nowMs: now })],
           position: positionFor(positions.positions, symbol),
           budget: budgetFrom(snapshot, now),
           watched,

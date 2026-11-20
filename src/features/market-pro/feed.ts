@@ -34,27 +34,38 @@ function logItem(entry: DecisionLogEntry, candles: readonly Candle[]): ProFeedIt
 
 function postItem(post: ResearchPostContext, candles: readonly Candle[], nowMs: number): ProFeedItem {
   const handle = post.author === null || post.author.trim() === "" ? null : post.author.replace(/^@/u, "");
-  const source = post.source === "x-feed" ? (handle === null ? "X" : `X @${handle}`) : "News";
+  const source = post.source === "news" ? "News" : handle === null ? "X" : `X @${handle}`;
+  const settled = post.atMs !== null && post.atMs + HOUR_MS <= nowMs;
   return {
     id: `post:${post.url ?? post.text.slice(0, 48)}`,
-    timeMs: null,
+    timeMs: post.atMs,
     source,
     event: post.text.trim(),
     url: post.url,
-    oddsChangeCents: oddsChangeAfter(candles, nowMs - HOUR_MS),
+    oddsChangeCents: post.atMs !== null && settled ? oddsChangeAfter(candles, post.atMs) : null,
   };
+}
+
+function uniqueByPost(posts: readonly ResearchPostContext[]): ResearchPostContext[] {
+  const seen = new Set<string>();
+  return posts.filter((post) => {
+    const key = post.url ?? post.text;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function buildFeed(input: {
   readonly log: readonly DecisionLogEntry[];
   readonly symbol: string;
-  readonly post: ResearchPostContext | null;
+  readonly posts: readonly ResearchPostContext[];
   readonly candles: readonly Candle[];
   readonly nowMs: number;
 }): readonly ProFeedItem[] {
   const items: ProFeedItem[] = input.log
     .filter((entry) => entry.symbol === input.symbol)
     .map((entry) => logItem(entry, input.candles));
-  if (input.post !== null) items.push(postItem(input.post, input.candles, input.nowMs));
+  for (const post of uniqueByPost(input.posts)) items.push(postItem(post, input.candles, input.nowMs));
   return items.sort((a, b) => (b.timeMs ?? 0) - (a.timeMs ?? 0)).slice(0, 12);
 }

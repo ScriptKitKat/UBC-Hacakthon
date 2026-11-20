@@ -14,6 +14,7 @@ import {
   isBeginnerTimeframe,
   marketTitle,
   parseResolution,
+  postSourceLabel,
   trustOdds,
   yesCentsFromBrief,
 } from "@/shared";
@@ -366,7 +367,7 @@ function Chatter({ posts, nowMs }: { readonly posts: ResearchView["matchedPosts"
           {posts.map((post) => (
             <article key={`${post.source}:${post.url ?? post.text}`} className={styles.post}>
               <div className={styles.postMeta}>
-                {post.author ?? (post.source === "x-feed" ? "Matched X post" : "News")}
+                {post.author ?? postSourceLabel(post.source)}
                 {post.atMs !== null ? ` · ${relativeTime(post.atMs, nowMs)}` : ""}
               </div>
               <p className={styles.postText}>{post.text}</p>
