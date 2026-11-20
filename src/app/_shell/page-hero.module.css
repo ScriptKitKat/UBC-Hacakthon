@@ -9,7 +9,7 @@
   min-height: 150px;
   padding: 26px 32px;
   border-radius: 32px;
-  background: radial-gradient(120% 90% at 50% 0%, #1574d9 0%, #3a9bf0 45%, #8fcbfa 75%, #dceffd 100%);
+  background: radial-gradient(120% 90% at 50% 0%, #1574d9 0%, #2f92ec 50%, #5aaef3 100%);
   color: #ffffff;
 }
 
@@ -17,7 +17,7 @@
   content: "";
   position: absolute;
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0));
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0));
   filter: blur(6px);
   pointer-events: none;
 }
