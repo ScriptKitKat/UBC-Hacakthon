@@ -69,7 +69,7 @@ export function TradeCard({ view }: { readonly view: ResearchView }) {
     if (amountCents === undefined || senderId === "" || over !== null) return;
     setBusy(true);
     setResult(undefined);
-    const placed = await placeDeskTrade({ symbol: view.symbol, outcome: side, senderId, notionalCents: amountCents });
+    const placed = await placeDeskTrade({ symbol: view.symbol, outcome: side, senderId, notionalCents: amountCents, seenPriceCents: priceCents });
     setResult(placed.ok ? placed.entry : { error: placed.message });
     setBusy(false);
     setReviewing(false);
