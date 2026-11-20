@@ -1,9 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST as confirm } from "./confirm/route";
 import { POST as killSwitch } from "./kill-switch/route";
 import { POST as news } from "./news/route";
 import { POST as propose } from "./propose/route";
+import { POST as reject } from "./reject/route";
 import { GET as snapshot } from "./route";
+
+const { getDesk, rejectPending } = vi.hoisted(() => ({
+  getDesk: vi.fn(),
+  rejectPending: vi.fn(),
+}));
+
+vi.mock("@/features/desk", () => ({
+  getDesk,
+  getHomeServices: vi.fn(),
+}));
 
 const SAME_ORIGIN = { "sec-fetch-site": "same-origin" };
 
@@ -11,6 +22,11 @@ const post = (body: unknown) =>
   new Request("http://desk.test", { method: "POST", headers: SAME_ORIGIN, body: typeof body === "string" ? body : JSON.stringify(body) });
 
 describe("desk api validation", () => {
+  beforeEach(() => {
+    getDesk.mockReset().mockResolvedValue({ ok: false, issues: ["DAILY_CAP_USD missing"] });
+    rejectPending.mockReset();
+  });
+
   it.each([
     ["news", news, { text: "" }],
     ["news url", news, { text: "x", url: "nope" }],
@@ -18,6 +34,7 @@ describe("desk api validation", () => {
     ["propose fractional cents", propose, { instrumentSymbol: "A", outcome: "yes", notionalCents: 1.5, senderId: "s" }],
     ["propose negative", propose, { instrumentSymbol: "A", outcome: "yes", notionalCents: -1, senderId: "s" }],
     ["confirm", confirm, { intentId: "" }],
+    ["reject", reject, { intentId: "" }],
     ["kill switch", killSwitch, { on: "yes" }],
     ["malformed json", news, "{"],
   ])("returns 400 for bad %s input", async (_name, handler, body) => {
@@ -29,6 +46,7 @@ describe("desk api validation", () => {
   const dashboardPosts = [
     ["propose", propose, { instrumentSymbol: "A", outcome: "yes", notionalCents: 100, senderId: "priscilla" }],
     ["confirm", confirm, { intentId: "i", approverId: "priscilla" }],
+    ["reject", reject, { intentId: "i", approverId: "priscilla" }],
     ["kill switch", killSwitch, { on: false }],
   ] as const;
 
@@ -59,6 +77,27 @@ describe("desk api validation", () => {
       method: "POST", headers: { origin: "http://localhost:3000", "content-type": "application/json" }, body: JSON.stringify({ on: "bad" }),
     }));
     expect(response.status).toBe(400);
+  });
+
+  it("returns 200 with the rejected entry", async () => {
+    const entry = { kind: "refuse", code: "rejected", spokenReason: "You rejected this trade." };
+    rejectPending.mockResolvedValue({ ok: true, entry });
+    getDesk.mockResolvedValue({ ok: true, desk: { rejectPending } });
+    const response = await reject(post({ intentId: "i", approverId: "priscilla" }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ entry });
+    expect(rejectPending).toHaveBeenCalledWith("i", "priscilla");
+  });
+
+  it.each([
+    ["unknown-intent", 404],
+    ["unauthorized-approver", 403],
+  ] as const)("maps %s to HTTP %i", async (error, status) => {
+    rejectPending.mockResolvedValue({ ok: false, error });
+    getDesk.mockResolvedValue({ ok: true, desk: { rejectPending } });
+    const response = await reject(post({ intentId: "i", approverId: "priscilla" }));
+    expect(response.status).toBe(status);
+    expect(await response.json()).toEqual({ error });
   });
 
   it("returns 503 with the config issues when the desk is not configured", async () => {

@@ -1,4 +1,4 @@
-import { assignedBudgetCents, clampDailyBudget, modelAvailability } from "@/features/agents";
+import { assignedBudgetCents, clampDailyBudget, modelAvailability, preferredModel } from "@/features/agents";
 import type { AgentDraft, AgentPatch } from "@/features/agents";
 import type { HomeServices } from "@/features/desk";
 import { agentRecordSchema, agentsViewSchema } from "@/shared";
@@ -71,7 +71,7 @@ export function draftFrom(input: z.output<typeof agentCreateBody>, capCents: num
     instrumentSymbol: input.instrumentSymbol,
     dailyBudgetCents: clampDailyBudget(input.dailyBudgetCents ?? 300, capCents),
     ...(input.name === undefined ? {} : { name: input.name }),
-    ...(input.model === undefined ? {} : { model: input.model }),
+    model: input.model ?? preferredModel(modelAvailability(process.env)),
     ...(input.personality === undefined ? {} : { personality: input.personality }),
     ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
     ...(input.status === undefined ? {} : { status: input.status }),

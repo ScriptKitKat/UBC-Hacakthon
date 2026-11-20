@@ -38,3 +38,5 @@
 .note[data-tone="warn"] { color: var(--amber); }
 .note[data-kind="approve"] { color: var(--green); }
 .note[data-kind="needs-approval"] { color: var(--amber); }
+.resultMessage { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 14px; flex-wrap: wrap; }
+.approvalLink { color: var(--sky); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }

@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { PortfolioActivity, PortfolioRange, PortfolioView } from "@/shared";
+import { ApprovalsPanel } from "../_desk/approvals-panel";
+import { loadSnapshot, postAction } from "../_desk/api";
+import type { SnapshotResult } from "../_desk/api";
 import { usePolling } from "../_desk/use-polling";
 import { formatDollarsFromCents, formatPercent, formatPriceCents } from "../_research/format";
 import { downloadActivityCsv, loadPortfolio } from "./api";
@@ -11,6 +14,7 @@ import { PageHero } from "../_shell/page-hero";
 import styles from "./positions.module.css";
 
 const POLL_INTERVAL_MS = 15_000;
+const APPROVAL_POLL_INTERVAL_MS = 5_000;
 const RANGES: readonly PortfolioRange[] = ["7d", "30d", "90d", "all"];
 const RANGE_LABEL: Record<PortfolioRange, string> = { "7d": "7D", "30d": "30D", "90d": "90D", all: "All" };
 
@@ -195,9 +199,33 @@ export function PositionsPage() {
   const [filter, setFilter] = useState<"all" | "bets" | "briefs">("all");
   const [receipt, setReceipt] = useState<PortfolioActivity | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [deskSnapshot, setDeskSnapshot] = useState<SnapshotResult | null>(null);
+  const [approvalBusy, setApprovalBusy] = useState(false);
+  const [approvalMessage, setApprovalMessage] = useState<string | null>(null);
   usePolling(() => {
     void loadPortfolio(range).then(setResult);
   }, POLL_INTERVAL_MS, range);
+  usePolling(() => {
+    void loadSnapshot().then(setDeskSnapshot);
+  }, APPROVAL_POLL_INTERVAL_MS);
+  const actOnPending = async (action: "confirm" | "reject", intentId: string) => {
+    const approverId = deskSnapshot?.kind === "ready" ? deskSnapshot.snapshot.policy.senderAllowlist[0] : undefined;
+    if (approverId === undefined || approverId === "") {
+      setApprovalMessage("No approver is configured.");
+      return;
+    }
+    setApprovalBusy(true);
+    setApprovalMessage(null);
+    try {
+      const result = await postAction(action, { intentId, approverId });
+      setApprovalMessage(result.ok ? result.entry?.spokenReason ?? "The trade was updated." : result.message);
+      const [snapshot, portfolio] = await Promise.all([loadSnapshot(), loadPortfolio(range)]);
+      setDeskSnapshot(snapshot);
+      setResult(portfolio);
+    } finally {
+      setApprovalBusy(false);
+    }
+  };
   const view = result?.kind === "ready" ? result.view : null;
   const activity = (view?.activity ?? []).filter((row) => filter === "all" || (filter === "briefs" ? row.type === "brief" : row.type !== "brief"));
   return (
@@ -235,6 +263,18 @@ export function PositionsPage() {
           </button>
         </div>
       </PageHero>
+      {deskSnapshot?.kind === "ready" ? (
+        <>
+          <ApprovalsPanel
+            pending={deskSnapshot.snapshot.pending}
+            busy={approvalBusy}
+            onApprove={(intentId) => { void actOnPending("confirm", intentId); }}
+            onReject={(intentId) => { void actOnPending("reject", intentId); }}
+          />
+          {approvalMessage !== null ? <p className={styles.warning} role="status">{approvalMessage}</p> : null}
+        </>
+      ) : null}
+      {deskSnapshot?.kind === "error" ? <p className={styles.warning} role="alert">{deskSnapshot.message}</p> : null}
       {exportError !== null ? <p className={styles.warning} role="alert">{exportError}</p> : null}
       {result === null ? <p className={styles.muted}>Loading portfolio…</p> : null}
       {result?.kind === "not-configured" ? <p className={styles.warning}>The desk is not configured, so there is no portfolio to show.</p> : null}

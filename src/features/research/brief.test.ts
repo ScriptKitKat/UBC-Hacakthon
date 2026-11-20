@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { BRIEF_SECTION_TITLES } from "@/shared";
 import type { ResearchView } from "@/shared";
+import type { JsonCompleter } from "@/features/llm";
 import { composeBrief, polishBrief } from "./brief";
-import type { JsonCompleter } from "./brief";
 
 const SYMBOL = "GEMI-FED261211-MAINTAIN";
 
@@ -135,7 +135,7 @@ describe("polishBrief", () => {
   });
 
   it("accepts a polish that reuses only the template's numbers", async () => {
-    const polished = await polishBrief(template, answer("Fed holds look priced at 62¢", bodies.map((body) => `${body} (polished)`)));
+    const polished = await polishBrief(template, { provider: "grok", complete: answer("Fed holds look priced at 62¢", bodies.map((body) => `${body} (polished)`)) });
     expect(polished.polishedBy).toBe("grok");
     expect(polished.headline).toBe("Fed holds look priced at 62¢");
     expect(polished.sections.map((section) => section.title)).toEqual([...BRIEF_SECTION_TITLES]);
@@ -144,7 +144,7 @@ describe("polishBrief", () => {
 
   it("sends the template text as structured JSON", async () => {
     const complete = answer(template.headline, bodies);
-    await polishBrief(template, complete);
+    await polishBrief(template, { provider: "grok", complete });
     expect(complete).toHaveBeenCalledWith(expect.objectContaining({ schemaName: "brief_polish", user: JSON.stringify({ headline: template.headline, sections: bodies }) }));
   });
 
@@ -152,17 +152,17 @@ describe("polishBrief", () => {
     ["an invented digit", (list: string[]) => list.map((body, index) => (index === 0 ? `${body} It could reach 85¢.` : body))],
     ["an invented spelled-out number", (list: string[]) => list.map((body, index) => (index === 1 ? `${body} Traders are seventy percent sure.` : body))],
   ])("falls back to the template when the polish contains %s", async (_name, change) => {
-    const polished = await polishBrief(template, answer(template.headline, change([...bodies])));
+    const polished = await polishBrief(template, { provider: "grok", complete: answer(template.headline, change([...bodies])) });
     expect(polished).toBe(template);
   });
 
   it("falls back when the polish has the wrong number of sections or the wrong shape", async () => {
-    expect(await polishBrief(template, answer(template.headline, bodies.slice(1)))).toBe(template);
-    expect(await polishBrief(template, vi.fn(() => Promise.resolve({ nonsense: true })))).toBe(template);
-    expect(await polishBrief(template, vi.fn(() => Promise.resolve(undefined)))).toBe(template);
+    expect(await polishBrief(template, { provider: "grok", complete: answer(template.headline, bodies.slice(1)) })).toBe(template);
+    expect(await polishBrief(template, { provider: "grok", complete: vi.fn(() => Promise.resolve({ nonsense: true })) })).toBe(template);
+    expect(await polishBrief(template, { provider: "grok", complete: vi.fn(() => Promise.resolve(undefined)) })).toBe(template);
   });
 
   it("falls back when the model call throws", async () => {
-    expect(await polishBrief(template, vi.fn(() => Promise.reject(new Error("down"))))).toBe(template);
+    expect(await polishBrief(template, { provider: "grok", complete: vi.fn(() => Promise.reject(new Error("down"))) })).toBe(template);
   });
 });

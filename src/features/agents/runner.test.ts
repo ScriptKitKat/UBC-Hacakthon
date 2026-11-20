@@ -70,6 +70,7 @@ async function setup(options: { readonly yesNow: number; readonly yesBefore: num
       } as Awaited<ReturnType<Desk["getSnapshot"]>>)),
     },
     grok: { apiKey: undefined, model: "unused" },
+    claude: { apiKey: undefined, model: "unused" },
     fetch: vi.fn<typeof fetch>(),
     operatorId: "operator",
     ...(options.allowAutonomous === undefined ? {} : { allowAutonomous: options.allowAutonomous }),

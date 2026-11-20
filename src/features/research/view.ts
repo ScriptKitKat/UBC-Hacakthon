@@ -1,10 +1,10 @@
 import type { HistoryStore } from "@/features/history";
+import type { LlmCompleter } from "@/features/llm";
 import type { Candle, CandleTimeframe, GeminiMarketsClient, MarketContract, MarketEvent, MarketsError, MarketsResult, RecentTrade } from "@/features/markets";
 import { parseInstrumentSymbol } from "@/features/markets";
 import type { ResearchBrief, ResearchPostContext, ResearchRelatedContract, ResearchTimeframe, ResearchView } from "@/shared";
 import { polishBrief } from "./brief";
 import { composeLibraryBrief } from "./library-brief";
-import type { JsonCompleter } from "./brief";
 import { computeIndicators } from "./indicators";
 import { ALL_CANDLE_TIMEFRAMES, CANDLE_INTERVAL_MS, cumulativeDepth, hourlyIndicatorPoints, INDICATOR_CANDLE, mergeSeries, TIMEFRAME_PLANS } from "./series";
 
@@ -24,7 +24,7 @@ export interface ResearchDeps {
   readonly nowMs: () => number;
   readonly postContextFor: (symbol: string) => Promise<ResearchPostContext | undefined>;
   readonly matchedPostsFor?: (symbol: string) => Promise<readonly ResearchPostContext[]>;
-  readonly completeJson?: JsonCompleter;
+  readonly llm?: LlmCompleter;
 }
 
 export type ResearchResult =
@@ -297,7 +297,7 @@ export function createResearch(deps: ResearchDeps): Research {
       const result = await view(symbol, BRIEF_TIMEFRAME);
       if (result.kind !== "ok") return result;
       const template = composeLibraryBrief(result.view);
-      return { kind: "ok", template, polished: () => polishBrief(template, deps.completeJson) };
+      return { kind: "ok", template, polished: () => polishBrief(template, deps.llm) };
     },
   };
 }

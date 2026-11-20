@@ -13,13 +13,15 @@ export interface MarketCardWatch {
   readonly label?: string;
 }
 
-export function MarketCardGrid({ children }: { readonly children: ReactNode }) {
-  return <div className={styles.grid}>{children}</div>;
+export type MarketCardGridLayout = "auto" | "six";
+
+export function MarketCardGrid({ children, layout = "auto" }: { readonly children: ReactNode; readonly layout?: MarketCardGridLayout }) {
+  return <div className={styles.grid} data-layout={layout}>{children}</div>;
 }
 
-export function MarketCardSkeletonGrid({ count }: { readonly count: number }) {
+export function MarketCardSkeletonGrid({ count, layout = "auto" }: { readonly count: number; readonly layout?: MarketCardGridLayout }) {
   return (
-    <div className={styles.grid} aria-hidden="true">
+    <div className={styles.grid} data-layout={layout} aria-hidden="true">
       {Array.from({ length: count }, (_, index) => (
         <div key={index} className={[styles.card, styles.skeleton].join(" ")}>
           <div className={[styles.bone, styles.boneCategory].join(" ")} />

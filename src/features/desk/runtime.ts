@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { Connection } from "@solana/web3.js";
-import { requestGrokJson } from "@/features/grok";
+import { selectLlm } from "@/features/llm";
 import { createSampler, openHistoryStore } from "@/features/history";
 import { createSolanaLedger, createUnconfiguredLedger, isExpectedGenesis } from "@/features/ledger";
 import type { UsdcLedger } from "@/features/ledger";
@@ -14,7 +14,7 @@ import { createGeminiMarketsClient } from "@/features/markets";
 import { createMarketPro } from "@/features/market-pro";
 import type { MarketPro } from "@/features/market-pro";
 import { createResearch } from "@/features/research";
-import type { JsonCompleter, Research } from "@/features/research";
+import type { Research } from "@/features/research";
 import { createXFeed, loadXFeedSettings } from "@/features/xfeed";
 import { StoreUnavailableError, nodeFileSystem, resolveDataDirectory } from "@/features/storage";
 import { createNonceCodec, createX402Server, openUsedPayments, priceToBaseUnits, x402NetworkFor } from "@/features/x402";
@@ -195,11 +195,9 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
         }
       : {}),
   });
-  const grok = config.value.feed.grok;
-  const completeJson: JsonCompleter | undefined = grok.apiKey === undefined
-    ? undefined
-    : (request) => requestGrokJson({ settings: grok, fetch, ...request });
-  const research = createResearch({ markets, history, nowMs: () => Date.now(), postContextFor: desk.postContextFor, matchedPostsFor: desk.matchedPostsFor, ...(completeJson ? { completeJson } : {}) });
+  const { grok, claude } = config.value.feed;
+  const llm = selectLlm({ grok, claude, fetch });
+  const research = createResearch({ markets, history, nowMs: () => Date.now(), postContextFor: desk.postContextFor, matchedPostsFor: desk.matchedPostsFor, ...(llm ? { llm } : {}) });
   const deepDive = payments ? createDeepDiveResource({ payments, research, publicOrigin }) : undefined;
   deferredDeepDive.bind(deepDive);
   const reconcile = async () => {
@@ -220,7 +218,8 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     markets,
     history,
     desk,
-    grok: config.value.feed.grok,
+    grok,
+    claude,
     fetch,
     operatorId: config.value.feed.operatorId,
     ...(xFeed === undefined ? {} : { xFeed }),

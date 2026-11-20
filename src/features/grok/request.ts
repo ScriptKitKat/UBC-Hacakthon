@@ -4,7 +4,7 @@ import type { PostCandidate, PostInput } from "./types";
 
 const MAX_POST_CHARS = 700;
 
-const SYSTEM_PROMPT = [
+export const SYSTEM_PROMPT = [
   "You connect a post from X to the single most relevant live prediction market.",
   "Choose a market only when the post is news that clearly moves that market's outcome.",
   "pick.instrumentSymbol must be copied verbatim from the candidate list; otherwise set pick to null.",
@@ -33,37 +33,28 @@ export const RESPONSE_SCHEMA = {
   },
 } as const;
 
-export const grokAnswer = z.object({
+const answerSchema = z.object({
   pick: z.object({ instrumentSymbol: z.string() }).nullable(),
   confidence: z.number().min(0).max(1),
   why: z.string(),
 });
 
-export type GrokAnswer = z.output<typeof grokAnswer>;
+export type GrokAnswer = z.output<typeof answerSchema>;
 
 function candidateLine(candidate: PostCandidate): string {
   const { contract } = candidate;
   return `${contract.instrumentSymbol} | ${candidate.eventTitle} | ${contract.label} | ${String(contract.prices.buyYesCents ?? "?")}c`;
 }
 
-export function buildRequestBody(model: string, post: PostInput, candidates: readonly PostCandidate[]) {
+export function buildUserPrompt(post: PostInput, candidates: readonly PostCandidate[]): string {
   const author = post.author ? ` by ${post.author}` : "";
-  const user = [
+  return [
     `Post${author}:`,
     post.text.slice(0, MAX_POST_CHARS),
     "",
     "Candidate markets (instrumentSymbol | event | contract | yes price):",
     ...candidates.map(candidateLine),
   ].join("\n");
-  return {
-    model,
-    temperature: 0,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: user },
-    ],
-    response_format: { type: "json_schema", json_schema: { name: "post_market_pick", strict: true, schema: RESPONSE_SCHEMA } },
-  };
 }
 
 const completion = z.object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1) });
@@ -79,7 +70,7 @@ export function completionJson(body: unknown): unknown {
   }
 }
 
-export function parseCompletion(body: unknown): GrokAnswer | undefined {
-  const answer = grokAnswer.safeParse(completionJson(body));
+export function parseAnswer(raw: unknown): GrokAnswer | undefined {
+  const answer = answerSchema.safeParse(raw);
   return answer.success ? answer.data : undefined;
 }
