@@ -68,25 +68,6 @@ export async function changeWatchlist(input: WatchlistChange): Promise<{ readonl
   return parsed.success ? { ok: true, view: parsed.data } : { ok: false };
 }
 
-export async function proposeTrade(input: { symbol: string; outcome: "yes" | "no"; senderId: string; notionalCents: number }): Promise<{ ok: true } | { ok: false; message: string }> {
-  const response = await fetch("/api/desk/propose", {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({
-      instrumentSymbol: input.symbol,
-      outcome: input.outcome,
-      notionalCents: input.notionalCents,
-      senderId: input.senderId,
-      source: "desk",
-    }),
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({ error: "trade-failed" })) as { error?: string };
-    return { ok: false, message: body.error ?? "The trade could not be sent." };
-  }
-  return { ok: true };
-}
-
 export type { CatalogPage, HomeRail, HomeView };
 
 export async function loadBrowse(params: { search?: string; category?: string; sort?: BrowseSort; offset?: number; limit?: number }): Promise<
