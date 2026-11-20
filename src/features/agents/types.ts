@@ -7,6 +7,8 @@ export const MAX_PER_BET_CENTS = [100, 200, 500] as const;
 export const DEFAULT_DAILY_BUDGET_CENTS = 300;
 export const DEFAULT_MAX_PER_BET_CENTS = 200;
 export const TRIGGER_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+export const X_SURGE_MULTIPLE = 3;
+export const X_SURGE_MIN_POSTS = 20;
 
 export type AgentModel = "grok" | "claude" | "other";
 export type AgentPersonality = "calm" | "contrarian" | "momentum" | "coach";
@@ -43,6 +45,7 @@ export interface AgentActivity {
   readonly trigger?: TriggerId | undefined;
   readonly messageSource?: MessageSource | undefined;
   readonly intentId?: string | undefined;
+  readonly url?: string | undefined;
 }
 
 export interface AgentRecord {
@@ -65,6 +68,7 @@ export interface AgentRecord {
   readonly lastRunAt: string | null;
   readonly lastMessage: string | null;
   readonly lastMessageSource: MessageSource | null;
+  readonly lastBreakingPostId?: string | undefined;
   readonly spentTodayCents: number;
   readonly spendDay: string;
   readonly lastTriggerAt: Readonly<Record<string, string>>;

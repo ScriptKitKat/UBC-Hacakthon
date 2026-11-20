@@ -11,6 +11,7 @@ function agent(overrides: Partial<AgentRecord> = {}): AgentRecord {
 
 function snap(overrides: Partial<MarketSnapshot> = {}): MarketSnapshot {
   return {
+    eventTitle: "Bitcoin price today?",
     yesCents: 55,
     yesCents24hAgo: 40,
     volume24h: 400,
@@ -60,10 +61,113 @@ describe("evaluateTriggers", () => {
   it("skips X mention and breaking news triggers with needs X feed", () => {
     const result = evaluateTriggers(agent({ triggers: { ...DEFAULT_TRIGGERS, xMentions: true, breakingNews: true } }), snap(), NOW);
     expect(result.skipped).toEqual([
-      { id: "xMentions", reason: "needs X feed" },
-      { id: "breakingNews", reason: "needs X feed" },
+      { id: "xMentions", reason: "needs X_BEARER_TOKEN" },
+      { id: "breakingNews", reason: "needs X_BEARER_TOKEN" },
     ]);
     expect(result.fired.includes("xMentions")).toBe(false);
+  });
+
+  it("fires X mentions only above both the surge multiple and minimum count", () => {
+    const xAgent = agent({
+      triggers: { ...DEFAULT_TRIGGERS, oddsMove: false, volumeSpike: false, xMentions: true, endingSoon: false },
+    });
+    const fired = evaluateTriggers(xAgent, snap(), NOW, {
+      xFeedAvailable: true,
+      x: { counts: { lastHourCount: 30, baselineHourlyCount: 10 }, breakingPost: null },
+    });
+    expect(fired.fired).toEqual(["xMentions"]);
+
+    const belowMultiple = evaluateTriggers(xAgent, snap(), NOW, {
+      xFeedAvailable: true,
+      x: { counts: { lastHourCount: 29, baselineHourlyCount: 10 }, breakingPost: null },
+    });
+    const belowMinimum = evaluateTriggers(xAgent, snap(), NOW, {
+      xFeedAvailable: true,
+      x: { counts: { lastHourCount: 19, baselineHourlyCount: 1 }, breakingPost: null },
+    });
+    expect(belowMultiple.fired).toEqual([]);
+    expect(belowMinimum.fired).toEqual([]);
+    expect(belowMultiple.skipped).toEqual([]);
+    expect(belowMinimum.skipped).toEqual([]);
+
+    const cooled = evaluateTriggers({
+      ...xAgent,
+      lastTriggerAt: { xMentions: new Date(NOW.getTime() - 60 * 60 * 1000).toISOString() },
+    }, snap(), NOW, {
+      xFeedAvailable: true,
+      x: { counts: { lastHourCount: 30, baselineHourlyCount: 10 }, breakingPost: null },
+    });
+    expect(cooled.skipped).toEqual([{ id: "xMentions", reason: "already reported this move" }]);
+  });
+
+  it("fires breaking news for a new post and applies the shared cooldown", () => {
+    const post = { id: "post-2", text: "Update", authorUsername: "reporter", url: "https://x.com/reporter/status/post-2" };
+    const xAgent = agent({
+      lastBreakingPostId: "post-1",
+      triggers: { ...DEFAULT_TRIGGERS, oddsMove: false, volumeSpike: false, breakingNews: true, endingSoon: false },
+    });
+    const result = evaluateTriggers(xAgent, snap(), NOW, {
+      xFeedAvailable: true,
+      x: { counts: { lastHourCount: 0, baselineHourlyCount: 0 }, breakingPost: post },
+    });
+    expect(result.fired).toEqual(["breakingNews"]);
+    expect(result.x?.breakingPost).toEqual(post);
+
+    const repeated = evaluateTriggers({ ...xAgent, lastBreakingPostId: "post-2" }, snap(), NOW, {
+      xFeedAvailable: true,
+      x: { counts: { lastHourCount: 0, baselineHourlyCount: 0 }, breakingPost: post },
+    });
+    expect(repeated.fired).toEqual([]);
+    expect(repeated.skipped).toEqual([]);
+
+    const cooled = evaluateTriggers({
+      ...xAgent,
+      lastTriggerAt: { breakingNews: new Date(NOW.getTime() - 60 * 60 * 1000).toISOString() },
+    }, snap(), NOW, {
+      xFeedAvailable: true,
+      x: { counts: { lastHourCount: 0, baselineHourlyCount: 0 }, breakingPost: post },
+    });
+    expect(cooled.fired).toEqual([]);
+    expect(cooled.skipped).toEqual([{ id: "breakingNews", reason: "already reported this move" }]);
+  });
+
+  it("reports unavailable X data only when an X trigger is enabled", () => {
+    const xAgent = agent({
+      triggers: { ...DEFAULT_TRIGGERS, oddsMove: false, volumeSpike: false, xMentions: true, breakingNews: true, endingSoon: false },
+    });
+    const result = evaluateTriggers(xAgent, snap(), NOW, { xFeedAvailable: true });
+    expect(result.skipped).toEqual([
+      { id: "xMentions", reason: "X data unavailable" },
+      { id: "breakingNews", reason: "X data unavailable" },
+    ]);
+  });
+
+  it("fires each X trigger when only its required signal is available", () => {
+    const xAgent = agent({
+      triggers: {
+        ...DEFAULT_TRIGGERS,
+        oddsMove: false,
+        volumeSpike: false,
+        xMentions: true,
+        breakingNews: true,
+        oddsCross: false,
+        endingSoon: false,
+      },
+    });
+    const post = { id: "post-3", text: "Update", authorUsername: "reporter", url: "https://x.com/reporter/status/post-3" };
+    const countsFailed = evaluateTriggers(xAgent, snap(), NOW, {
+      xFeedAvailable: true,
+      x: { counts: undefined, breakingPost: post },
+    });
+    const breakingFailed = evaluateTriggers(xAgent, snap(), NOW, {
+      xFeedAvailable: true,
+      x: { counts: { lastHourCount: 30, baselineHourlyCount: 10 }, breakingPost: undefined },
+    });
+
+    expect(countsFailed.fired).toEqual(["breakingNews"]);
+    expect(countsFailed.skipped).toEqual([{ id: "xMentions", reason: "X data unavailable" }]);
+    expect(breakingFailed.fired).toEqual(["xMentions"]);
+    expect(breakingFailed.skipped).toEqual([{ id: "breakingNews", reason: "X data unavailable" }]);
   });
 
   it("fires an odds-cross when the yes price crosses the set level", () => {

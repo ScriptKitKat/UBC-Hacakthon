@@ -4,7 +4,7 @@ import { defaultAgent } from "./store";
 import type { AgentModel } from "./types";
 
 const NOW = new Date("2026-11-19T12:00:00Z");
-const snapshot = { yesCents: 62, yesCents24hAgo: 50, volume24h: null, volumeTotal: null, createdAt: null, expiryDate: null };
+const snapshot = { eventTitle: "Bitcoin price today?", yesCents: 62, yesCents24hAgo: 50, volume24h: null, volumeTotal: null, createdAt: null, expiryDate: null };
 const result = { fired: ["oddsMove"] as const, skipped: [], todayPoints: 12 };
 const keyed = { apiKey: "k", model: "m" };
 const unkeyed = { apiKey: undefined, model: "m" };

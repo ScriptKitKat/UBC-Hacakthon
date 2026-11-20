@@ -20,6 +20,8 @@ export {
   DEFAULT_TRIGGERS,
   MAX_PER_BET_CENTS,
   PERSONALITY_COPY,
+  X_SURGE_MIN_POSTS,
+  X_SURGE_MULTIPLE,
   rolledSpend,
   utcDay,
 } from "./types";

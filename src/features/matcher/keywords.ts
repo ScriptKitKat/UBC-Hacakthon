@@ -65,6 +65,10 @@ export function marketTextTokens(text: string): ReadonlySet<string> {
   return new Set([...plainTokens(normalized), ...aliasKeywordsIn(normalized)]);
 }
 
+export function searchTokens(text: string): readonly string[] {
+  return plainTokens(normalize(text)).filter((token) => !/^\d+$/u.test(token));
+}
+
 export function profileNews(text: string): NewsProfile {
   const normalized = normalize(text);
   const aliasKeywords = aliasKeywordsIn(normalized);

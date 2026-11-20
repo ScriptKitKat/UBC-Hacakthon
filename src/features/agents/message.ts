@@ -31,9 +31,18 @@ function triggerLine(id: TriggerId, result: TriggerResult, snapshot: MarketSnaps
     }
     case "briefMonday":
       return "It's Monday, so this agent is due to write a brief.";
-    case "xMentions":
-    case "breakingNews":
-      return "The X feed trigger is on, but the persisted X feed is not available yet.";
+    case "xMentions": {
+      const counts = result.x?.counts;
+      if (counts === undefined) return "X mentions were unusually high.";
+      const multiple = counts.lastHourCount / Math.max(counts.baselineHourlyCount, 1);
+      return `Posts about this on X jumped to ${String(counts.lastHourCount)} in the last hour, about ${multiple.toFixed(1)}× the usual rate.`;
+    }
+    case "breakingNews": {
+      const post = result.x?.breakingPost;
+      return post === undefined || post === null
+        ? "Breaking news was reported on X."
+        : `Breaking on X from @${post.authorUsername}: “${post.text.slice(0, 140)}”.`;
+    }
     default:
       return "Something worth a look happened.";
   }

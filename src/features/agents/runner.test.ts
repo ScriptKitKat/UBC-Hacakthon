@@ -4,6 +4,7 @@ import { createMemoryHistory } from "@/features/history";
 import { fail, ok } from "@/features/markets";
 import type { GeminiMarketsClient, MarketContract, MarketEvent } from "@/features/markets";
 import { createMemoryFileSystem } from "@/features/storage";
+import type { XSignals } from "@/features/xfeed";
 import { agentCycleReportSchema, instrumentSymbol } from "@/shared";
 import type { DecisionLogEntry, DeepDiveResult } from "@/shared";
 import type { DeskBudget } from "./budget";
@@ -32,7 +33,7 @@ function contract(yes: number): MarketContract {
 }
 
 function event(yes: number, volume24h: number): MarketEvent {
-  return { ticker: "BTC", title: "BTC", category: "Crypto", status: "active", expiryDate: "2026-12-31T00:00:00.000Z", description: "", subcategory: null, volume: 1000, volume24h, tags: [], contracts: [contract(yes)], createdAt: "2026-11-09T18:00:00.000Z" };
+  return { ticker: "BTC", title: "Bitcoin price today?", category: "Crypto", status: "active", expiryDate: "2026-12-31T00:00:00.000Z", description: "", subcategory: null, volume: 1000, volume24h, tags: [], contracts: [contract(yes)], createdAt: "2026-11-09T18:00:00.000Z" };
 }
 
 function entry(kind: DecisionLogEntry["kind"], outcome: "yes" | "no"): DecisionLogEntry {
@@ -80,10 +81,12 @@ async function setup(options: { readonly yesNow: number; readonly yesBefore: num
 describe("runAgentTick", () => {
   it("tells the owner about a move without proposing a trade when the agent only watches", async () => {
     const { agent, deps, proposeTrade, store } = await setup({ yesNow: 60, yesBefore: 40, draft: { permission: "watch" } });
-    const tick = await runAgentTick(deps, agent, DESK, NOW);
+    const xFeed = { signals: vi.fn(() => Promise.resolve(undefined)) };
+    const tick = await runAgentTick({ ...deps, xFeed }, agent, DESK, NOW);
     expect(tick).toMatchObject({ fired: ["oddsMove"], action: "notify", messageSource: "template" });
     expect(tick.message).toContain("20 points");
     expect(proposeTrade).not.toHaveBeenCalled();
+    expect(xFeed.signals).not.toHaveBeenCalled();
     expect((await store.get("agent-1"))?.activity.map((item) => item.kind)).toEqual(["message"]);
   });
 
@@ -143,6 +146,44 @@ describe("runAgentTick", () => {
     const saved = await store.get("agent-1");
     expect(saved?.spentTodayCents).toBe(200);
     expect(saved?.activity.map((item) => item.kind)).toEqual(["message", "bet", "refused"]);
+  });
+
+  it("runs X triggers as notifications and records breaking post links", async () => {
+    const triggers = {
+      oddsMove: false,
+      volumeSpike: false,
+      xMentions: true,
+      breakingNews: true,
+      oddsCross: false,
+      oddsCrossLevel: null,
+      endingSoon: false,
+    };
+    const { agent, deps, proposeTrade, buyDeepDive, store } = await setup({
+      yesNow: 55,
+      yesBefore: 55,
+      draft: { permission: "autonomous", writeBriefs: false, triggers },
+    });
+    const signals: XSignals = {
+      counts: { lastHourCount: 30, baselineHourlyCount: 10 },
+      breakingPost: {
+        id: "post-1",
+        text: "An official statement.",
+        authorUsername: "reporter",
+        url: "https://x.com/reporter/status/post-1",
+      },
+    };
+    const xFeed = { signals: vi.fn(() => Promise.resolve(signals)) };
+    const tick = await runAgentTick({ ...deps, xFeed }, agent, DESK, NOW);
+    expect(tick).toMatchObject({ fired: ["xMentions", "breakingNews"], action: "notify" });
+    expect(tick.message).toContain("Posts about this on X jumped to 30 in the last hour, about 3.0× the usual rate.");
+    expect(tick.message).toContain("Breaking on X from @reporter: “An official statement.”.");
+    expect(xFeed.signals).toHaveBeenCalledWith("bitcoin");
+    expect(proposeTrade).not.toHaveBeenCalled();
+    expect(buyDeepDive).not.toHaveBeenCalled();
+    expect(await store.get(agent.id)).toMatchObject({
+      lastBreakingPostId: "post-1",
+      activity: [expect.objectContaining({ kind: "message", url: "https://x.com/reporter/status/post-1" })],
+    });
   });
 });
 

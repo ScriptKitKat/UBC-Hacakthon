@@ -24,11 +24,11 @@ const PERSONALITIES: readonly { value: AgentRecordView["personality"]; label: st
   { value: "coach", label: "Plain-English coach", blurb: "Explains everything, no jargon" },
 ];
 
-const WATCHES: readonly { key: Exclude<keyof AgentRecordView["triggers"], "oddsCrossLevel">; label: string; note?: string }[] = [
+const WATCHES: readonly { key: Exclude<keyof AgentRecordView["triggers"], "oddsCrossLevel">; label: string }[] = [
   { key: "oddsMove", label: "Odds move 5+ points in a day" },
   { key: "volumeSpike", label: "Volume spikes 2x or more" },
-  { key: "xMentions", label: "X mentions surge", note: "needs X feed" },
-  { key: "breakingNews", label: "Breaking news on the topic", note: "needs X feed" },
+  { key: "xMentions", label: "X mentions surge" },
+  { key: "breakingNews", label: "Breaking news on the topic" },
   { key: "oddsCross", label: "Odds cross a level I set" },
   { key: "endingSoon", label: "48 hours before it ends" },
 ];
@@ -358,6 +358,9 @@ function AgentEditor({
                     {item.kind === "suggestion" ? (
                       <>{" "}<Link className={styles.activityLink} href="/positions#approvals">Approve in Portfolio</Link></>
                     ) : null}
+                    {item.url === undefined ? null : (
+                      <>{" "}<a className={styles.activityLink} href={item.url} target="_blank" rel="noreferrer">View on X</a></>
+                    )}
                   </p>
                 </li>
               ))}
@@ -382,7 +385,9 @@ function AgentEditor({
                   void persist({ triggers: next });
                 }}
               >
-                {item.label}{item.note ? ` · ${item.note}` : ""}
+                {item.label}{(item.key === "xMentions" || item.key === "breakingNews") && view?.xFeed.available !== true
+                  ? " · needs X_BEARER_TOKEN"
+                  : ""}
               </button>
               {item.key === "oddsCross" && draft.oddsCross ? (
                 <label className={styles.levelRow}>

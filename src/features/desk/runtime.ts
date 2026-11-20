@@ -15,6 +15,7 @@ import { createMarketPro } from "@/features/market-pro";
 import type { MarketPro } from "@/features/market-pro";
 import { createResearch } from "@/features/research";
 import type { Research } from "@/features/research";
+import { createXFeed, loadXFeedSettings } from "@/features/xfeed";
 import { StoreUnavailableError, nodeFileSystem, resolveDataDirectory } from "@/features/storage";
 import { createNonceCodec, createX402Server, openUsedPayments, priceToBaseUnits, x402NetworkFor } from "@/features/x402";
 import type { LedgerView } from "@/shared";
@@ -208,6 +209,10 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   createSampler({ history, markets, nowMs: () => Date.now() }).start();
   const catalogDeps = { markets, history, now: () => new Date(), policy: config.value.policy };
   const agentStore = openAgentStore({ fs: nodeFileSystem, path: join(dataDirectory, "agents.json") });
+  const xFeedSettings = loadXFeedSettings(env);
+  const xFeed = xFeedSettings.bearerToken === undefined
+    ? undefined
+    : createXFeed({ bearerToken: xFeedSettings.bearerToken, fetch, now: () => new Date() });
   const agentDeps = {
     store: agentStore,
     markets,
@@ -217,6 +222,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     claude,
     fetch,
     operatorId: config.value.feed.operatorId,
+    ...(xFeed === undefined ? {} : { xFeed }),
   };
   homeCatalog = {
     list: async (query = {}) => {

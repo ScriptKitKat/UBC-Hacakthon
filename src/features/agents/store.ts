@@ -49,6 +49,7 @@ export interface AgentStore {
   readonly recordRun: (id: string, update: {
     readonly lastMessage?: string;
     readonly lastMessageSource?: AgentRecord["lastMessageSource"];
+    readonly lastBreakingPostId?: string;
     readonly spentDeltaCents?: number;
     readonly lastTriggerAt?: Readonly<Record<string, string>>;
     readonly activity?: readonly AgentActivity[];
@@ -182,6 +183,7 @@ export function openAgentStore(options: { readonly fs: FileSystem; readonly path
           updatedAt: clock.toISOString(),
           lastMessage: update.lastMessage === undefined ? current.lastMessage : update.lastMessage,
           lastMessageSource: update.lastMessageSource === undefined ? current.lastMessageSource : update.lastMessageSource,
+          lastBreakingPostId: update.lastBreakingPostId ?? current.lastBreakingPostId,
           spentTodayCents: spent,
           spendDay: rolled.spendDay,
           lastTriggerAt: { ...current.lastTriggerAt, ...(update.lastTriggerAt ?? {}) },
