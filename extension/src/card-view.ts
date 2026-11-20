@@ -28,13 +28,15 @@ export interface CardHandle {
   readonly updateBudget: (budget: TradeBudget | undefined) => void;
 }
 
-function gemIcon(): SVGElement {
-  const gem = svg("svg", { attributes: { viewBox: "0 0 24 24", "aria-hidden": "true" } });
-  gem.append(
-    svg("path", { attributes: { d: "M12 2.5 21 9l-9 12.5L3 9z", fill: "rgba(255,255,255,0.95)" } }),
-    svg("path", { attributes: { d: "M3 9h18M12 2.5 8.5 9 12 21.5 15.5 9z", fill: "none", stroke: "#1a6bff", "stroke-width": "1.2", "stroke-linejoin": "round" } }),
+function logoIcon(): SVGElement {
+  const logo = svg("svg", { attributes: { viewBox: "0 0 64 64", "aria-hidden": "true" } });
+  logo.append(
+    svg("circle", { attributes: { cx: "32", cy: "34", r: "28", fill: "#9bc40a" } }),
+    svg("circle", { attributes: { cx: "32", cy: "31", r: "28", fill: "#c8f31d" } }),
+    svg("path", { attributes: { d: "M24 46V18h9a10 10 0 0 1 0 20h-9", fill: "none", stroke: "#1d293d", "stroke-width": "8", "stroke-linecap": "round", "stroke-linejoin": "round" } }),
+    svg("path", { attributes: { d: "M51 3q1.6 6.4 8 8-6.4 1.6-8 8-1.6-6.4-8-8 6.4-1.6 8-8z", fill: "#0789e0" } }),
   );
-  return gem;
+  return logo;
 }
 
 function userOnly(handler: () => void): (event: Event) => void {
@@ -303,7 +305,7 @@ export function createCard(initial: WireMatched, send: Sender, options: CardOpti
     h(
       "div",
       { className: "head" },
-      h("div", { className: "icon" }, gemIcon()),
+      h("div", { className: "icon" }, logoIcon()),
       h("div", { className: "titles" }, eventTitle, expiry),
       chartWrap,
     ),

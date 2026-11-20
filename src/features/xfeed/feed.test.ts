@@ -185,4 +185,69 @@ describe("createXFeed", () => {
     });
     expect(missingAuthor).toHaveBeenCalledTimes(2);
   });
+
+  describe("recentPosts", () => {
+    const post = (id: string, author_id: string) => ({
+      id,
+      text: `Post ${id}`,
+      author_id,
+      created_at: NOW.toISOString(),
+      public_metrics: { retweet_count: 0, quote_count: 0, reply_count: 0 },
+    });
+
+    it("requests the most relevant English posts from the last day", async () => {
+      const fetch = fakeFetch([], { data: [post("1", "u1")], includes: { users: [{ id: "u1", username: "one" }] } });
+      const posts = await feed(fetch).recentPosts("oakland purdue");
+      expect(posts).toEqual([
+        { id: "1", text: "Post 1", authorUsername: "one", url: "https://x.com/one/status/1", createdAtMs: NOW.getTime() },
+      ]);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      const url = requestUrl(fetch.mock.calls[0]?.[0]);
+      expect(url.pathname).toBe("/2/tweets/search/recent");
+      expect(url.searchParams.get("query")).toBe("(oakland purdue) -is:retweet -is:reply lang:en");
+      expect(url.searchParams.get("start_time")).toBe("2026-11-19T12:00:00.000Z");
+      expect(url.searchParams.get("sort_order")).toBe("relevancy");
+      expect(url.searchParams.get("max_results")).toBe("10");
+    });
+
+    it("keeps the first five posts in relevance order", async () => {
+      const ids = ["a", "b", "c", "d", "e", "f", "g"];
+      const fetch = fakeFetch([], { data: ids.map((id) => post(id, "u1")), includes: { users: [{ id: "u1", username: "one" }] } });
+      const posts = await feed(fetch).recentPosts("bitcoin");
+      expect(posts?.map((entry) => entry.id)).toEqual(["a", "b", "c", "d", "e"]);
+    });
+
+    it("reports a failed or malformed search as unknown rather than empty", async () => {
+      const failing = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({}, 429));
+      expect(await feed(failing).recentPosts("bitcoin")).toBeUndefined();
+      const malformed = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({ data: [{ id: 1 }] }));
+      expect(await feed(malformed).recentPosts("bitcoin")).toBeUndefined();
+    });
+
+    it("searches again on every call, leaving caching to the caller", async () => {
+      const fetch = fakeFetch([], { data: [] });
+      const xFeed = feed(fetch);
+      await xFeed.recentPosts("bitcoin");
+      await xFeed.recentPosts("bitcoin");
+      expect(fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("drops short links and decodes HTML entities, skipping posts left empty", async () => {
+      const fetch = fakeFetch([], {
+        data: [
+          { ...post("1", "u1"), text: "Gold &amp; copper &lt;3 rally https://t.co/abc123" },
+          { ...post("2", "u1"), text: "https://t.co/onlylink" },
+        ],
+        includes: { users: [{ id: "u1", username: "one" }] },
+      });
+      const posts = await feed(fetch).recentPosts("copper");
+      expect(posts?.map((entry) => entry.text)).toEqual(["Gold & copper <3 rally"]);
+    });
+
+    it("skips the request for an empty query", async () => {
+      const fetch = fakeFetch([]);
+      expect(await feed(fetch).recentPosts("  ")).toEqual([]);
+      expect(fetch).not.toHaveBeenCalled();
+    });
+  });
 });

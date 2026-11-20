@@ -1,6 +1,5 @@
 import { getDesk, getHomeServices } from "@/features/desk";
-import type { Desk, HomeServices } from "@/features/desk";
-import type { Research } from "@/features/research";
+import type { Desk, DeskAccess, HomeServices } from "@/features/desk";
 import type { z } from "zod";
 
 export async function withDesk(handler: (desk: Desk) => Promise<Response>): Promise<Response> {
@@ -49,10 +48,13 @@ export function withDashboardBody<S extends z.ZodType>(
   return withBody(request, schema, handler);
 }
 
-export async function withDashboardGet(
-  request: Request,
-  handler: (services: { readonly desk: Desk; readonly research: Research }) => Promise<Response>,
-): Promise<Response> {
+type DeskServices = Extract<DeskAccess, { ok: true }>;
+
+export function withDashboardGet(request: Request, handler: (services: DeskServices) => Promise<Response>): Promise<Response> {
+  return withDashboardServices(request, handler);
+}
+
+export async function withDashboardServices(request: Request, handler: (services: DeskServices) => Promise<Response>): Promise<Response> {
   if (!isDashboardRequest(request)) return forbidden();
   const access = await getDesk();
   if (!access.ok) return Response.json({ error: "desk-misconfigured", issues: access.issues }, { status: 503 });

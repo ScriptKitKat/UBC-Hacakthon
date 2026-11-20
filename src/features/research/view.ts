@@ -24,6 +24,7 @@ export interface ResearchDeps {
   readonly nowMs: () => number;
   readonly postContextFor: (symbol: string) => Promise<ResearchPostContext | undefined>;
   readonly matchedPostsFor?: (symbol: string) => Promise<readonly ResearchPostContext[]>;
+  readonly chatterFor?: (symbol: string) => readonly ResearchPostContext[];
   readonly llm?: LlmCompleter;
 }
 
@@ -121,7 +122,7 @@ function uniquePosts(posts: readonly ResearchPostContext[]): ResearchPostContext
   const seen = new Set<string>();
   const unique: ResearchPostContext[] = [];
   for (const post of posts) {
-    const key = `${post.source}:${post.url ?? ""}:${post.text}`;
+    const key = post.url ?? post.text;
     if (seen.has(key)) continue;
     seen.add(key);
     unique.push(post);
@@ -286,6 +287,7 @@ export function createResearch(deps: ResearchDeps): Research {
         matchedPosts: uniquePosts([
           ...matchedPosts.map((post) => withTimestamp(post)),
           ...(postContext ? [withTimestamp(postContext)] : []),
+          ...(deps.chatterFor?.(symbol) ?? []),
         ].filter((post): post is ResearchPostContext => post !== null)),
       },
     };

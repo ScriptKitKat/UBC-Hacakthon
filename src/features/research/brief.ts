@@ -138,7 +138,7 @@ function catalysts(view: ResearchView): string {
   const { postContext, market } = view;
   const post = postContext === null
     ? "No post or news item is attached to this market."
-    : `The ${postContext.source === "x-feed" ? "X post" : "news item"}${postContext.author === null ? "" : ` from ${postContext.author}`} that matched this market says: “${excerpt(postContext.text, POST_EXCERPT_CHARS)}”${postContext.why === null ? "" : ` It matched because: ${postContext.why}`}`;
+    : `The ${postContext.source === "news" ? "news item" : "X post"}${postContext.author === null ? "" : ` from ${postContext.author}`} that matched this market says: “${excerpt(postContext.text, POST_EXCERPT_CHARS)}”${postContext.why === null ? "" : ` It matched because: ${postContext.why}`}`;
   const expiry = market.expiryDate === null ? "No expiry date is listed." : `It expires on ${market.expiryDate.slice(0, 10)}.`;
   const rules = market.rulesText.trim() === "" ? "No resolution rules were provided." : `Resolution rules: ${excerpt(market.rulesText, RULES_EXCERPT_CHARS)}`;
   return `${post} ${expiry} ${rules}`;

@@ -7,6 +7,8 @@ import { createSolanaLedger, createUnconfiguredLedger, isExpectedGenesis } from 
 import type { UsdcLedger } from "@/features/ledger";
 import { openAgentStore, startAgentLoop, agentCycle } from "@/features/agents";
 import type { AgentCycleOptions, AgentCycleReport, AgentStore } from "@/features/agents";
+import { createChatter, openChatterStore } from "@/features/chatter";
+import type { Chatter } from "@/features/chatter";
 import { cardsForSaved, cardsForSymbols, createBrowseCache, createListCache, listBrowse, listCatalog, loadSpotPrices, openWatchlist, sparklineUpdates } from "@/features/catalog";
 import type { BrowseListResult, BrowseQuery, CatalogListResult, CatalogQuery, Watchlist, WatchlistItem } from "@/features/catalog";
 import type { CatalogCard, WatchlistCard } from "@/shared";
@@ -38,7 +40,7 @@ const NONCE_BYTES = 16;
 const SECRET_BYTES = 32;
 
 export type DeskAccess =
-  | { readonly ok: true; readonly desk: Desk; readonly research: Research; readonly deepDive: DeepDiveResource | undefined; readonly marketPro: MarketPro }
+  | { readonly ok: true; readonly desk: Desk; readonly research: Research; readonly deepDive: DeepDiveResource | undefined; readonly marketPro: MarketPro; readonly chatter: Chatter | undefined }
   | { readonly ok: false; readonly issues: readonly string[] };
 
 export interface AgentRuntime {
@@ -119,6 +121,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
       journal,
       purchaseStore: await openPurchaseStore({ fs: nodeFileSystem, path: join(dataDirectory, "research-purchases.json") }),
       matchStore: await openMatchStore({ fs: nodeFileSystem, path: join(dataDirectory, "matched-posts.json") }),
+      chatterStore: await openChatterStore({ fs: nodeFileSystem, path: join(dataDirectory, "x-chatter.json") }),
       feedOrders: await openFeedOrders({
         fs: nodeFileSystem,
         path: join(dataDirectory, "feed-orders.json"),
@@ -142,7 +145,7 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     };
   });
   if (!stores.ok) return { ok: false, issues: [stores.issue] };
-  const { decisionLog, purchaseStore, matchStore, journal, usedPayments, feedOrders } = stores.value;
+  const { decisionLog, purchaseStore, matchStore, chatterStore, journal, usedPayments, feedOrders } = stores.value;
   const publicOrigin = config.value.research.publicOrigin;
   const deferredDeepDive = createDeferredDeepDive(publicOrigin);
   const payments = settings.configured && researchRecipient && connection
@@ -197,7 +200,31 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   });
   const { grok, claude } = config.value.feed;
   const llm = selectLlm({ grok, claude, fetch });
-  const research = createResearch({ markets, history, nowMs: () => Date.now(), postContextFor: desk.postContextFor, matchedPostsFor: desk.matchedPostsFor, ...(llm ? { llm } : {}) });
+  const xFeedSettings = loadXFeedSettings(env);
+  const xFeed = xFeedSettings.bearerToken === undefined
+    ? undefined
+    : createXFeed({ bearerToken: xFeedSettings.bearerToken, fetch, now: () => new Date() });
+  const chatter = xFeed === undefined
+    ? undefined
+    : createChatter({
+        xFeed,
+        eventTitle: async (eventTicker) => {
+          const result = await markets.getEvent(eventTicker);
+          return result.ok ? result.value.title : undefined;
+        },
+        nowMs: () => Date.now(),
+        initialChatter: chatterStore.initialChatter,
+        saveChatter: chatterStore.saveChatter,
+      });
+  const research = createResearch({
+    markets,
+    history,
+    nowMs: () => Date.now(),
+    postContextFor: desk.postContextFor,
+    matchedPostsFor: desk.matchedPostsFor,
+    ...(chatter ? { chatterFor: chatter.peek } : {}),
+    ...(llm ? { llm } : {}),
+  });
   const deepDive = payments ? createDeepDiveResource({ payments, research, publicOrigin }) : undefined;
   deferredDeepDive.bind(deepDive);
   const reconcile = async () => {
@@ -209,10 +236,6 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
   createSampler({ history, markets, nowMs: () => Date.now() }).start();
   const catalogDeps = { markets, history, now: () => new Date(), policy: config.value.policy };
   const agentStore = openAgentStore({ fs: nodeFileSystem, path: join(dataDirectory, "agents.json") });
-  const xFeedSettings = loadXFeedSettings(env);
-  const xFeed = xFeedSettings.bearerToken === undefined
-    ? undefined
-    : createXFeed({ bearerToken: xFeedSettings.bearerToken, fetch, now: () => new Date() });
   const agentDeps = {
     store: agentStore,
     markets,
@@ -258,9 +281,10 @@ async function buildDesk(env: Readonly<Record<string, string | undefined>>): Pro
     nowMs: () => Date.now(),
     desk,
     isWatched: async (symbol) => (await watchlist.list()).includes(symbol),
+    ...(chatter ? { chatterFor: chatter.peek } : {}),
   });
   if (runtime) runtime.catalog = homeCatalog;
-  return { ok: true, desk, research, deepDive, marketPro };
+  return { ok: true, desk, research, deepDive, marketPro, chatter };
 }
 
 const deskKey: unique symbol = Symbol.for("news-to-trade-desk.desk");

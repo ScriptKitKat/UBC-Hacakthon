@@ -29,7 +29,9 @@ export {
   deepDiveResultSchema,
   indicatorsSchema,
   isResearchTimeframe,
+  postSourceLabel,
   researchBriefSchema,
+  researchPostContextSchema,
   researchViewSchema,
 } from "./research";
 export type {
@@ -39,6 +41,7 @@ export type {
   ResearchDepthLevel,
   ResearchIndicators,
   ResearchPostContext,
+  ResearchPostSource,
   ResearchRelatedContract,
   ResearchSeriesPoint,
   ResearchTimeframe,

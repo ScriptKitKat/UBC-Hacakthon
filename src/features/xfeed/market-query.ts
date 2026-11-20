@@ -1,6 +1,11 @@
 import { searchTokens } from "@/features/matcher";
 
-const QUERY_STOPWORDS = new Set(["above", "below", "many", "much", "price", "today", "tomorrow", "why"]);
+const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+const TIME_ZONES = ["est", "edt", "et", "cst", "cdt", "ct", "pst", "pdt", "pt", "utc", "gmt", "am", "pm"];
+const MARKET_WORDING = ["above", "below", "many", "much", "price", "today", "tomorrow", "why", "vs", "versus", "highest", "lowest", "total", "points", "point", "spread", "winner"];
+const QUERY_STOPWORDS = new Set([...MARKET_WORDING, ...MONTHS, ...TIME_ZONES]);
+const MIN_PLAIN_TERM_LENGTH = 3;
+const CLOCK_TIME = /^\p{N}+(?:am|pm)$/u;
 const TITLE_TERMS = /[\p{L}]+(?:&[\p{L}]+)*|\p{N}+/gu;
 const NUMBER = /^\p{N}+$/u;
 
@@ -10,7 +15,7 @@ function titleTerms(title: string): readonly string[] {
 
 function isTicker(token: string): boolean {
   if (token.includes("&")) return true;
-  return token.length >= 2 && token === token.toUpperCase() && token !== token.toLowerCase() && searchTokens(token).length > 0;
+  return token.length >= 2 && token === token.toUpperCase() && token !== token.toLowerCase() && searchTokens(token).some(isQueryTerm);
 }
 
 function tickerTerms(tokens: readonly string[]): string[] {
@@ -29,17 +34,21 @@ function tickerTerms(tokens: readonly string[]): string[] {
   return terms;
 }
 
+function isQueryTerm(token: string): boolean {
+  return !QUERY_STOPWORDS.has(token) && !CLOCK_TIME.test(token);
+}
+
 function properNouns(tokens: readonly string[]): string[] {
   return tokens.filter((token) =>
     /^[\p{Lu}][\p{Ll}]+$/u.test(token) &&
-    searchTokens(token).some((term) => !QUERY_STOPWORDS.has(term))
+    searchTokens(token).some(isQueryTerm)
   ).map((token) => token.toLowerCase());
 }
 
 export function marketQuery(eventTitle: string): string {
   const tokens = titleTerms(eventTitle);
   const otherTerms = searchTokens(eventTitle)
-    .filter((token) => !QUERY_STOPWORDS.has(token))
+    .filter((token) => token.length >= MIN_PLAIN_TERM_LENGTH && isQueryTerm(token))
     .map((token, index) => ({ token, index }))
     .sort((left, right) => right.token.length - left.token.length || left.index - right.index)
     .map(({ token }) => token);

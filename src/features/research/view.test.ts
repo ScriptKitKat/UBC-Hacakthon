@@ -58,6 +58,8 @@ interface Overrides {
   readonly recentTrades?: ResearchMarkets["recentTrades"];
   readonly searchEvents?: ResearchMarkets["searchEvents"];
   readonly postContext?: ResearchPostContext;
+  readonly matchedPosts?: readonly ResearchPostContext[];
+  readonly chatter?: readonly ResearchPostContext[];
 }
 
 async function setup(overrides: Overrides = {}) {
@@ -69,7 +71,14 @@ async function setup(overrides: Overrides = {}) {
     orderBook: overrides.orderBook ?? vi.fn(() => Promise.resolve(ok(book))),
     recentTrades: overrides.recentTrades ?? vi.fn(() => Promise.resolve(ok<readonly RecentTrade[]>(trades))),
   };
-  const research = createResearch({ markets, history, nowMs: () => NOW, postContextFor: () => Promise.resolve(overrides.postContext) });
+  const research = createResearch({
+    markets,
+    history,
+    nowMs: () => NOW,
+    postContextFor: () => Promise.resolve(overrides.postContext),
+    matchedPostsFor: () => Promise.resolve(overrides.matchedPosts ?? []),
+    chatterFor: () => overrides.chatter ?? [],
+  });
   return { research, history, markets };
 }
 
@@ -157,6 +166,18 @@ describe("research view", () => {
     const { research } = await setup({ postContext });
     const result = await research.view(SYMBOL, "1D");
     expect(result.kind === "ok" && result.view.postContext).toEqual(postContext);
+  });
+
+  it("adds cached X chatter after matched posts, without repeating a post", async () => {
+    const matched: ResearchPostContext = { source: "x-feed", text: "Powell signals a hold", author: "@Reuters", url: "https://x.com/Reuters/status/1", why: "Powell hold", atMs: NOW - HOUR };
+    const searched: ResearchPostContext = { source: "x-search", text: "Fed watchers expect no change", author: "@fedwatch", url: "https://x.com/fedwatch/status/2", why: null, atMs: null };
+    const { research } = await setup({
+      matchedPosts: [matched],
+      chatter: [{ ...matched, source: "x-search", why: null }, searched],
+    });
+    const result = await research.view(SYMBOL, "1D");
+    if (result.kind !== "ok") throw new Error(result.kind);
+    expect(result.view.matchedPosts).toEqual([matched, searched]);
   });
 
   it("records the current price and watches the symbol", async () => {

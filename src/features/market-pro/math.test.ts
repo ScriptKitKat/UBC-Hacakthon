@@ -197,12 +197,28 @@ describe("flow, feed, spot, position", () => {
     const items = buildFeed({
       log: [entry],
       symbol: "GEMI-SOL-C200",
-      post: { source: "x-feed", text: "Inflows are up", author: "solanafloor", url: "https://x.com/s/1", why: "keyword", atMs: null },
+      posts: [{ source: "x-feed", text: "Inflows are up", author: "solanafloor", url: "https://x.com/s/1", why: "keyword", atMs: null }],
       candles: [],
       nowMs: Date.parse("2026-11-19T19:00:00.000Z"),
     });
     expect(items.some((item) => item.source === "X @solanafloor")).toBe(true);
     expect(items.some((item) => item.event.includes("Bought YES $5"))).toBe(true);
+  });
+
+  it("dates each post, measures odds an hour after it, and lists a repeated post once", () => {
+    const nowMs = Date.parse("2026-11-19T20:00:00.000Z");
+    const postedAt = Date.parse("2026-11-19T17:00:00.000Z");
+    const candles = [
+      { timeMs: postedAt, openCents: 40, highCents: 40, lowCents: 40, closeCents: 40, volume: 1 },
+      { timeMs: postedAt + 60 * 60 * 1000, openCents: 46, highCents: 46, lowCents: 46, closeCents: 46, volume: 1 },
+    ];
+    const old = { source: "x-search" as const, text: "Purdue opens as a big favorite", author: "@hoops", url: "https://x.com/hoops/status/1", why: null, atMs: postedAt };
+    const fresh = { ...old, text: "Tipoff soon", url: "https://x.com/hoops/status/2", atMs: nowMs - 10 * 60 * 1000 };
+    const items = buildFeed({ log: [], symbol: "GEMI-X-Y", posts: [old, fresh, { ...old, source: "x-feed" }], candles, nowMs });
+    expect(items.map((item) => [item.source, item.timeMs, item.oddsChangeCents])).toEqual([
+      ["X @hoops", fresh.atMs, null],
+      ["X @hoops", postedAt, 6],
+    ]);
   });
 
   it("computes move needed from a live spot price and strike, and skips non-crypto events", () => {

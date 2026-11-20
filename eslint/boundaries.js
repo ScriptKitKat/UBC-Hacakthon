@@ -72,7 +72,7 @@ export const projectRules = [
     },
   },
   {
-    files: ["src/app/**/use-polling.ts"],
+    files: ["src/app/_desk/use-polling.ts", "src/app/_desk/use-mount-task.ts"],
     rules: importBan([["@/features/*/**"]], "App may import only features' index.ts."),
   },
 ];

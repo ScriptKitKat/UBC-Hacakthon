@@ -53,7 +53,7 @@ beforeEach(() => {
   getFeedPositions.mockReset();
   buyFromFeed.mockReset().mockResolvedValue(entry);
   confirmFromFeed.mockReset().mockResolvedValue({ ok: true, entry });
-  getDesk.mockResolvedValue({ ok: true, desk: stubDesk, research: { view: vi.fn(), brief: vi.fn() }, deepDive: undefined, marketPro: { shell: vi.fn(), live: vi.fn() } });
+  getDesk.mockResolvedValue({ ok: true, desk: stubDesk, research: { view: vi.fn(), brief: vi.fn() }, deepDive: undefined, marketPro: { shell: vi.fn(), live: vi.fn() }, chatter: undefined });
 });
 
 describe("feed cors", () => {
