@@ -162,10 +162,11 @@ describe("runAgentTick", () => {
         briefTriggers: { oddsMove10: true, everyMonday: false, endingSoon: false },
       },
     });
+    const runDeps = { ...deps, now: () => NOW };
 
-    await runAgentTick(deps, agent, DESK, NOW);
+    await runAgentCycle(runDeps, agent.id);
     const spentAfterFirstBrief = (await store.get(agent.id))?.spentTodayCents;
-    await runAgentTick(deps, agent, DESK, NOW, { review: true, origin: "manual" });
+    await runAgentCycle(runDeps, agent.id, { review: true, origin: "manual" });
 
     expect(buyDeepDive).toHaveBeenCalledTimes(1);
     expect(spentAfterFirstBrief).toBe(5);
