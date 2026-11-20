@@ -74,7 +74,7 @@ function setup(options: { ledger?: UsdcLedger; ledgerView?: LedgerView; markets?
   let ids = 0;
   let tick = 0;
   const desk = createDesk({
-    policy: policy.value, feed: { operatorId: "priscilla", grok: { apiKey: undefined, model: "grok-test" } }, markets, ledger, ledgerView: options.ledgerView ?? configuredLedger,
+    policy: policy.value, feed: { operatorId: "priscilla", grok: { apiKey: undefined, model: "grok-test" }, claude: { apiKey: undefined, model: "claude-test" } }, markets, ledger, ledgerView: options.ledgerView ?? configuredLedger,
     now: () => new Date(Date.parse("2026-11-17T12:00:00Z") + 30_000 * tick++), idGen: () => `id-${String(++ids)}`,
     ...options.extra,
   });

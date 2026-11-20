@@ -263,7 +263,7 @@ function AgentEditor({
         <span className={styles.label}>Latest message</span>
         {agent?.lastMessage ? (
           <>
-            {agent.lastMessageSource !== null ? <span className={styles.source}>{agent.lastMessageSource === "llm" ? "Grok" : "Template"}</span> : null}
+            {agent.lastMessageSource !== null ? <span className={styles.source}>{agent.lastMessageSource === "llm" ? MODELS.find((model) => model.value === agent.model)?.label : "Template"}</span> : null}
             <p className={styles.preview}>{agent.lastMessage}</p>
           </>
         ) : (

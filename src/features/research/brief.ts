@@ -21,6 +21,11 @@ export interface JsonRequest {
 
 export type JsonCompleter = (request: JsonRequest) => Promise<unknown>;
 
+export interface Polisher {
+  readonly by: Exclude<ResearchBrief["polishedBy"], "template">;
+  readonly complete: JsonCompleter;
+}
+
 const polishedSchema = z.object({ headline: z.string().min(1), sections: z.array(z.string().min(1)) });
 
 const POLISH_JSON_SCHEMA = {
@@ -192,11 +197,11 @@ function briefText(brief: Pick<ResearchBrief, "headline" | "sections">): string 
   return [brief.headline, ...brief.sections.map((section) => section.body)].join("\n");
 }
 
-export async function polishBrief(template: ResearchBrief, complete: JsonCompleter | undefined): Promise<ResearchBrief> {
-  if (!complete) return template;
+export async function polishBrief(template: ResearchBrief, polisher: Polisher | undefined): Promise<ResearchBrief> {
+  if (!polisher) return template;
   let raw: unknown;
   try {
-    raw = await complete({
+    raw = await polisher.complete({
       system: POLISH_SYSTEM,
       user: JSON.stringify({ headline: template.headline, sections: template.sections.map((section) => section.body) }),
       schemaName: "brief_polish",
@@ -213,5 +218,5 @@ export async function polishBrief(template: ResearchBrief, complete: JsonComplet
   };
   const allowed = numbersIn(briefText(template));
   if ([...numbersIn(briefText(polished))].some((token) => !allowed.has(token))) return template;
-  return { ...template, ...polished, polishedBy: "grok" };
+  return { ...template, ...polished, polishedBy: polisher.by };
 }

@@ -33,7 +33,7 @@ function makeBot(client: XClient = createFakeXClient()) {
       searchEvents: () => Promise.resolve(ok({ events: [], total: 0 })),
       getEvent: () => Promise.reject(new Error("unused")),
     },
-    feed: { operatorId: "priscilla", grok: { apiKey: undefined, model: "grok-test" } },
+    feed: { operatorId: "priscilla", grok: { apiKey: undefined, model: "grok-test" }, claude: { apiKey: undefined, model: "claude-test" } },
     ledger: createUnconfiguredLedger(),
     ledgerView: { configured: false, missing: [] },
     now: () => new Date("2026-11-17T12:00:00Z"),

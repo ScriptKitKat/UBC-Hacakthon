@@ -141,7 +141,7 @@ export const researchBriefSchema = z.object({
   generatedAt: z.string(),
   headline: z.string(),
   sections: z.array(z.object({ title: z.string(), body: z.string() })),
-  polishedBy: z.enum(["template", "grok"]),
+  polishedBy: z.enum(["template", "grok", "claude"]),
   author: briefAuthorSchema.optional(),
   evidence: briefEvidenceSchema.optional(),
 });

@@ -2,7 +2,7 @@ export { assignedBudgetCents, clampDailyBudget, evaluateBudget } from "./budget"
 export type { AgentBudget, DeskBudget } from "./budget";
 export { agentCycle, AGENT_LOOP_INTERVAL_MS, startAgentLoop } from "./loop";
 export { composeMessage, templateMessage } from "./message";
-export { modelAvailability } from "./models";
+export { modelAvailability, preferredModel } from "./models";
 export type { ModelAvailability } from "./models";
 export { permissionAction } from "./permissions";
 export type { PermissionAction } from "./permissions";

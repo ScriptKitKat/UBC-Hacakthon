@@ -90,7 +90,7 @@ function fixture(options: { noResearch?: boolean; dailyCap?: number; killSwitch?
   const clock = { nowMs: options.start ?? START };
   const desk = createDesk({
     policy: policy.value,
-    feed: { operatorId: "priscilla", grok: { apiKey: undefined, model: "m" } },
+    feed: { operatorId: "priscilla", grok: { apiKey: undefined, model: "m" }, claude: { apiKey: undefined, model: "claude-test" } },
     markets,
     ledger: { debit: vi.fn(), signPayment, checkSignature, balance: vi.fn() },
     ledgerView,
