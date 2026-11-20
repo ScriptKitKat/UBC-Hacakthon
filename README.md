@@ -143,7 +143,7 @@ npm run test:integration  # Solana ledger against a live cluster
 
 ## Grok Bot's role
 
-Grok Bot (this project's dedicated "UBC hackathon bot") was the build and ops agent for Predictle throughout the hackathon: spinning up parallel agents for pages, reviewing and merging PRs, researching what beginners and pros need on market research screens, drafting the pitch video script, and writing this README. Inside the product, the xAI Grok API matches X posts to Gemini markets, polishes research briefs, and powers watchlist-agent decisions and messages. A cleaned export of the build chat is in [`docs/grok-bot-chat-export.md`](docs/grok-bot-chat-export.md).
+Grok Bot (this project's dedicated "UBC hackathon bot") was the build and ops agent for Predictle throughout the hackathon: spinning up parallel agents for pages, reviewing and merging PRs, researching what beginners and pros need on market research screens, drafting the pitch video script, and writing this README. Inside the product, the xAI Grok API matches X posts to Gemini markets, polishes research briefs, and powers watchlist-agent decisions and messages. A raw export of the build chat is in [`docs/grok-bot-chat-export.md`](docs/grok-bot-chat-export.md) (readable) and [`docs/grok-bot-chat-export.raw.jsonl`](docs/grok-bot-chat-export.raw.jsonl) (full JSONL).
 
 ## Sponsor tools
 
