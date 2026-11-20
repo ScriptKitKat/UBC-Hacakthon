@@ -7,7 +7,7 @@ export async function waitForIdleOrTimeout(idle: Promise<void>, timeoutMs: numbe
   const timedOut = await Promise.race([
     idle.then(() => false),
     new Promise<boolean>((resolve) => {
-      timer = setTimeout(() => resolve(true), timeoutMs);
+      timer = setTimeout(() => { resolve(true); }, timeoutMs);
       timer.unref();
     }),
   ]);

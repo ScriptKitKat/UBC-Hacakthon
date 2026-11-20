@@ -27,7 +27,7 @@ it("releases page-style access before the next stale revision check", async () =
   const idle = new Promise<void>((resolve) => {
     resolveIdle = resolve;
   });
-  await expect(withReleasedLease(async () => "page", () => {
+  await expect(withReleasedLease(() => Promise.resolve("page"), () => {
     active -= 1;
     resolveIdle?.();
   })).resolves.toBe("page");
