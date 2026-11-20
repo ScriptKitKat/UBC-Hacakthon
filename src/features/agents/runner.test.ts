@@ -11,6 +11,7 @@ import { runAgentCycle, runAgentTick } from "./runner";
 import type { AgentRunnerDeps } from "./runner";
 import { openAgentStore } from "./store";
 import type { AgentDraft } from "./store";
+import { AGENT_LOOP_INTERVAL_MS, agentCycle, startAgentLoop } from "./loop";
 
 const NOW = new Date("2026-11-19T18:00:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -39,6 +40,12 @@ function entry(kind: DecisionLogEntry["kind"], outcome: "yes" | "no"): DecisionL
 }
 
 const DELIVERED: DeepDiveResult = { status: "delivered", alreadyPurchased: false, trace: [], failureReason: null, brief: null, purchase: null };
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
 
 async function setup(options: { readonly yesNow: number; readonly yesBefore: number; readonly volume24h?: number; readonly draft?: Partial<AgentDraft>; readonly allowAutonomous?: boolean }) {
   let idCount = 0;
@@ -136,5 +143,55 @@ describe("runAgentCycle", () => {
     expect(report).toMatchObject({ ran: 1, ticks: [{ agentId: other.id }] });
     expect(await store.get(agent.id)).toMatchObject({ lastRunAt: null });
     expect(await store.get(other.id)).toMatchObject({ lastRunAt: NOW.toISOString() });
+  });
+
+  it("coalesces overlapping untargeted runs", async () => {
+    const { deps } = await setup({ yesNow: 55, yesBefore: 50, draft: { permission: "watch" } });
+    const serializedDeps: AgentRunnerDeps = { ...deps, now: () => NOW };
+    const getEvent = vi.spyOn(serializedDeps.markets, "getEvent");
+    const run = agentCycle(serializedDeps);
+    const first = run();
+    const second = run();
+
+    expect(second).toBe(first);
+    await Promise.all([first, second]);
+    expect(getEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues a targeted run behind the in-flight loop cycle", async () => {
+    const { agent, deps, proposeTrade } = await setup({
+      yesNow: 60,
+      yesBefore: 40,
+      draft: { permission: "autonomous", maxPerBetCents: 200 },
+    });
+    const serializedDeps: AgentRunnerDeps = { ...deps, now: () => NOW };
+    const trade = deferred<DecisionLogEntry>();
+    const tradeStarted = deferred<void>();
+    proposeTrade.mockImplementation(() => {
+      tradeStarted.resolve(undefined);
+      return trade.promise;
+    });
+    const getEvent = vi.spyOn(serializedDeps.markets, "getEvent");
+    vi.useFakeTimers();
+    const timer = startAgentLoop(serializedDeps);
+
+    try {
+      await vi.advanceTimersByTimeAsync(AGENT_LOOP_INTERVAL_MS);
+      await tradeStarted.promise;
+      const targeted = agentCycle(serializedDeps)(agent.id);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getEvent).toHaveBeenCalledTimes(1);
+      expect(proposeTrade).toHaveBeenCalledTimes(1);
+
+      trade.resolve(entry("approve", "yes"));
+      const report = await targeted;
+
+      expect(getEvent).toHaveBeenCalledTimes(2);
+      expect(proposeTrade).toHaveBeenCalledTimes(1);
+      expect(report.ticks[0]?.skipped).toEqual([{ id: "oddsMove", reason: "already reported this move" }]);
+    } finally {
+      clearInterval(timer);
+      vi.useRealTimers();
+    }
   });
 });
