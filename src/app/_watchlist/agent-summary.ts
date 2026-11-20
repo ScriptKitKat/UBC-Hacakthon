@@ -1,9 +1,9 @@
-import { formatBudgetCents, rolledSpend } from "@/shared";
+import { formatBudgetCents, nextRoutineAt, rolledSpend } from "@/shared";
 import type { AgentRecordView, AgentsView } from "@/shared";
 
 export type AgentSummaryRecord = Pick<
   AgentRecordView,
-  "status" | "lastRunAt" | "spentTodayCents" | "spendDay" | "dailyBudgetCents" | "permission" | "maxPerBetCents"
+  "status" | "lastRunAt" | "spentTodayCents" | "spendDay" | "dailyBudgetCents" | "permission" | "maxPerBetCents" | "schedule" | "lastRoutineAt"
 >;
 
 const CHECK_INTERVAL_MS = 60_000;
@@ -59,8 +59,8 @@ export function agentPermissionLine(
   if (agent.permission === "watch") return { text: "Only sends messages", portfolioLink: false };
   if (agent.permission === "suggest") {
     return {
-      text: `Suggests bets up to ${formatBudgetCents(agent.maxPerBetCents)} for you to approve in`,
-      portfolioLink: true,
+      text: `Suggests bets up to ${formatBudgetCents(agent.maxPerBetCents)} for you to approve here on the Agents page`,
+      portfolioLink: false,
     };
   }
   const effectiveCapCents = Math.min(agent.maxPerBetCents, desk.autoApproveMaxCents);
@@ -69,4 +69,26 @@ export function agentPermissionLine(
     text: `Bets on its own up to ${formatBudgetCents(effectiveCapCents)} per bet${deskLimitNote}`,
     portfolioLink: false,
   };
+}
+
+function localDay(at: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(at);
+  return ["year", "month", "day"].map((key) => parts.find((part) => part.type === key)?.value ?? "").join("-");
+}
+
+export function agentRoutineLine(
+  agent: Pick<AgentSummaryRecord, "schedule" | "lastRoutineAt">,
+  now: Date,
+): string {
+  const next = nextRoutineAt(agent.schedule, agent.lastRoutineAt);
+  if (next === null) return "No routine";
+  const zone = agent.schedule.kind === "daily" ? agent.schedule.timeZone : Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const time = next.toLocaleTimeString("en-US", { timeZone: zone, hour: "numeric", minute: "2-digit" });
+  const nowDay = localDay(now, zone);
+  const nextDay = localDay(next, zone);
+  const nowDate = new Date(`${nowDay}T00:00:00Z`);
+  const nextDate = new Date(`${nextDay}T00:00:00Z`);
+  const dayDelta = (nextDate.getTime() - nowDate.getTime()) / (24 * 60 * 60_000);
+  const label = dayDelta === 0 ? "Today" : dayDelta === 1 ? "Tomorrow" : next.toLocaleDateString("en-US", { timeZone: zone, weekday: "short", month: "short", day: "numeric" });
+  return `Next routine: ${label} ${time}`;
 }

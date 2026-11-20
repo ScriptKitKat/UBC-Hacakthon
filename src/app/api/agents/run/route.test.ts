@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentCycleReport, AgentRecord, AgentStore } from "@/features/agents";
+import type { AgentCycleOptions, AgentCycleReport, AgentRecord, AgentStore } from "@/features/agents";
 import type { HomeServices } from "@/features/desk";
 import { POST } from "./route";
 
 const getHomeServices = vi.hoisted(() => vi.fn<() => Promise<HomeServices>>());
 const getAgent = vi.hoisted(() => vi.fn<AgentStore["get"]>());
-const run = vi.hoisted(() => vi.fn<(agentId?: string) => Promise<AgentCycleReport>>());
+const run = vi.hoisted(() => vi.fn<(agentId?: string, options?: AgentCycleOptions) => Promise<AgentCycleReport>>());
 
 vi.mock("@/features/desk", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/features/desk")>()),
@@ -42,6 +42,18 @@ describe("POST /api/agents/run", () => {
     expect(await response.json()).toEqual(report);
     expect(getAgent).toHaveBeenCalledWith("agent-1");
     expect(run).toHaveBeenCalledWith("agent-1");
+  });
+
+  it("requests a manual review without requiring trigger matches", async () => {
+    const response = await POST(post({ agentId: "agent-1", review: true }));
+    expect(response.status).toBe(200);
+    expect(run).toHaveBeenCalledWith("agent-1", { review: true, origin: "manual" });
+  });
+
+  it("requires an agent id for a manual review", async () => {
+    const response = await POST(post({ review: true }));
+    expect(response.status).toBe(400);
+    expect(run).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the requested agent does not exist", async () => {

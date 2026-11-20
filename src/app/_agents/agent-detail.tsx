@@ -3,13 +3,17 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { AgentRecordView, AgentsView, WatchlistCard } from "@/shared";
-import { friendlyEventTitle } from "@/shared";
+import { formatBudgetCents, friendlyEventTitle } from "@/shared";
+import { loadSnapshot, postAction } from "../_desk/api";
+import type { SnapshotResult } from "../_desk/api";
+import { usePolling } from "../_desk/use-polling";
 import { deleteAgent, loadAgents, runAgent, saveAgent } from "../_shell/api";
 import { marketHref } from "../_market-card/model";
 import { agentRunResultText } from "../_watchlist/agent-run-result";
 import { AgentSetup } from "../_watchlist/agent-setup";
 import {
   agentPermissionLine,
+  agentRoutineLine,
   agentSpendLine,
   agentStatusText,
   relativeTime,
@@ -56,6 +60,11 @@ export function AgentDetail({
   const [error, setError] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<string | null>(null);
   const [showAllActivity, setShowAllActivity] = useState(false);
+  const [deskSnapshot, setDeskSnapshot] = useState<SnapshotResult | null>(null);
+  const [approvalBusy, setApprovalBusy] = useState(false);
+  const [approvalResults, setApprovalResults] = useState<Readonly<Record<string, string>>>({});
+
+  usePolling(() => { void loadSnapshot().then(setDeskSnapshot); }, 5_000);
 
   if (agent === undefined || view === undefined) {
     return <div className={styles.detailEmpty}>Select an agent to see its status and activity.</div>;
@@ -83,13 +92,13 @@ export function AgentDetail({
     }
   }
 
-  async function runNow(): Promise<void> {
+  async function askNow(): Promise<void> {
     if (currentAgent.status === "paused" || busy) return;
     setBusy(true);
     setRunResult(null);
     setError(null);
     try {
-      const report = await runAgent(currentAgent.id);
+      const report = await runAgent(currentAgent.id, true);
       const refreshed = await loadAgents();
       if (refreshed !== undefined) onView(refreshed);
       const tick = report?.ticks.find((item) => item.agentId === currentAgent.id);
@@ -99,6 +108,28 @@ export function AgentDetail({
       setRunResult("The agent run could not be completed.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function actOnSuggestion(action: "confirm" | "reject", intentId: string): Promise<void> {
+    const approverId = deskSnapshot?.kind === "ready" ? deskSnapshot.snapshot.policy.senderAllowlist[0] : undefined;
+    if (approverId === undefined || approverId === "") {
+      setError("No approver is configured.");
+      return;
+    }
+    setApprovalBusy(true);
+    setError(null);
+    try {
+      const result = await postAction(action, { intentId, approverId });
+      const message = result.ok ? result.entry?.spokenReason ?? (action === "confirm" ? "Trade approved." : "Trade rejected.") : result.message;
+      setApprovalResults((current) => ({ ...current, [intentId]: message }));
+      const [snapshot, agents] = await Promise.all([loadSnapshot(), loadAgents()]);
+      setDeskSnapshot(snapshot);
+      if (agents !== undefined) onView(agents);
+    } catch {
+      setError("The approval could not be updated. Try again.");
+    } finally {
+      setApprovalBusy(false);
     }
   }
 
@@ -150,6 +181,7 @@ export function AgentDetail({
           <span className={styles.statusText}>{agentStatusText(agent, now)}</span>
         </div>
         <p className={styles.statusText}>{agentSpendLine(agent, now)}</p>
+        <p className={styles.statusText}>{agentRoutineLine(agent, now)}</p>
         <p className={styles.permissionText}>
           {permission.text}{permission.portfolioLink ? <>{" "}<Link href="/positions#approvals">Portfolio</Link></> : null}
         </p>
@@ -164,8 +196,8 @@ export function AgentDetail({
         <button type="button" className={styles.actionButton} disabled={busy} onClick={() => { void toggleStatus(); }}>
           {agent.status === "watching" ? "Pause" : "Resume"}
         </button>
-        <button type="button" className={styles.actionButton} disabled={busy || agent.status === "paused"} onClick={() => { void runNow(); }}>
-          {busy ? "Running…" : "Run now"}
+        <button type="button" className={styles.actionButton} disabled={busy || agent.status === "paused"} onClick={() => { void askNow(); }}>
+          {busy ? "Reviewing…" : "Ask now"}
         </button>
         <button type="button" className={styles.actionButton} disabled={busy} onClick={() => { setEditing(true); }}>
           Edit settings
@@ -213,9 +245,23 @@ export function AgentDetail({
                   <time className={styles.activityTime} dateTime={item.at}>{relativeTime(item.at, now)}</time>
                 </div>
                 <p className={styles.activityText}>
+                  {(item.kind === "bet" || item.kind === "suggestion") && item.side !== undefined && item.amountCents !== undefined
+                    ? <strong>{`${item.kind === "bet" ? "Bet" : "Suggested"} ${formatBudgetCents(item.amountCents)} on ${item.side === "yes" ? "Yes" : "No"}. `}</strong>
+                    : null}
                   {item.text}
                   {item.kind === "suggestion" ? (
-                    <>{" "}<Link className={styles.activityLink} href="/positions#approvals">Approve in Portfolio</Link></>
+                    item.intentId !== undefined && deskSnapshot?.kind === "ready" &&
+                    deskSnapshot.snapshot.pending.some((pending) => pending.intentId === item.intentId) ? (
+                      <span className={styles.inlineApprovals}>
+                        <button type="button" disabled={approvalBusy} onClick={() => { void actOnSuggestion("confirm", item.intentId as string); }}>Approve</button>
+                        <button type="button" disabled={approvalBusy} onClick={() => { void actOnSuggestion("reject", item.intentId as string); }}>Reject</button>
+                      </span>
+                    ) : item.intentId !== undefined && approvalResults[item.intentId] !== undefined ? (
+                      <>{" "}· {approvalResults[item.intentId]}</>
+                    ) : null
+                  ) : null}
+                  {item.kind === "bet" && item.explorerUrl !== undefined ? (
+                    <>{" "}<a className={styles.activityLink} href={item.explorerUrl} target="_blank" rel="noopener noreferrer">View receipt</a></>
                   ) : null}
                   {item.url === undefined ? null : (
                     <>{" "}<a className={styles.activityLink} href={item.url} target="_blank" rel="noreferrer">View on X</a></>

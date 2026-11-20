@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentSummaryRecord } from "./agent-summary";
-import { agentPermissionLine, agentSpendLine, agentStatusText, lastCheckText, nextCheckSeconds, relativeTime, spentTodayCents } from "./agent-summary";
+import { agentPermissionLine, agentRoutineLine, agentSpendLine, agentStatusText, lastCheckText, nextCheckSeconds, relativeTime, spentTodayCents } from "./agent-summary";
 
 const NOW = new Date("2026-11-20T12:00:00.000Z");
 
@@ -13,6 +13,8 @@ function summary(overrides: Partial<AgentSummaryRecord> = {}): AgentSummaryRecor
     dailyBudgetCents: 300,
     permission: "watch",
     maxPerBetCents: 200,
+    schedule: { kind: "none" },
+    lastRoutineAt: null,
     ...overrides,
   };
 }
@@ -44,10 +46,22 @@ describe("agent summary", () => {
     expect(agentPermissionLine(summary({ permission: "watch" }), { autoApproveMaxCents: 200 }))
       .toEqual({ text: "Only sends messages", portfolioLink: false });
     expect(agentPermissionLine(summary({ permission: "suggest" }), { autoApproveMaxCents: 200 }))
-      .toEqual({ text: "Suggests bets up to $2 for you to approve in", portfolioLink: true });
+      .toEqual({ text: "Suggests bets up to $2 for you to approve here on the Agents page", portfolioLink: false });
     expect(agentPermissionLine(summary({ permission: "autonomous", maxPerBetCents: 500 }), { autoApproveMaxCents: 200 }))
       .toEqual({ text: "Bets on its own up to $2 per bet (desk auto-approve limit)", portfolioLink: false });
     expect(agentPermissionLine(summary({ permission: "autonomous", maxPerBetCents: 500 }), { autoApproveMaxCents: 500 }))
       .toEqual({ text: "Bets on its own up to $5 per bet", portfolioLink: false });
+  });
+
+  it("shows the next routine time or no routine", () => {
+    expect(agentRoutineLine(summary(), NOW)).toBe("No routine");
+    expect(agentRoutineLine(summary({
+      schedule: { kind: "daily", time: "13:00", timeZone: "UTC" },
+      lastRoutineAt: "2026-11-20T08:00:00.000Z",
+    }), NOW)).toBe("Next routine: Today 1:00 PM");
+    expect(agentRoutineLine(summary({
+      schedule: { kind: "every", hours: 4 },
+      lastRoutineAt: "2026-11-20T08:00:00.000Z",
+    }), NOW)).toContain("Next routine: ");
   });
 });

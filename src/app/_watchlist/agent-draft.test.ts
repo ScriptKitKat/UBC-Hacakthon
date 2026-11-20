@@ -34,6 +34,8 @@ const AGENT: AgentRecordView = {
   createdAt: "2026-11-20T12:00:00.000Z",
   updatedAt: "2026-11-20T12:00:00.000Z",
   lastRunAt: null,
+  schedule: { kind: "none" },
+  lastRoutineAt: null,
   lastMessage: null,
   lastMessageSource: null,
   spentTodayCents: 0,

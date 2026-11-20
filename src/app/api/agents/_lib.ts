@@ -1,7 +1,7 @@
 import { assignedBudgetCents, clampDailyBudget, modelAvailability, preferredModel } from "@/features/agents";
 import type { AgentDraft, AgentPatch } from "@/features/agents";
 import type { HomeServices } from "@/features/desk";
-import { agentRecordSchema, agentsViewSchema } from "@/shared";
+import { agentRecordSchema, agentScheduleSchema, agentsViewSchema } from "@/shared";
 import type { AgentsView } from "@/shared";
 import { loadXFeedSettings } from "@/features/xfeed";
 import { z } from "zod";
@@ -38,6 +38,7 @@ export const agentWriteBody = z.object({
   permission: z.enum(["watch", "suggest", "autonomous"]).optional(),
   writeBriefs: z.boolean().optional(),
   briefTriggers: briefBody.optional(),
+  schedule: agentScheduleSchema.optional(),
 });
 
 export const agentCreateBody = agentWriteBody.required({ eventTicker: true, instrumentSymbol: true });
@@ -80,6 +81,7 @@ export function draftFrom(input: z.output<typeof agentCreateBody>, capCents: num
     ...(input.permission === undefined ? {} : { permission: input.permission }),
     ...(input.writeBriefs === undefined ? {} : { writeBriefs: input.writeBriefs }),
     ...(input.briefTriggers === undefined ? {} : { briefTriggers: input.briefTriggers }),
+    ...(input.schedule === undefined ? {} : { schedule: input.schedule }),
   };
 }
 
@@ -98,5 +100,6 @@ export function patchFrom(input: z.output<typeof agentWriteBody>, capCents: numb
     ...(input.permission === undefined ? {} : { permission: input.permission }),
     ...(input.writeBriefs === undefined ? {} : { writeBriefs: input.writeBriefs }),
     ...(input.briefTriggers === undefined ? {} : { briefTriggers: input.briefTriggers }),
+    ...(input.schedule === undefined ? {} : { schedule: input.schedule }),
   };
 }

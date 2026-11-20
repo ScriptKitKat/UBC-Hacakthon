@@ -1,5 +1,5 @@
 import { createSerialQueue } from "@/features/storage";
-import type { AgentCycleReport, AgentRunnerDeps } from "./runner";
+import type { AgentCycleOptions, AgentCycleReport, AgentRunnerDeps } from "./runner";
 import { runAgentCycle } from "./runner";
 
 export const AGENT_LOOP_INTERVAL_MS = 60_000;
@@ -30,8 +30,10 @@ export function startAgentLoop(deps: AgentRunnerDeps): ReturnType<typeof setInte
   return timer;
 }
 
-export function agentCycle(deps: AgentRunnerDeps): (agentId?: string) => Promise<AgentCycleReport> {
+export function agentCycle(deps: AgentRunnerDeps): (agentId?: string, options?: AgentCycleOptions) => Promise<AgentCycleReport> {
   const queue = queueFor(deps);
   const tick = singleFlight(() => queue.run(() => runAgentCycle(deps)));
-  return (agentId) => agentId === undefined ? tick() : queue.run(() => runAgentCycle(deps, agentId));
+  return (agentId, options = {}) => agentId === undefined && options.review !== true
+    ? tick()
+    : queue.run(() => runAgentCycle(deps, agentId, options));
 }

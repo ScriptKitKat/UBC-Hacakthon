@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMemoryFileSystem } from "@/features/storage";
+import { agentRecordSchema } from "@/shared";
 import { openAgentStore } from "./store";
 
 describe("agent store", () => {
@@ -56,5 +57,24 @@ describe("agent store", () => {
     const updated = await store.recordRun(created.id, { lastBreakingPostId: "post-1" });
     expect(updated?.lastBreakingPostId).toBe("post-1");
     expect((await store.get(created.id))?.lastBreakingPostId).toBe("post-1");
+  });
+
+  it("defaults older records to no routine and clears cooldowns when permission changes", async () => {
+    const store = openAgentStore({
+      fs: createMemoryFileSystem(),
+      path: "agents.json",
+      now: () => new Date("2026-11-19T18:00:00.000Z"),
+    });
+    const created = await store.create({ eventTicker: "BTC", instrumentSymbol: "GEMI-BTC-YES" });
+    const legacy = { ...created } as Record<string, unknown>;
+    delete legacy.schedule;
+    delete legacy.lastRoutineAt;
+    expect(agentRecordSchema.parse(legacy)).toMatchObject({ schedule: { kind: "none" }, lastRoutineAt: null });
+
+    await store.recordRun(created.id, { lastTriggerAt: { oddsMove: "2026-11-19T18:00:00.000Z" } });
+    const permission = await store.update(created.id, { permission: "autonomous" });
+    expect(permission?.lastTriggerAt).toEqual({});
+    const scheduled = await store.update(created.id, { schedule: { kind: "every", hours: 4 } });
+    expect(scheduled).toMatchObject({ schedule: { kind: "every", hours: 4 }, lastRoutineAt: "2026-11-19T18:00:00.000Z" });
   });
 });

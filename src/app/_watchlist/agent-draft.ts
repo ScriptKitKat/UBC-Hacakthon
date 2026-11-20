@@ -11,6 +11,7 @@ export interface AgentDraft {
   permission: AgentRecordView["permission"];
   writeBriefs: boolean;
   briefTriggers: AgentRecordView["briefTriggers"];
+  schedule: AgentRecordView["schedule"];
 }
 
 const DEFAULT_TRIGGERS: AgentRecordView["triggers"] = {
@@ -49,6 +50,7 @@ export function defaultAgentDraft(models: AgentsView["models"] | undefined, dail
     permission: "suggest",
     writeBriefs: false,
     briefTriggers: { ...DEFAULT_BRIEF_TRIGGERS },
+    schedule: { kind: "none" },
   };
 }
 
@@ -64,6 +66,7 @@ export function draftFromAgent(agent: AgentRecordView, models?: AgentsView["mode
     permission: agent.permission,
     writeBriefs: agent.writeBriefs,
     briefTriggers: { ...agent.briefTriggers },
+    schedule: { ...agent.schedule },
   };
 }
 
@@ -86,6 +89,7 @@ export function createAgentBody(
     permission: draft.permission,
     writeBriefs: draft.writeBriefs,
     briefTriggers: { ...draft.briefTriggers },
+    schedule: { ...draft.schedule },
   };
 }
 
@@ -107,5 +111,6 @@ export function patchFromDraft(agent: AgentRecordView, draft: AgentDraft): Recor
     ...(agent.permission === draft.permission ? {} : { permission: draft.permission }),
     ...(agent.writeBriefs === draft.writeBriefs ? {} : { writeBriefs: draft.writeBriefs }),
     ...(sameFields(agent.briefTriggers, draft.briefTriggers) ? {} : { briefTriggers: { ...draft.briefTriggers } }),
+    ...(JSON.stringify(agent.schedule) === JSON.stringify(draft.schedule) ? {} : { schedule: { ...draft.schedule } }),
   };
 }

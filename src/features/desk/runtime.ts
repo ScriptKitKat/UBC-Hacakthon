@@ -6,7 +6,7 @@ import { createSampler, openHistoryStore } from "@/features/history";
 import { createSolanaLedger, createUnconfiguredLedger, isExpectedGenesis } from "@/features/ledger";
 import type { UsdcLedger } from "@/features/ledger";
 import { openAgentStore, startAgentLoop, agentCycle } from "@/features/agents";
-import type { AgentCycleReport, AgentStore } from "@/features/agents";
+import type { AgentCycleOptions, AgentCycleReport, AgentStore } from "@/features/agents";
 import { createChatter, openChatterStore } from "@/features/chatter";
 import type { Chatter } from "@/features/chatter";
 import { cardsForSaved, cardsForSymbols, createBrowseCache, createListCache, listBrowse, listCatalog, loadSpotPrices, openWatchlist, sparklineUpdates } from "@/features/catalog";
@@ -45,7 +45,7 @@ export type DeskAccess =
 
 export interface AgentRuntime {
   readonly store: AgentStore;
-  readonly run: (agentId?: string) => Promise<AgentCycleReport>;
+  readonly run: (agentId?: string, options?: AgentCycleOptions) => Promise<AgentCycleReport>;
 }
 
 export interface HomeCatalog {
