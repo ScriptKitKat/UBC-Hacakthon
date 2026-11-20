@@ -15,7 +15,6 @@ import {
   isBeginnerTimeframe,
   marketTitle,
   needsApprovalNote,
-  outcomeSides,
   overTradeLimitMessage,
   parseResolution,
   payoutFor,
@@ -369,8 +368,6 @@ function TradeCard({ view }: { readonly view: ResearchView }) {
   const [busy, setBusy] = useState(false);
   usePolling(() => { void loadRail().then(setRail); }, WATCH_MS);
   const budget = budgetFrom(rail);
-  const sides = outcomeSides(view.market.eventTitle, view.market.contractLabel);
-  const sideLabel = side === "yes" ? sides.yes : sides.no;
   const price = side === "yes" ? view.market.prices.buyYesCents : view.market.prices.buyNoCents;
   const payout = view.market.quantityLimits ? payoutFor(price, amountCents, view.market.quantityLimits) : payoutFor(price, amountCents);
   const over = overTradeLimitMessage(amountCents, budget);
@@ -390,10 +387,10 @@ function TradeCard({ view }: { readonly view: ResearchView }) {
     <section className={styles.card} aria-label="Place a bet">
       <div className={styles.sides}>
         <button type="button" className={styles.side} data-on={side === "yes" ? "yes" : undefined} onClick={() => { setSide("yes"); }}>
-          {sides.yes} {formatPriceCents(view.market.prices.buyYesCents)}
+          Yes {formatPriceCents(view.market.prices.buyYesCents)}
         </button>
         <button type="button" className={styles.side} data-on={side === "no" ? "no" : undefined} onClick={() => { setSide("no"); }}>
-          {sides.no} {formatPriceCents(view.market.prices.buyNoCents)}
+          No {formatPriceCents(view.market.prices.buyNoCents)}
         </button>
       </div>
       <p className={styles.amountLabel}>Amount</p>
@@ -412,7 +409,7 @@ function TradeCard({ view }: { readonly view: ResearchView }) {
       </div>
       <div className={styles.payRow}><span className={styles.payLabel}>You pay</span><span className={styles.payValue}>{formatBudgetCents(amountCents)}</span></div>
       <div className={styles.payRow}>
-        <span className={styles.payLabel}>{`If ${sideLabel}, you get`}</span>
+        <span className={styles.payLabel}>{side === "yes" ? "If YES, you get" : "If NO, you get"}</span>
         <span className={styles.payValue}>
           {payout.kind === "quote" ? `${formatDollarsFromCents(payout.payoutCents)} (+${formatDollarsFromCents(payout.profitCents)})` : "n/a"}
         </span>
@@ -420,10 +417,10 @@ function TradeCard({ view }: { readonly view: ResearchView }) {
       <div className={styles.payRow}><span className={styles.payLabel}>If wrong</span><span className={styles.payValue}>{`−${formatBudgetCents(amountCents)}`}</span></div>
       {over !== null ? <p className={styles.warning}>{over}</p> : null}
       {approval !== null && over === null ? <p className={styles.warning}>{approval}</p> : null}
-      {payout.kind === "no-price" ? <p className={styles.warning}>Gemini has no live {sideLabel} price right now.</p> : null}
+      {payout.kind === "no-price" ? <p className={styles.warning}>Gemini has no live {side.toUpperCase()} price right now.</p> : null}
       {payout.kind === "below-minimum" ? <p className={styles.warning}>That amount is below the smallest order for this market.</p> : null}
       <button type="button" className={styles.buy} disabled={!canBuy} onClick={() => { void buy(); }}>
-        {busy ? "Placing…" : `Buy ${sideLabel} for ${formatBudgetCents(amountCents)}`}
+        {busy ? "Placing…" : `Buy ${side.toUpperCase()} for ${formatBudgetCents(amountCents)}`}
       </button>
       <p className={styles.budget}>
         {budget === undefined

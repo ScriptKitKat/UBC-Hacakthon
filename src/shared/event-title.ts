@@ -189,20 +189,3 @@ export function formatEndsOn(expiryDate: string | null | undefined, timeZone = "
   if (!Number.isFinite(date.getTime())) return null;
   return new Intl.DateTimeFormat("en-US", { timeZone, month: "short", day: "numeric" }).format(date);
 }
-
-export interface OutcomeSides {
-  readonly yes: string;
-  readonly no: string;
-}
-
-const MATCHUP = /^(.+?)\s+(?:vs\.?|v\.?|@|at)\s+(.+)$/iu;
-
-export function outcomeSides(eventTitle: string, contractLabel: string): OutcomeSides {
-  const teams = MATCHUP.exec(eventTitle.trim())?.slice(1, 3).map((team) => team.trim());
-  const picked = contractLabel.trim().toLowerCase();
-  const index = teams?.findIndex((team) => team.toLowerCase() === picked) ?? -1;
-  const winner = teams?.[index];
-  const loser = teams?.[1 - index];
-  if (index === -1 || winner === undefined || loser === undefined) return { yes: "Yes", no: "No" };
-  return { yes: `${winner} wins`, no: `${loser} wins` };
-}

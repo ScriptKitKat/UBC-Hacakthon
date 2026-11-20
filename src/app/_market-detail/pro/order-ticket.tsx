@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ticketQuote, cappedStakeCents, needsApproval } from "@/features/market-pro";
-import { formatBudgetCents, formatResetLabel, outcomeSides, parseDollarsToCents } from "@/shared";
+import { formatBudgetCents, formatResetLabel, parseDollarsToCents } from "@/shared";
 import type { ProBudget, ProMarket } from "@/shared";
 import { proposeTrade } from "../../_shell/api";
 import { budgetNote, formatCents, formatDollars } from "./format";
@@ -13,7 +13,6 @@ const DEFAULT_STAKE = "5.00";
 
 export function OrderTicket({ market, budget }: { readonly market: ProMarket; readonly budget: ProBudget }) {
   const [side, setSide] = useState<"yes" | "no">("yes");
-  const sides = outcomeSides(market.eventTitle, market.contractLabel);
   const [stakeText, setStakeText] = useState(DEFAULT_STAKE);
   const defaultProb = Math.round(market.yesAskCents ?? market.lastTradeCents ?? 50);
   const [est, setEst] = useState(Math.min(99, Math.max(1, defaultProb)));
@@ -54,10 +53,10 @@ export function OrderTicket({ market, budget }: { readonly market: ProMarket; re
       <p className={styles.note}>Paper trading places market orders only. Limit orders are not supported by the paper flow.</p>
       <div className={styles.sides} role="group" aria-label="Side">
         <button type="button" className={side === "yes" ? styles.yesOn : undefined} aria-pressed={side === "yes"} onClick={() => { setSide("yes"); }}>
-          {sides.yes} {market.yesAskCents === null ? "" : formatCents(market.yesAskCents)}
+          Buy YES {market.yesAskCents === null ? "" : formatCents(market.yesAskCents)}
         </button>
         <button type="button" className={side === "no" ? styles.noOn : undefined} aria-pressed={side === "no"} onClick={() => { setSide("no"); }}>
-          {sides.no} {market.noAskCents === null ? "" : formatCents(market.noAskCents)}
+          Buy NO {market.noAskCents === null ? "" : formatCents(market.noAskCents)}
         </button>
       </div>
       <div className={styles.fields}>
@@ -68,7 +67,7 @@ export function OrderTicket({ market, budget }: { readonly market: ProMarket; re
       <div className={styles.slider}>
         <div className={styles.sliderTop}>
           <label htmlFor="est">Your probability</label>
-          <span>{String(est)}% {sides.yes}</span>
+          <span>{String(est)}% YES</span>
         </div>
         <input id="est" type="range" min="1" max="99" step="1" value={est} onChange={(event) => { setEst(Number(event.target.value)); }} />
       </div>
@@ -93,7 +92,7 @@ export function OrderTicket({ market, budget }: { readonly market: ProMarket; re
         </dd>
       </dl>
       <button type="button" className={styles.submit} disabled={!canSubmit} onClick={submit}>
-        {approval ? "Needs approval" : "Place market"} · {side === "yes" ? sides.yes : sides.no} {formatBudgetCents(stakeCents)}
+        {approval ? "Needs approval" : "Place market"} · {side.toUpperCase()} {formatBudgetCents(stakeCents)}
       </button>
       <p className={overLimit ? [styles.hint, styles.warn].join(" ") : (styles.hint ?? "")}>
         {budgetNote(stakeCents, budget.remainingCents, budget.autoApproveMaxCents, remainingCap, budget.perTradeMaxCents)}
