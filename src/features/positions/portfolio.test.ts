@@ -86,6 +86,15 @@ describe("rangeWindow and policy days", () => {
 });
 
 describe("buildPortfolio", () => {
+  it("labels a one-day spend window in the singular", () => {
+    const view = buildPortfolio(inputs({
+      range: "all",
+      entries: [entry({ operationId: "only-brief", kind: "research", symbol: FED, notionalCents: 5, reservedAt: new Date(NOW - 60_000).toISOString() })],
+      markets: new Map([[FED, market()]]),
+    }));
+    expect(view.dailySpend.windowLabel).toBe("last day");
+  });
+
   it("names no busiest day when nothing was spent", () => {
     const view = buildPortfolio(inputs());
     expect(view.dailySpend.caption).toBe("No spend in this window");

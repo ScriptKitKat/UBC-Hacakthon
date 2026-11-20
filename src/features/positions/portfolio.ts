@@ -302,7 +302,7 @@ export function buildPortfolio(input: PortfolioInputs): PortfolioView {
     };
   });
   const spendDays = spendDaysAll.slice(-SPEND_CHART_MAX_DAYS);
-  const windowLabel = `last ${String(spendDays.length)} days`;
+  const windowLabel = spendDays.length === 1 ? "last day" : `last ${String(spendDays.length)} days`;
 
   const categoryTotals = new Map<string, number>();
   for (const position of [...openRows, ...settledInRange]) {
