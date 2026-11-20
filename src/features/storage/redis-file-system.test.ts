@@ -7,26 +7,27 @@ import { createRedisFileSystem } from "./redis-file-system";
 
 function fakeRedis(): { readonly client: Pick<Redis, "get" | "mget" | "eval">; readonly values: Map<string, string | number> } {
   const values = new Map<string, string | number>();
+  const client = {
+    get: (key: string) => Promise.resolve(values.get(key) ?? null),
+    mget: (...args: string[] | [string[]]) => {
+      const keys: string[] = args.length === 1 && Array.isArray(args[0]) ? args[0] : args as string[];
+      return Promise.resolve(keys.map((key) => values.get(key) ?? null));
+    },
+    eval: (_script: string, keys: string[], args: unknown[]) => {
+      const [fileKey, versionKey, revisionKey] = keys;
+      const valuesToWrite = args as string[];
+      const current = Number(values.get(versionKey ?? "") ?? 0);
+      if (current !== Number(valuesToWrite[0])) return Promise.resolve(0);
+      const next = current + 1;
+      values.set(fileKey ?? "", valuesToWrite[1] ?? "");
+      values.set(versionKey ?? "", next);
+      values.set(revisionKey ?? "", Number(values.get(revisionKey ?? "") ?? 0) + 1);
+      return Promise.resolve(next);
+    },
+  } as unknown as Pick<Redis, "get" | "mget" | "eval">;
   return {
     values,
-    client: {
-      get<T>(key: string) {
-        return Promise.resolve((values.get(key) as T | undefined) ?? null);
-      },
-      mget<TData extends unknown[]>(...keys: string[]) {
-        return Promise.resolve(keys.map((key) => values.get(key) ?? null) as TData);
-      },
-      eval<TResult>(_script: string, keys: string[], args: string[]) {
-        const [fileKey, versionKey, revisionKey] = keys;
-        const current = Number(values.get(versionKey ?? "") ?? 0);
-        if (current !== Number(args[0])) return Promise.resolve(0 as TResult);
-        const next = current + 1;
-        values.set(fileKey ?? "", args[1] ?? "");
-        values.set(versionKey ?? "", next);
-        values.set(revisionKey ?? "", Number(values.get(revisionKey ?? "") ?? 0) + 1);
-        return Promise.resolve(next as TResult);
-      },
-    },
+    client,
   };
 }
 

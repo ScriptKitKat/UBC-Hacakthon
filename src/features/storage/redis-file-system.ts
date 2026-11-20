@@ -34,7 +34,7 @@ export function createRedisFileSystem(redis: Pick<Redis, "get" | "mget" | "eval"
     const fileKey = key(path);
     const versionKey = `${fileKey}:v`;
     const expectedVersion = versions.get(fileKey) ?? 0;
-    const nextVersion = await redis.eval<number>(
+    const nextVersion = await redis.eval<[string, string], number>(
       CAS_WRITE,
       [fileKey, versionKey, revisionKey],
       [String(expectedVersion), contents],
