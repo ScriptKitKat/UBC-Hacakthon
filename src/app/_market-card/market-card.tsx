@@ -51,16 +51,24 @@ export function MarketCard({
   selected,
   footStart,
   footEnd,
+  onSelect,
 }: {
   readonly model: MarketCardModel;
   readonly watch?: MarketCardWatch;
   readonly selected?: boolean;
   readonly footStart?: ReactNode;
   readonly footEnd?: ReactNode;
+  readonly onSelect?: () => void;
 }) {
   const hasFoot = footStart !== undefined || footEnd !== undefined;
   return (
-    <article className={styles.card} data-selected={selected === true} aria-label={model.title}>
+    <article
+      className={styles.card}
+      data-selected={selected === true}
+      data-selectable={onSelect !== undefined}
+      aria-label={model.title}
+      onClick={onSelect}
+    >
       <div className={styles.head}>
         <span className={styles.category}>{model.category}</span>
         <div className={styles.headEnd}>
@@ -71,7 +79,18 @@ export function MarketCard({
       </div>
       <div className={styles.titleRow}>
         <MarketIcon url={model.iconUrl} monogram={model.monogram} />
-        <Link href={model.href} className={styles.title}>{model.title}</Link>
+        {onSelect === undefined
+          ? <Link href={model.href} className={styles.title}>{model.title}</Link>
+          : <button
+              type="button"
+              className={[styles.title, styles.titleButton].join(" ")}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelect();
+              }}
+            >
+              {model.title}
+            </button>}
       </div>
       {model.detail !== null || model.closes !== null ? (
         <div className={styles.details}>

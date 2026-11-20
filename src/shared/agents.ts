@@ -114,3 +114,17 @@ export const agentCycleReportSchema = z.object({
 
 export type AgentRecordView = z.output<typeof agentRecordSchema>;
 export type AgentsView = z.output<typeof agentsViewSchema>;
+
+export function utcDay(now: Date): string {
+  return now.toISOString().slice(0, 10);
+}
+
+export function rolledSpend(
+  agent: { readonly spentTodayCents: number; readonly spendDay: string },
+  now: Date,
+): { readonly spentTodayCents: number; readonly spendDay: string } {
+  const day = utcDay(now);
+  return day === agent.spendDay
+    ? { spentTodayCents: agent.spentTodayCents, spendDay: day }
+    : { spentTodayCents: 0, spendDay: day };
+}

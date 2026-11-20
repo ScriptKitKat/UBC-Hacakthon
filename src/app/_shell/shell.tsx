@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { BriefsIcon, HomeIcon, MarketsIcon, PortfolioIcon, SettingsIcon, WatchlistIcon } from "./icons";
+import { AgentsIcon, BriefsIcon, HomeIcon, MarketsIcon, PortfolioIcon, SettingsIcon, WatchlistIcon } from "./icons";
 import styles from "./shell.module.css";
 
 const LINKS = [
   { href: "/", label: "Home", icon: HomeIcon, match: (path: string) => path === "/" },
   { href: "/markets", label: "Markets", icon: MarketsIcon, match: (path: string) => path.startsWith("/markets") },
   { href: "/watchlist", label: "Watchlist", icon: WatchlistIcon, match: (path: string) => path.startsWith("/watchlist") },
+  { href: "/agents", label: "Agents", icon: AgentsIcon, match: (path: string) => path.startsWith("/agents") },
   { href: "/briefs", label: "Briefs", icon: BriefsIcon, match: (path: string) => path.startsWith("/briefs") },
   { href: "/positions", label: "Portfolio", icon: PortfolioIcon, match: (path: string) => path.startsWith("/positions") },
 ] as const;

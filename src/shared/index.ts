@@ -174,5 +174,7 @@ export {
   agentCycleReportSchema,
   agentRecordSchema,
   agentsViewSchema,
+  rolledSpend,
+  utcDay,
 } from "./agents";
 export type { AgentRecordView, AgentsView } from "./agents";
