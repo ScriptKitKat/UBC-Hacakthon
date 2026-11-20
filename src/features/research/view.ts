@@ -2,7 +2,8 @@ import type { HistoryStore } from "@/features/history";
 import type { Candle, CandleTimeframe, GeminiMarketsClient, MarketContract, MarketEvent, MarketsError, MarketsResult, RecentTrade } from "@/features/markets";
 import { parseInstrumentSymbol } from "@/features/markets";
 import type { ResearchBrief, ResearchPostContext, ResearchRelatedContract, ResearchTimeframe, ResearchView } from "@/shared";
-import { composeBrief, polishBrief } from "./brief";
+import { polishBrief } from "./brief";
+import { composeLibraryBrief } from "./library-brief";
 import type { JsonCompleter } from "./brief";
 import { computeIndicators } from "./indicators";
 import { ALL_CANDLE_TIMEFRAMES, CANDLE_INTERVAL_MS, cumulativeDepth, hourlyIndicatorPoints, INDICATOR_CANDLE, mergeSeries, TIMEFRAME_PLANS } from "./series";
@@ -295,7 +296,7 @@ export function createResearch(deps: ResearchDeps): Research {
     async brief(symbol) {
       const result = await view(symbol, BRIEF_TIMEFRAME);
       if (result.kind !== "ok") return result;
-      const template = composeBrief(result.view);
+      const template = composeLibraryBrief(result.view);
       return { kind: "ok", template, polished: () => polishBrief(template, deps.completeJson) };
     },
   };

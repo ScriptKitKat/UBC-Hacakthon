@@ -115,7 +115,7 @@ function fakeDesk(script: DeskScript = {}) {
   );
   const desk: Desk = {
     submitNews, proposeTrade, confirmPending, getSnapshot, setKillSwitch: vi.fn(),
-    matchPost: vi.fn(), isCardFor: vi.fn(), feedOrder: vi.fn(), quote: vi.fn(), postContextFor: vi.fn(), matchedPostsFor: vi.fn(), peekResearchBriefs: vi.fn(), getPositions: vi.fn(), getFeedPositions: vi.fn<Desk["getFeedPositions"]>(), buyDeepDive: vi.fn(), reconcile: vi.fn(), buyFromFeed: vi.fn(), confirmFromFeed: vi.fn(),
+    matchPost: vi.fn(), isCardFor: vi.fn(), feedOrder: vi.fn(), quote: vi.fn(), postContextFor: vi.fn(), matchedPostsFor: vi.fn(), peekResearchBriefs: vi.fn(), listBriefLibrary: vi.fn(), getPositions: vi.fn(), getFeedPositions: vi.fn<Desk["getFeedPositions"]>(), buyDeepDive: vi.fn(), reconcile: vi.fn(), buyFromFeed: vi.fn(), confirmFromFeed: vi.fn(),
   };
   return { desk, proposeTrade, confirmPending, submitNews };
 }
